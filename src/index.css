@@ -1,0 +1,172 @@
+:root {
+  /* Backgrounds — 4 levels of depth */
+  --bg-page:           #F4F5F7;   /* page / outermost shell */
+  --bg-surface:        #FFFFFF;   /* cards, sidebar, top bar */
+  --bg-raised:         #ECEEF2;   /* hover states, diagram containers */
+  --bg-sunken:         #E4E6EB;   /* input fields, code blocks */
+
+  /* Accent */
+  --accent:            #5B6CF9;
+  --accent-hover:      #4A5AE8;
+  --accent-muted:      #5B6CF914;
+  --accent-text:       #3A48D4;   /* accent colour on light bg — darkened for contrast */
+
+  /* Text — 3 levels */
+  --text-primary:      #0E1117;   /* headings, question text, answer options */
+  --text-secondary:    #4A4F5E;   /* labels, captions, sidebar stats */
+  --text-tertiary:     #8A909F;   /* placeholder text, figure captions, q-numbers */
+
+  /* Borders */
+  --border-subtle:     #D8DAE0;   /* default card borders — 0.5px */
+  --border-medium:     #B8BCCA;   /* hover, focused inputs */
+  --border-accent:     #5B6CF9;   /* selected states */
+
+  /* Semantic — status colours */
+  --success-bg:        #EDFAF3;
+  --success-text:      #1A7A45;
+  --success-border:    #A3DFC0;
+
+  --warning-bg:        #FFF8EC;
+  --warning-text:      #8A5A00;
+  --warning-border:    #F5D48A;
+
+  --danger-bg:         #FFF0F0;
+  --danger-text:       #B92D2D;
+  --danger-border:     #F5AAAA;
+
+  /* Timer urgent state */
+  --timer-urgent:      #D94040;
+
+  /* Sidebar question button states */
+  --q-default-bg:      #ECEEF2;
+  --q-default-text:    #4A4F5E;
+  --q-answered-bg:     #EDFAF3;
+  --q-answered-text:   #1A7A45;
+  --q-active-bg:       #5B6CF914;
+  --q-active-border:   #5B6CF9;
+  --q-active-text:     #3A48D4;
+  --q-flagged-dot:     #E59B00;
+}
+
+[data-theme="dark"] {
+  /* Backgrounds — 4 levels of depth */
+  --bg-page:           #0D1117;   /* deepest — page shell */
+  --bg-surface:        #161B27;   /* cards, sidebar, top bar */
+  --bg-raised:         #1E2535;   /* hover states, diagram containers */
+  --bg-sunken:         #252D40;   /* input fields, code blocks */
+
+  /* Accent — brightened for dark bg legibility */
+  --accent:            #7B8CFA;
+  --accent-hover:      #8F9EFB;
+  --accent-muted:      #7B8CFA18;
+  --accent-text:       #A0ADFB;
+
+  /* Text — 3 levels */
+  --text-primary:      #E8EAF0;   /* main readable text */
+  --text-secondary:    #9BA3B8;   /* labels, stats */
+  --text-tertiary:     #5C6478;   /* captions, placeholders */
+
+  /* Borders */
+  --border-subtle:     #252D40;   /* default — very quiet */
+  --border-medium:     #363F58;   /* hover, active inputs */
+  --border-accent:     #7B8CFA;
+
+  /* Semantic */
+  --success-bg:        #0D2B1A;
+  --success-text:      #4ADE80;
+  --success-border:    #1A4D2E;
+
+  --warning-bg:        #2B1E00;
+  --warning-text:      #FBB83A;
+  --warning-border:    #4D3800;
+
+  --danger-bg:         #2B0D0D;
+  --danger-text:       #F87171;
+  --danger-border:     #4D1A1A;
+
+  /* Timer urgent state */
+  --timer-urgent:      #F87171;
+
+  /* Sidebar question button states */
+  --q-default-bg:      #1E2535;
+  --q-default-text:    #9BA3B8;
+  --q-answered-bg:     #0D2B1A;
+  --q-answered-text:   #4ADE80;
+  --q-active-bg:       #7B8CFA18;
+  --q-active-border:   #7B8CFA;
+  --q-active-text:     #A0ADFB;
+  --q-flagged-dot:     #FBB83A;
+}
+
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  
+  --color-surface-dim: var(--bg-page);
+  --color-surface-container-low: var(--bg-surface);
+  --color-surface-container-high: var(--bg-raised);
+  --color-surface-container-highest: var(--bg-sunken);
+  --color-on-surface: var(--text-primary);
+  --color-on-surface-variant: var(--text-secondary);
+  --color-primary: var(--accent);
+  --color-primary-container: var(--accent-hover);
+  --color-secondary: var(--text-tertiary);
+  --color-tertiary: var(--warning-text);
+  --color-outline: var(--text-tertiary);
+  --color-outline-variant: var(--border-subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-muted: var(--accent-muted);
+  --color-accent-text: var(--accent-text);
+  
+  --color-bg-page: var(--bg-page);
+  --color-bg-surface: var(--bg-surface);
+  --color-bg-raised: var(--bg-raised);
+  --color-bg-sunken: var(--bg-sunken);
+  
+  --color-text-primary: var(--text-primary);
+  --color-text-secondary: var(--text-secondary);
+  --color-text-tertiary: var(--text-tertiary);
+  
+  --color-border-subtle: var(--border-subtle);
+  --color-border-medium: var(--border-medium);
+  --color-border-accent: var(--border-accent);
+}
+
+@layer base {
+  *, *::before, *::after {
+    transition: background-color 200ms ease, border-color 200ms ease, color 150ms ease;
+  }
+
+  /* Exception: disable transition on elements where it causes visual glitches */
+  svg *, canvas, img {
+    transition: none;
+  }
+
+  body {
+    @apply bg-surface-dim text-on-surface font-sans antialiased;
+  }
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.animate-shimmer {
+  animation: shimmer 2s infinite linear;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.glass-panel {
+  @apply bg-surface-container-high/80 backdrop-blur-xl border border-outline-variant/10 shadow-2xl;
+}
