@@ -39,6 +39,7 @@ import {
   ChevronDown,
   Sparkles,
   Send,
+  Menu,
   LucideIcon,
   AlertCircle
 } from 'lucide-react';
@@ -65,6 +66,37 @@ export default function App() {
 
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [isRecentActivitiesOpen, setIsRecentActivitiesOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const [touchStartX, setTouchStartX] = useState<number | null>(null);
+
+  useEffect(() => {
+    const handleTouchStart = (e: TouchEvent) => {
+      setTouchStartX(e.touches[0].clientX);
+    };
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (touchStartX === null) return;
+      const touchEndX = e.changedTouches[0].clientX;
+      const deltaX = touchEndX - touchStartX;
+
+      if (touchStartX < 50 && deltaX > 50) {
+        setIsMobileMenuOpen(true);
+      }
+      if (isMobileMenuOpen && deltaX < -50) {
+        setIsMobileMenuOpen(false);
+      }
+      setTouchStartX(null);
+    };
+
+    document.addEventListener('touchstart', handleTouchStart);
+    document.addEventListener('touchend', handleTouchEnd);
+
+    return () => {
+      document.removeEventListener('touchstart', handleTouchStart);
+      document.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [touchStartX, isMobileMenuOpen]);
 
   const handleModeSelect = (mode: StudyMode) => {
     setState(prev => ({ ...prev, mode, step: 'COURSE_SELECT' }));
@@ -108,6 +140,19 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-surface-dim overflow-hidden font-sans">
+      {/* Mobile Overlay */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] md:hidden"
+          />
+        )}
+      </AnimatePresence>
+
       {/* Sidebar - Hidden during Exam/Review for max focus */}
       <AnimatePresence>
         {state.step !== 'EXAM' && state.step !== 'REVIEW' && (
@@ -116,8 +161,10 @@ export default function App() {
             animate={{ x: 0 }}
             exit={{ x: -100 }}
             className={cn(
-              "bg-bg-surface border-r border-border-subtle transition-all duration-300 z-50 flex flex-col pt-4 hidden md:flex overflow-hidden",
-              isSidebarExpanded ? "w-64" : "w-16"
+              "bg-bg-surface border-r border-border-subtle transition-all duration-300 z-[60] flex flex-col pt-4 overflow-hidden h-full",
+              "fixed inset-y-0 left-0 md:relative",
+              isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+              isSidebarExpanded || isMobileMenuOpen ? "w-64" : "w-16"
             )}
             onMouseEnter={() => setIsSidebarExpanded(true)}
             onMouseLeave={() => setIsSidebarExpanded(false)}
@@ -136,10 +183,10 @@ export default function App() {
             </div>
 
             <div className="flex-1 px-3 space-y-2">
-              <NavItem icon={Home} label="Home" active expanded={isSidebarExpanded} />
-              <NavItem icon={Target} label="Targeted Practice" expanded={isSidebarExpanded} />
-              <NavItem icon={History} label="My Sessions" expanded={isSidebarExpanded} />
-              <NavItem icon={Activity} label="Performance" expanded={isSidebarExpanded} />
+              <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Home} label="Home" active expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Target} label="Targeted Practice" expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setIsRecentActivitiesOpen(true); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Activity} label="Performance" expanded={isSidebarExpanded || isMobileMenuOpen} />
             </div>
 
             <div className="mt-auto px-3 pb-6 space-y-4">
@@ -155,8 +202,8 @@ export default function App() {
                   Streak
                 </span>
               </div>
-              <NavItem icon={Settings} label="Settings" expanded={isSidebarExpanded} />
-              <NavItem icon={HelpCircle} label="Help" expanded={isSidebarExpanded} />
+              <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Settings} label="Settings" expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={HelpCircle} label="Help" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <div className="pt-4 border-t border-border-subtle flex items-center gap-3 px-1 h-[4.5rem]">
                 <div className="w-8 h-8 rounded-full overflow-hidden border border-border-medium shrink-0 ml-[2px]">
                   <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" alt="Profile" />
@@ -195,40 +242,50 @@ export default function App() {
         ) : (
           <>
             {/* Header */}
-        <header className="h-20 flex items-center justify-between px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-outline-variant">
-          <div className="flex items-center gap-6">
-            {state.step !== 'MODE_SELECT' && (
-              <button onClick={goBack} className="p-2 hover:bg-bg-raised/50 rounded-lg transition-colors group shrink-0">
+        <header className="h-20 flex items-center justify-between px-4 md:px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-outline-variant">
+          <div className="flex items-center gap-3 md:gap-6">
+            {state.step === 'MODE_SELECT' ? (
+              <button 
+                onClick={() => setIsMobileMenuOpen(true)}
+                className="md:hidden p-2 text-text-secondary hover:text-text-primary transition-colors -ml-1 shrink-0"
+              >
+                <Menu className="w-6 h-6" />
+              </button>
+            ) : (
+              <button 
+                onClick={goBack} 
+                className="p-2 hover:bg-bg-raised/50 rounded-lg transition-colors group shrink-0 -ml-1 md:ml-0"
+              >
                 <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary group-hover:-translate-x-1 transition-all" />
               </button>
             )}
-            <div className="flex items-center gap-6">
-              <div className="flex items-center gap-4">
-                <div className="flex flex-col relative w-24">
-                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Year</span>
+            <div className="flex items-center gap-2 md:gap-6">
+              <div className="flex items-center gap-1 md:gap-4">
+                <div className="flex flex-col relative w-[5.5rem] md:w-24">
+                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Year</span>
                    <select 
                      value={state.year}
                      onChange={(e) => setState(p => ({ ...p, year: e.target.value as any }))}
-                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-3 py-1.5 text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pb-1.5 pr-8"
+                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pr-5 md:pr-8"
                    >
                      <option value="Year 1" className="bg-bg-page text-text-primary">Year 1</option>
                      <option value="Year 2" className="bg-bg-page text-text-primary">Year 2</option>
                      <option value="Year 3" className="bg-bg-page text-text-primary">Year 3</option>
                      <option value="Year 4" className="bg-bg-page text-text-primary">Year 4</option>
                    </select>
-                   <ChevronDown className="absolute right-2 bottom-2 w-4 h-4 text-text-secondary pointer-events-none" />
+                   <ChevronDown className="absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
                 </div>
-                <div className="flex flex-col relative w-36">
-                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Semester</span>
+                <div className="flex flex-col relative w-[6rem] md:w-36">
+                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Semester</span>
                    <select 
                      value={state.semester}
                      onChange={(e) => setState(p => ({ ...p, semester: e.target.value as any }))}
-                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-3 py-1.5 text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pb-1.5 pr-8"
+                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pr-5 md:pr-8"
                    >
-                     <option value="Sem 1" className="bg-bg-page text-text-primary">First Sem</option>
-                     <option value="Sem 2" className="bg-bg-page text-text-primary">Second Sem</option>
+                     <option value="Sem 1" className="bg-bg-page text-text-primary">Sem 1</option>
+                     <option value="Sem 2" className="bg-bg-page text-text-primary">Sem 2</option>
                    </select>
-                   <ChevronDown className="absolute right-2 bottom-2 w-4 h-4 text-text-secondary pointer-events-none" />
+                   <ChevronDown className="absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
                 </div>
               </div>
               <div className="text-xs font-medium text-text-secondary hidden sm:block">
@@ -236,22 +293,15 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 border-r border-border-subtle pr-6">
+          <div className="flex items-center gap-1 md:gap-6">
+            <div className="flex items-center gap-1 md:gap-2">
               <ThemeToggle />
               <button 
                 onClick={() => setIsRecentActivitiesOpen(true)}
                 className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-raised/50 transition-all active:scale-95"
               >
-                <History className="w-5 h-5" />
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full shadow-[0_0_8px_var(--accent)]" />
+                <History className="w-5 h-5 md:w-5 md:h-5" />
               </button>
-            </div>
-            <div className="flex items-center gap-4">
-               <button className="text-text-secondary hover:text-text-primary transition-colors relative">
-                  <Bell className="w-5 h-5" />
-                  <span className="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full border border-bg-page" />
-               </button>
             </div>
           </div>
         </header>
@@ -361,12 +411,12 @@ export default function App() {
                         <button
                           key={course.id}
                           onClick={() => handleCourseSelect(course)}
-                          className="group flex flex-col text-left p-5 md:p-6 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-auto min-h-40 md:min-h-48"
+                          className="group flex flex-col text-left p-4 md:p-5 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-auto min-h-36 md:min-h-40"
                         >
                            <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-primary/5 blur-3xl rounded-full" />
-                           <h3 className="text-xl md:text-2xl font-bold mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
-                           <p className="text-on-surface-variant text-xs md:text-sm leading-relaxed max-w-xs mb-6 md:mb-0">{course.description}</p>
-                           <div className="mt-auto flex items-center text-[10px] md:text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
+                           <h3 className="text-lg md:text-xl font-bold mb-1.5 md:mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
+                           <p className="text-on-surface-variant text-[10px] md:text-xs leading-relaxed max-w-xs mb-4 md:mb-0">{course.description}</p>
+                           <div className="mt-auto flex items-center text-[9px] md:text-[10px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
                              Select Course <ArrowRight className="w-3 h-3" />
                            </div>
                         </button>
@@ -1739,7 +1789,7 @@ function StatusTag({ label, icon: Icon, color }: { label: string, icon: LucideIc
   );
 }
 
-function QuizOption({ id, label, text, selected, onSelect }: { id: string, label: string, text: string, selected: boolean, onSelect: () => void }) {
+function QuizOption({ id, label, text, selected, onSelect, key }: { id: string, label: string, text: string, selected: boolean, onSelect: () => void, key?: string | number }) {
   return (
     <button 
       onClick={onSelect}
@@ -1815,9 +1865,10 @@ function CommandBarItem({ icon: Icon, label }: { icon: LucideIcon, label: string
   );
 }
 
-function NavItem({ icon: Icon, label, active = false, expanded = false }: { icon: LucideIcon, label: string, active?: boolean, expanded: boolean }) {
+function NavItem({ icon: Icon, label, active = false, expanded = false, onClick }: { icon: LucideIcon, label: string, active?: boolean, expanded: boolean, onClick?: () => void }) {
   return (
     <button 
+      onClick={onClick}
       className={cn(
         "w-full flex items-center h-10 px-2 rounded-lg transition-all group overflow-hidden relative",
         active ? "bg-accent-muted text-accent-text border-l-2 border-accent" : "text-text-tertiary hover:text-text-primary hover:bg-bg-raised"
@@ -1838,25 +1889,25 @@ function ModeCard({ title, description, tag, icon: Icon, color = 'primary', onCl
   return (
     <button 
       onClick={onClick}
-      className="flex flex-col text-left group bg-bg-surface rounded-3xl p-5 md:p-6 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-all duration-300 relative overflow-hidden h-auto min-h-48"
+      className="flex flex-col text-left group bg-bg-surface rounded-2xl md:rounded-3xl p-4 md:p-5 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-all duration-300 relative overflow-hidden h-auto min-h-40 md:min-h-44"
     >
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-accent-hover opacity-0 group-hover:opacity-100 transition-all" />
-      <div className="flex justify-between items-start mb-4 md:mb-6">
+      <div className="flex justify-between items-start mb-3 md:mb-5">
         <div className={cn(
-          "w-10 h-10 md:w-12 md:h-12 rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6",
+          "w-9 h-9 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6",
           color === 'primary' ? 'text-accent' : color === 'secondary' ? 'text-accent-text' : 'text-accent'
         )}>
-          <Icon className="w-5 h-5 md:w-6 md:h-6" />
+          <Icon className="w-4 h-4 md:w-5 md:h-5" />
         </div>
-        <span className="px-3 py-1 rounded-full bg-bg-page text-[9px] font-black uppercase tracking-widest text-text-secondary border border-border-subtle">
+        <span className="px-2 md:px-3 py-0.5 md:py-1 rounded-full bg-bg-page text-[8px] md:text-[9px] font-black uppercase tracking-widest text-text-secondary border border-border-subtle">
           {tag}
         </span>
       </div>
-      <h3 className="text-lg md:text-xl font-bold mb-2 text-text-primary group-hover:translate-x-1 transition-transform">{title}</h3>
-      <p className="text-[11px] md:text-xs text-text-secondary leading-relaxed mb-4 opacity-70 group-hover:opacity-100 transition-opacity line-clamp-3">
+      <h3 className="text-base md:text-lg font-bold mb-1.5 md:mb-2 text-text-primary group-hover:translate-x-1 transition-transform">{title}</h3>
+      <p className="text-[10px] md:text-[11px] text-text-secondary leading-relaxed mb-3 md:mb-4 opacity-70 group-hover:opacity-100 transition-opacity line-clamp-3">
         {description}
       </p>
-      <div className="mt-auto flex items-center text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity delay-100 text-text-tertiary">
+      <div className="mt-auto flex items-center text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity delay-100 text-text-tertiary">
         <span className="mr-2">&mdash;</span> Enter Mode
       </div>
     </button>
@@ -1879,19 +1930,19 @@ function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, 
     <button 
       onClick={onClick}
       className={cn(
-        "group flex flex-col p-5 md:p-6 rounded-2xl transition-all duration-300 relative overflow-hidden h-auto min-h-40 md:min-h-48 text-left",
+        "group flex flex-col p-4 md:p-5 rounded-2xl transition-all duration-300 relative overflow-hidden h-auto min-h-36 md:min-h-40 text-left",
         active 
           ? "bg-accent-muted border-2 border-accent" 
           : "bg-surface-container-high border border-border-subtle hover:border-accent/30"
       )}
     >
-      {active && <div className="absolute top-0 right-0 w-24 h-24 bg-accent/10 blur-3xl rounded-full" />}
+      {active && <div className="absolute top-0 right-0 w-20 md:w-24 h-20 md:h-24 bg-accent/10 blur-3xl rounded-full" />}
       <div className="flex justify-between items-start mb-auto">
         <div className={cn(
-          "w-10 h-10 md:w-11 md:h-11 rounded-xl flex items-center justify-center transition-colors",
+          "w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center transition-colors",
           active ? "bg-accent text-bg-page" : "bg-bg-page text-text-tertiary group-hover:text-accent-text"
         )}>
-          <Icon className="w-5 h-5" />
+          <Icon className="w-4 h-4 md:w-5 md:h-5" />
         </div>
         <div className="flex gap-1.5">
            <span className={cn(
@@ -1901,10 +1952,10 @@ function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, 
         </div>
       </div>
 
-      <div className="mt-4 md:mt-0">
-        <h3 className="text-base md:text-lg font-bold mb-4 tracking-tight leading-tight text-text-primary">{topic.name}</h3>
-        <div className="pt-4 border-t border-border-subtle space-y-2">
-          <div className="flex justify-between items-center text-[10px] font-black tracking-widest uppercase">
+      <div className="mt-3 md:mt-0">
+        <h3 className="text-sm md:text-base font-bold mb-3 md:mb-4 tracking-tight leading-tight text-text-primary">{topic.name}</h3>
+        <div className="pt-3 md:pt-4 border-t border-border-subtle space-y-1.5 md:space-y-2">
+          <div className="flex justify-between items-center text-[9px] md:text-[10px] font-black tracking-widest uppercase">
             <span className={active ? "text-accent-text" : "text-text-tertiary"}>{topic.questionsCount} Questions</span>
             <span className={active ? "text-accent-text" : "text-text-tertiary"}>{topic.mastery}% Mastery</span>
           </div>

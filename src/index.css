@@ -1,4 +1,16 @@
-:root {
+@import "tailwindcss";
+
+/* 
+  Dummy media query to tell Android Chrome/mobile browsers that we handle dark mode.
+  This disables the aggressive "Auto Dark Theme" mathematical inversion.
+*/
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
+
+:root, [data-theme="light"] {
   color-scheme: light;
   /* Backgrounds — 4 levels of depth */
   --bg-page:           #F4F5F7;   /* page / outermost shell */
@@ -99,8 +111,6 @@
   --q-active-text:     #A0ADFB;
   --q-flagged-dot:     #FBB83A;
 }
-
-@import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
