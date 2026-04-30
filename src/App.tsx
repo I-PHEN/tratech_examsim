@@ -110,22 +110,23 @@ export default function App() {
             animate={{ x: 0 }}
             exit={{ x: -100 }}
             className={cn(
-              "bg-bg-surface border-r border-border-subtle transition-all duration-300 z-50 flex flex-col pt-4 hidden md:flex",
+              "bg-bg-surface border-r border-border-subtle transition-all duration-300 z-50 flex flex-col pt-4 hidden md:flex overflow-hidden",
               isSidebarExpanded ? "w-64" : "w-16"
             )}
             onMouseEnter={() => setIsSidebarExpanded(true)}
             onMouseLeave={() => setIsSidebarExpanded(false)}
           >
-            <div className="px-4 mb-8 flex items-center gap-3">
+            <div className="px-4 mb-8 flex items-center gap-3 h-8 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center shrink-0">
                 <span className="text-accent font-black">G</span>
               </div>
-              {isSidebarExpanded && (
-                <div className="flex flex-col whitespace-nowrap">
-                  <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
-                  <span className="text-[10px] text-text-tertiary uppercase tracking-widest">Stoic Performance</span>
-                </div>
-              )}
+              <div className={cn(
+                "flex flex-col whitespace-nowrap transition-opacity duration-300",
+                isSidebarExpanded ? "opacity-100 delay-100" : "opacity-0"
+              )}>
+                <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
+                <span className="text-[10px] text-text-tertiary uppercase tracking-widest leading-none">Stoic Performance</span>
+              </div>
             </div>
 
             <div className="flex-1 px-3 space-y-2">
@@ -136,25 +137,31 @@ export default function App() {
             </div>
 
             <div className="mt-auto px-3 pb-6 space-y-4">
-              <div className="flex items-center gap-3 px-2">
-                <div className="relative">
+              <div className="flex items-center gap-3 px-2 h-6">
+                <div className="relative shrink-0 ml-[2px]">
                   <Zap className="w-5 h-5 text-tertiary fill-tertiary" />
                   <span className="absolute -top-2 -right-2 text-[10px] bg-bg-sunken text-text-primary rounded-full px-1 font-bold border border-border-subtle">7</span>
                 </div>
-                {isSidebarExpanded && <span className="text-sm text-text-secondary font-semibold uppercase tracking-wide">Streak</span>}
+                <span className={cn(
+                  "text-sm text-text-secondary font-semibold uppercase tracking-wide transition-opacity duration-300 whitespace-nowrap",
+                  isSidebarExpanded ? "opacity-100 delay-100" : "opacity-0"
+                )}>
+                  Streak
+                </span>
               </div>
               <NavItem icon={Settings} label="Settings" expanded={isSidebarExpanded} />
               <NavItem icon={HelpCircle} label="Help" expanded={isSidebarExpanded} />
-              <div className="pt-4 border-t border-border-subtle flex items-center gap-3 px-1">
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-border-medium shrink-0">
+              <div className="pt-4 border-t border-border-subtle flex items-center gap-3 px-1 h-[4.5rem]">
+                <div className="w-8 h-8 rounded-full overflow-hidden border border-border-medium shrink-0 ml-[2px]">
                   <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" alt="Profile" />
                 </div>
-                {isSidebarExpanded && (
-                  <div className="flex flex-col overflow-hidden">
-                    <span className="text-sm font-semibold text-text-primary truncate">Kwame A.</span>
-                    <span className="text-xs text-text-tertiary truncate">Candidate</span>
-                  </div>
-                )}
+                <div className={cn(
+                  "flex flex-col whitespace-nowrap transition-opacity duration-300",
+                  isSidebarExpanded ? "opacity-100 delay-100" : "opacity-0"
+                )}>
+                  <span className="text-sm font-semibold text-text-primary">Kwame A.</span>
+                  <span className="text-xs text-text-tertiary">Candidate</span>
+                </div>
               </div>
             </div>
           </motion.nav>
@@ -215,7 +222,7 @@ export default function App() {
                 >
                   <header>
                     <p className="text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 1</p>
-                    <h2 className="text-4xl font-bold tracking-tight text-text-primary uppercase italic">What do you want to tackle today?</h2>
+                    <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">What do you want to tackle today?</h2>
                   </header>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -256,7 +263,7 @@ export default function App() {
                 >
                   <header>
                     <p className="text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 2</p>
-                    <h2 className="text-4xl font-bold tracking-tight text-text-primary uppercase italic">Choose your course</h2>
+                    <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Choose your course</h2>
                   </header>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -288,7 +295,7 @@ export default function App() {
                 >
                   <header>
                     <p className="text-sm font-bold text-outline uppercase tracking-[0.2em] mb-1">Step 2 of 2</p>
-                    <h2 className="text-4xl font-bold tracking-tight">Pick a topic and begin</h2>
+                    <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight">Pick a topic and begin</h2>
                     <nav className="flex items-center gap-2 text-xs text-on-surface-variant mt-2 uppercase tracking-widest font-bold">
                        <span>Home</span> / <span>Practice by Topic</span> / <span className="text-primary">{state.selectedCourse.name}</span>
                     </nav>
@@ -1538,12 +1545,13 @@ function NavItem({ icon: Icon, label, active = false, expanded = false }: { icon
         active ? "bg-accent-muted text-accent-text border-l-2 border-accent" : "text-text-tertiary hover:text-text-primary hover:bg-bg-raised"
       )}
     >
-      <Icon className={cn("w-5 h-5 shrink-0", active && "fill-accent/20")} />
-      {expanded && (
-        <span className="ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap">
-          {label}
-        </span>
-      )}
+      <Icon className={cn("w-5 h-5 shrink-0 ml-0.5", active && "fill-accent/20")} />
+      <span className={cn(
+        "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-300",
+        expanded ? "opacity-100" : "opacity-0"
+      )}>
+        {label}
+      </span>
     </button>
   );
 }

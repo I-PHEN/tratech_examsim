@@ -50,10 +50,10 @@
 
 [data-theme="dark"] {
   /* Backgrounds — 4 levels of depth */
-  --bg-page:           #0D1117;   /* deepest — page shell */
-  --bg-surface:        #161B27;   /* cards, sidebar, top bar */
-  --bg-raised:         #1E2535;   /* hover states, diagram containers */
-  --bg-sunken:         #252D40;   /* input fields, code blocks */
+  --bg-page:           #121212;   /* deepest — page shell */
+  --bg-surface:        #1E1E1E;   /* cards, sidebar, top bar */
+  --bg-raised:         #2C2C2C;   /* hover states, diagram containers */
+  --bg-sunken:         #383838;   /* input fields, code blocks */
 
   /* Accent — brightened for dark bg legibility */
   --accent:            #7B8CFA;
@@ -62,13 +62,13 @@
   --accent-text:       #A0ADFB;
 
   /* Text — 3 levels */
-  --text-primary:      #E8EAF0;   /* main readable text */
-  --text-secondary:    #9BA3B8;   /* labels, stats */
-  --text-tertiary:     #5C6478;   /* captions, placeholders */
+  --text-primary:      #F0F0F0;   /* main readable text */
+  --text-secondary:    #AAAAAA;   /* labels, stats */
+  --text-tertiary:     #7A7A7A;   /* captions, placeholders */
 
   /* Borders */
-  --border-subtle:     #252D40;   /* default — very quiet */
-  --border-medium:     #363F58;   /* hover, active inputs */
+  --border-subtle:     #2C2C2C;   /* default — very quiet */
+  --border-medium:     #424242;   /* hover, active inputs */
   --border-accent:     #7B8CFA;
 
   /* Semantic */
@@ -88,9 +88,9 @@
   --timer-urgent:      #F87171;
 
   /* Sidebar question button states */
-  --q-default-bg:      #1E2535;
-  --q-default-text:    #9BA3B8;
-  --q-answered-bg:     #0D2B1A;
+  --q-default-bg:      #2C2C2C;
+  --q-default-text:    #AAAAAA;
+  --q-answered-bg:     #122C1E;
   --q-answered-text:   #4ADE80;
   --q-active-bg:       #7B8CFA18;
   --q-active-border:   #7B8CFA;
