@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   /* Backgrounds — 4 levels of depth */
   --bg-page:           #F4F5F7;   /* page / outermost shell */
   --bg-surface:        #FFFFFF;   /* cards, sidebar, top bar */
@@ -49,6 +50,7 @@
 }
 
 [data-theme="dark"] {
+  color-scheme: dark;
   /* Backgrounds — 4 levels of depth */
   --bg-page:           #121212;   /* deepest — page shell */
   --bg-surface:        #1E1E1E;   /* cards, sidebar, top bar */

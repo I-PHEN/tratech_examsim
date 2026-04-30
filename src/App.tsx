@@ -204,30 +204,31 @@ export default function App() {
             )}
             <div className="flex items-center gap-6">
               <div className="flex items-center gap-4">
-                <div className="flex flex-col">
-                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1">Academic Year</span>
+                <div className="flex flex-col relative w-24">
+                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Year</span>
                    <select 
                      value={state.year}
                      onChange={(e) => setState(p => ({ ...p, year: e.target.value as any }))}
-                     className="bg-transparent border-none text-sm font-bold text-text-primary cursor-pointer outline-none hover:text-primary transition-colors"
+                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-3 py-1.5 text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pb-1.5 pr-8"
                    >
-                     <option value="Year 1">Year 1</option>
-                     <option value="Year 2">Year 2</option>
-                     <option value="Year 3">Year 3</option>
-                     <option value="Year 4">Year 4</option>
+                     <option value="Year 1" className="bg-bg-page text-text-primary">Year 1</option>
+                     <option value="Year 2" className="bg-bg-page text-text-primary">Year 2</option>
+                     <option value="Year 3" className="bg-bg-page text-text-primary">Year 3</option>
+                     <option value="Year 4" className="bg-bg-page text-text-primary">Year 4</option>
                    </select>
+                   <ChevronDown className="absolute right-2 bottom-2 w-4 h-4 text-text-secondary pointer-events-none" />
                 </div>
-                <div className="w-px h-8 bg-border-subtle" />
-                <div className="flex flex-col">
-                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1">Semester</span>
+                <div className="flex flex-col relative w-36">
+                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Semester</span>
                    <select 
                      value={state.semester}
                      onChange={(e) => setState(p => ({ ...p, semester: e.target.value as any }))}
-                     className="bg-transparent border-none text-sm font-bold text-text-primary cursor-pointer outline-none hover:text-primary transition-colors"
+                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-3 py-1.5 text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pb-1.5 pr-8"
                    >
-                     <option value="Sem 1">First Semester</option>
-                     <option value="Sem 2">Second Semester</option>
+                     <option value="Sem 1" className="bg-bg-page text-text-primary">First Sem</option>
+                     <option value="Sem 2" className="bg-bg-page text-text-primary">Second Sem</option>
                    </select>
+                   <ChevronDown className="absolute right-2 bottom-2 w-4 h-4 text-text-secondary pointer-events-none" />
                 </div>
               </div>
               <div className="text-xs font-medium text-text-secondary hidden sm:block">
@@ -256,7 +257,7 @@ export default function App() {
         </header>
 
         {/* Dynamic Content */}
-        <main className="flex-1 overflow-y-auto no-scrollbar p-8 pb-32">
+        <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 pb-32">
           <div className="max-w-5xl mx-auto">
             <AnimatePresence mode="wait">
               {state.step === 'MODE_SELECT' && (
@@ -265,11 +266,11 @@ export default function App() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="space-y-12"
+                  className="space-y-8 md:space-y-12"
                 >
                   <header>
-                    <p className="text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 1</p>
-                    <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">What do you want to tackle today?</h2>
+                    <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 1</p>
+                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">What do you want to tackle today?</h2>
                   </header>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -299,13 +300,13 @@ export default function App() {
                   </div>
 
                   {/* Recent Performance Section directly on dashboard */}
-                  <section className="pt-8 space-y-6">
+                  <section className="pt-4 md:pt-8 space-y-4 md:space-y-6">
                     <header className="flex items-end justify-between">
                       <div>
-                         <p className="text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Analytics</p>
-                         <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Recent Performance</h2>
+                         <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Analytics</p>
+                         <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Recent Performance</h2>
                       </div>
-                      <button className="text-sm font-bold text-text-secondary hover:text-text-primary uppercase tracking-widest transition-colors">View All</button>
+                      <button className="text-xs md:text-sm font-bold text-text-secondary hover:text-text-primary uppercase tracking-widest transition-colors">View All</button>
                     </header>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -347,11 +348,11 @@ export default function App() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="space-y-12"
+                  className="space-y-8 md:space-y-12"
                 >
                   <header>
-                    <p className="text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 2</p>
-                    <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Choose your course</h2>
+                    <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 2</p>
+                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Choose your course</h2>
                   </header>
 
                   {COURSES.filter(c => c.year === state.year && c.semester === state.semester).length > 0 ? (
@@ -360,12 +361,12 @@ export default function App() {
                         <button
                           key={course.id}
                           onClick={() => handleCourseSelect(course)}
-                          className="group flex flex-col text-left p-6 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-48"
+                          className="group flex flex-col text-left p-5 md:p-6 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-auto min-h-40 md:min-h-48"
                         >
-                           <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full" />
-                           <h3 className="text-2xl font-bold mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
-                           <p className="text-on-surface-variant text-sm leading-relaxed max-w-xs">{course.description}</p>
-                           <div className="mt-auto flex items-center text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
+                           <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-primary/5 blur-3xl rounded-full" />
+                           <h3 className="text-xl md:text-2xl font-bold mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
+                           <p className="text-on-surface-variant text-xs md:text-sm leading-relaxed max-w-xs mb-6 md:mb-0">{course.description}</p>
+                           <div className="mt-auto flex items-center text-[10px] md:text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
                              Select Course <ArrowRight className="w-3 h-3" />
                            </div>
                         </button>
@@ -391,12 +392,12 @@ export default function App() {
                   initial={{ opacity: 0, x: 20 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -20 }}
-                  className="space-y-8"
+                  className="space-y-6 md:space-y-8"
                 >
                   <header>
-                    <p className="text-sm font-bold text-outline uppercase tracking-[0.2em] mb-1">Step 2 of 2</p>
-                    <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight">Pick a topic and begin</h2>
-                    <nav className="flex items-center gap-2 text-xs text-on-surface-variant mt-2 uppercase tracking-widest font-bold">
+                    <p className="text-xs md:text-sm font-bold text-outline uppercase tracking-[0.2em] mb-1">Step 2 of 2</p>
+                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight">Pick a topic and begin</h2>
+                    <nav className="flex flex-wrap items-center gap-2 text-[10px] md:text-xs text-on-surface-variant mt-2 uppercase tracking-widest font-bold">
                        <span>Home</span> / <span>Practice by Topic</span> / <span className="text-primary">{state.selectedCourse.name}</span>
                     </nav>
                   </header>
@@ -539,43 +540,23 @@ export default function App() {
                       </div>
                     )}
                   </div>
+
+                  <div className="flex justify-center pt-8">
+                    <button 
+                      onClick={startExam}
+                      className="px-10 py-4 w-full md:w-auto rounded-2xl font-bold flex items-center justify-center gap-3 transition-all duration-300 transform bg-primary text-slate-950 hover:scale-105 hover:shadow-[0_0_30px_theme(colors.primary)] cursor-pointer"
+                    >
+                      <span>Start Solving</span>
+                      <ArrowRight className="w-5 h-5" />
+                    </button>
+                  </div>
                 </motion.div>
               )}
             </AnimatePresence>
           </div>
         </main>
 
-        {/* Footer */}
-        <footer className="absolute bottom-0 left-0 w-full bg-surface-container-low/90 backdrop-blur-xl border-t border-outline-variant/10 px-8 py-6 z-40 flex items-center justify-between">
-          <div className="flex flex-col">
-            <p className="text-xs text-on-surface-variant hidden md:block uppercase tracking-widest font-bold">
-              {state.step === 'READY' ? (
-                <span className="text-primary flex items-center gap-2 transition-all">
-                  <Zap className="w-4 h-4 fill-primary" /> Ready to initialize engine
-                </span>
-              ) : 'System Configuration in progress...'}
-            </p>
-            {state.step === 'READY' && (
-              <p className="text-[10px] text-on-surface-variant opacity-60 mt-1 uppercase tracking-widest leading-none">
-                {state.mode} • {state.selectedCourse?.name} {state.selectedTopic ? `• ${state.selectedTopic?.name}` : ''} • {state.questionCount} Qs
-              </p>
-            )}
-          </div>
-          
-          <button 
-            onClick={startExam}
-            disabled={state.step !== 'READY'}
-            className={cn(
-              "px-10 py-3 rounded-xl font-bold flex items-center gap-3 transition-all duration-300 transform",
-              state.step === 'READY'
-                ? "bg-primary text-slate-950 hover:scale-105 hover:shadow-[0_0_30px_theme(colors.primary)] cursor-pointer"
-                : "bg-surface-container-highest text-on-surface-variant opacity-50 cursor-not-allowed"
-            )}
-          >
-            Start Solving
-            <ArrowRight className="w-5 h-5" />
-          </button>
-        </footer>
+        {/* Footer removed from global layout, placed directly on READY step */}
       </>
     )}
     
@@ -1857,24 +1838,27 @@ function ModeCard({ title, description, tag, icon: Icon, color = 'primary', onCl
   return (
     <button 
       onClick={onClick}
-      className="flex flex-col text-left group bg-bg-surface rounded-2xl p-6 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-all duration-300 relative overflow-hidden h-64"
+      className="flex flex-col text-left group bg-bg-surface rounded-3xl p-5 md:p-6 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-all duration-300 relative overflow-hidden h-auto min-h-48"
     >
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-accent-hover opacity-0 group-hover:opacity-100 transition-all" />
-      <div className="flex justify-between items-start mb-6">
+      <div className="flex justify-between items-start mb-4 md:mb-6">
         <div className={cn(
-          "w-12 h-12 rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6",
+          "w-10 h-10 md:w-12 md:h-12 rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6",
           color === 'primary' ? 'text-accent' : color === 'secondary' ? 'text-accent-text' : 'text-accent'
         )}>
-          <Icon className="w-6 h-6" />
+          <Icon className="w-5 h-5 md:w-6 md:h-6" />
         </div>
         <span className="px-3 py-1 rounded-full bg-bg-page text-[9px] font-black uppercase tracking-widest text-text-secondary border border-border-subtle">
           {tag}
         </span>
       </div>
-      <h3 className="text-xl font-bold mb-2 text-text-primary group-hover:translate-x-1 transition-transform">{title}</h3>
-      <p className="text-xs text-text-secondary leading-relaxed mb-auto opacity-70 group-hover:opacity-100 transition-opacity line-clamp-3">
+      <h3 className="text-lg md:text-xl font-bold mb-2 text-text-primary group-hover:translate-x-1 transition-transform">{title}</h3>
+      <p className="text-[11px] md:text-xs text-text-secondary leading-relaxed mb-4 opacity-70 group-hover:opacity-100 transition-opacity line-clamp-3">
         {description}
       </p>
+      <div className="mt-auto flex items-center text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity delay-100 text-text-tertiary">
+        <span className="mr-2">&mdash;</span> Enter Mode
+      </div>
     </button>
   );
 }
@@ -1895,16 +1879,16 @@ function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, 
     <button 
       onClick={onClick}
       className={cn(
-        "group flex flex-col p-6 rounded-2xl transition-all duration-300 relative overflow-hidden h-52 text-left",
+        "group flex flex-col p-5 md:p-6 rounded-2xl transition-all duration-300 relative overflow-hidden h-auto min-h-40 md:min-h-48 text-left",
         active 
           ? "bg-accent-muted border-2 border-accent" 
-          : "bg-bg-surface border border-border-subtle hover:border-accent/30"
+          : "bg-surface-container-high border border-border-subtle hover:border-accent/30"
       )}
     >
       {active && <div className="absolute top-0 right-0 w-24 h-24 bg-accent/10 blur-3xl rounded-full" />}
       <div className="flex justify-between items-start mb-auto">
         <div className={cn(
-          "w-11 h-11 rounded-xl flex items-center justify-center transition-colors",
+          "w-10 h-10 md:w-11 md:h-11 rounded-xl flex items-center justify-center transition-colors",
           active ? "bg-accent text-bg-page" : "bg-bg-page text-text-tertiary group-hover:text-accent-text"
         )}>
           <Icon className="w-5 h-5" />
@@ -1917,8 +1901,8 @@ function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, 
         </div>
       </div>
 
-      <div>
-        <h3 className="text-lg font-bold mb-4 tracking-tight leading-tight text-text-primary">{topic.name}</h3>
+      <div className="mt-4 md:mt-0">
+        <h3 className="text-base md:text-lg font-bold mb-4 tracking-tight leading-tight text-text-primary">{topic.name}</h3>
         <div className="pt-4 border-t border-border-subtle space-y-2">
           <div className="flex justify-between items-center text-[10px] font-black tracking-widest uppercase">
             <span className={active ? "text-accent-text" : "text-text-tertiary"}>{topic.questionsCount} Questions</span>
