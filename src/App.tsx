@@ -12,6 +12,7 @@ import {
   History, 
   Zap, 
   Settings, 
+  Bell,
   HelpCircle, 
   ArrowRight,
   Target,
@@ -38,7 +39,8 @@ import {
   ChevronDown,
   Sparkles,
   Send,
-  LucideIcon
+  LucideIcon,
+  AlertCircle
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, COURSES, Question, QuestionType, TimerSession } from './types';
 import { cn } from './lib/utils';
@@ -55,10 +57,14 @@ export default function App() {
     selectedCourse: null,
     selectedTopic: null,
     difficulty: 'Medium',
-    questionCount: 10
+    questionCount: 10,
+    practiceTimeLimit: 20,
+    year: 'Year 3',
+    semester: 'Sem 1'
   });
 
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
+  const [isRecentActivitiesOpen, setIsRecentActivitiesOpen] = useState(false);
 
   const handleModeSelect = (mode: StudyMode) => {
     setState(prev => ({ ...prev, mode, step: 'COURSE_SELECT' }));
@@ -131,7 +137,7 @@ export default function App() {
 
             <div className="flex-1 px-3 space-y-2">
               <NavItem icon={Home} label="Home" active expanded={isSidebarExpanded} />
-              <NavItem icon={Library} label="Question Bank" expanded={isSidebarExpanded} />
+              <NavItem icon={Target} label="Targeted Practice" expanded={isSidebarExpanded} />
               <NavItem icon={History} label="My Sessions" expanded={isSidebarExpanded} />
               <NavItem icon={Activity} label="Performance" expanded={isSidebarExpanded} />
             </div>
@@ -177,6 +183,7 @@ export default function App() {
             courseName={state.selectedCourse?.name || 'Session'} 
             mode={state.mode!} 
             totalQuestions={state.questionCount}
+            practiceTimeLimit={state.practiceTimeLimit}
           />
         ) : state.step === 'REVIEW' ? (
           <ReviewScreen 
@@ -188,23 +195,63 @@ export default function App() {
         ) : (
           <>
             {/* Header */}
-        <header className="h-16 flex items-center justify-between px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-outline-variant">
-          <div className="flex items-center gap-4">
+        <header className="h-20 flex items-center justify-between px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-outline-variant">
+          <div className="flex items-center gap-6">
             {state.step !== 'MODE_SELECT' && (
-              <button onClick={goBack} className="p-2 hover:bg-bg-raised/50 rounded-lg transition-colors group">
+              <button onClick={goBack} className="p-2 hover:bg-bg-raised/50 rounded-lg transition-colors group shrink-0">
                 <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary group-hover:-translate-x-1 transition-all" />
               </button>
             )}
-            <h1 className="text-xl font-bold tracking-tight text-text-primary">
-              {state.step === 'MODE_SELECT' ? 'Home' : state.selectedCourse?.name || 'Selection'}
-            </h1>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center gap-4">
+                <div className="flex flex-col">
+                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1">Academic Year</span>
+                   <select 
+                     value={state.year}
+                     onChange={(e) => setState(p => ({ ...p, year: e.target.value as any }))}
+                     className="bg-transparent border-none text-sm font-bold text-text-primary cursor-pointer outline-none hover:text-primary transition-colors"
+                   >
+                     <option value="Year 1">Year 1</option>
+                     <option value="Year 2">Year 2</option>
+                     <option value="Year 3">Year 3</option>
+                     <option value="Year 4">Year 4</option>
+                   </select>
+                </div>
+                <div className="w-px h-8 bg-border-subtle" />
+                <div className="flex flex-col">
+                   <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1">Semester</span>
+                   <select 
+                     value={state.semester}
+                     onChange={(e) => setState(p => ({ ...p, semester: e.target.value as any }))}
+                     className="bg-transparent border-none text-sm font-bold text-text-primary cursor-pointer outline-none hover:text-primary transition-colors"
+                   >
+                     <option value="Sem 1">First Semester</option>
+                     <option value="Sem 2">Second Semester</option>
+                   </select>
+                </div>
+              </div>
+              <div className="text-xs font-medium text-text-secondary hidden sm:block">
+                 Department of Chemical Engineering
+              </div>
+            </div>
           </div>
-          <div className="flex items-center gap-4">
-            <ThemeToggle />
-            <button className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-raised/50 transition-all active:scale-95">
-              <History className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full shadow-[0_0_8px_var(--accent)]" />
-            </button>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 border-r border-border-subtle pr-6">
+              <ThemeToggle />
+              <button 
+                onClick={() => setIsRecentActivitiesOpen(true)}
+                className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-raised/50 transition-all active:scale-95"
+              >
+                <History className="w-5 h-5" />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-accent rounded-full shadow-[0_0_8px_var(--accent)]" />
+              </button>
+            </div>
+            <div className="flex items-center gap-4">
+               <button className="text-text-secondary hover:text-text-primary transition-colors relative">
+                  <Bell className="w-5 h-5" />
+                  <span className="absolute top-0 right-0 w-2 h-2 bg-primary rounded-full border border-bg-page" />
+               </button>
+            </div>
           </div>
         </header>
 
@@ -250,6 +297,47 @@ export default function App() {
                       onClick={() => handleModeSelect('FULL_EXAM')}
                     />
                   </div>
+
+                  {/* Recent Performance Section directly on dashboard */}
+                  <section className="pt-8 space-y-6">
+                    <header className="flex items-end justify-between">
+                      <div>
+                         <p className="text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Analytics</p>
+                         <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Recent Performance</h2>
+                      </div>
+                      <button className="text-sm font-bold text-text-secondary hover:text-text-primary uppercase tracking-widest transition-colors">View All</button>
+                    </header>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {MOCK_ACTIVITIES.filter(a => a.type === 'completed').map(activity => (
+                        <div key={activity.id} className="p-6 rounded-3xl bg-surface-container-high border border-outline-variant/20 hover:border-outline-variant/40 transition-colors flex gap-6 items-center group cursor-pointer">
+                           <div className="w-16 h-16 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
+                              <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
+                                 <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
+                                 <circle cx="32" cy="32" r="28" fill="transparent" stroke={activity.percent! >= 50 ? "var(--success-text)" : "var(--danger-text)"} strokeWidth="4" strokeDasharray={`${(activity.percent! / 100) * 175.9} 175.9`} strokeLinecap="round" />
+                              </svg>
+                              <span className={cn(
+                                 "text-sm font-black",
+                                 activity.percent! >= 50 ? "text-success-text" : "text-danger-text"
+                              )}>
+                                 {activity.score}
+                              </span>
+                           </div>
+                           <div className="flex-1 min-w-0">
+                               <h4 className="text-base font-bold text-text-primary truncate">{activity.title}</h4>
+                               <p className="text-sm text-text-secondary truncate mt-1">{activity.subtitle}</p>
+                               <div className="flex items-center gap-3 mt-3">
+                                  <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest bg-bg-sunken px-2 py-1 rounded-md">{activity.time}</span>
+                                  <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest">{activity.percent}% Yield</span>
+                               </div>
+                           </div>
+                           <div className="p-3 rounded-xl bg-bg-raised text-text-secondary group-hover:text-text-primary group-hover:bg-bg-sunken transition-colors">
+                              <ArrowRight className="w-5 h-5" />
+                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
                 </motion.div>
               )}
 
@@ -266,22 +354,34 @@ export default function App() {
                     <h2 className="text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Choose your course</h2>
                   </header>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {COURSES.map(course => (
-                      <button
-                        key={course.id}
-                        onClick={() => handleCourseSelect(course)}
-                        className="group flex flex-col text-left p-6 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-48"
-                      >
-                         <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full" />
-                         <h3 className="text-2xl font-bold mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
-                         <p className="text-on-surface-variant text-sm leading-relaxed max-w-xs">{course.description}</p>
-                         <div className="mt-auto flex items-center text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
-                           Select Course <ArrowRight className="w-3 h-3" />
-                         </div>
-                      </button>
-                    ))}
-                  </div>
+                  {COURSES.filter(c => c.year === state.year && c.semester === state.semester).length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {COURSES.filter(c => c.year === state.year && c.semester === state.semester).map(course => (
+                        <button
+                          key={course.id}
+                          onClick={() => handleCourseSelect(course)}
+                          className="group flex flex-col text-left p-6 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-48"
+                        >
+                           <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 blur-3xl rounded-full" />
+                           <h3 className="text-2xl font-bold mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
+                           <p className="text-on-surface-variant text-sm leading-relaxed max-w-xs">{course.description}</p>
+                           <div className="mt-auto flex items-center text-xs font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
+                             Select Course <ArrowRight className="w-3 h-3" />
+                           </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center p-12 bg-surface-container/50 border border-border-subtle rounded-3xl text-center">
+                      <div className="w-16 h-16 bg-bg-sunken rounded-2xl flex items-center justify-center mb-6">
+                         <Target className="w-8 h-8 text-text-tertiary opacity-50" />
+                      </div>
+                      <h3 className="text-lg font-bold text-text-primary mb-2">No Courses Available</h3>
+                      <p className="text-text-secondary text-sm max-w-md mx-auto">
+                        There are no simulated mock exams available for {state.year}, {state.semester} yet. Check back later or select a different academic period.
+                      </p>
+                    </div>
+                  )}
                 </motion.div>
               )}
 
@@ -301,18 +401,7 @@ export default function App() {
                     </nav>
                   </header>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {state.selectedCourse.topics.map(topic => (
-                      <TopicCard 
-                        key={topic.id}
-                        topic={topic}
-                        active={state.selectedTopic?.id === topic.id}
-                        onClick={() => handleTopicSelect(topic)}
-                      />
-                    ))}
-                  </div>
-
-                  <div className="pt-8 border-t border-white/5 flex flex-col md:flex-row gap-8">
+                  <div className="pb-8 border-b border-white/5 flex flex-col md:flex-row gap-8">
                     <div className="space-y-4">
                       <span className="block text-[10px] font-bold text-outline uppercase tracking-widest">Difficulty</span>
                       <div className="flex gap-2">
@@ -338,7 +427,7 @@ export default function App() {
                         {[5, 10, 20].map(q => (
                           <button 
                              key={q}
-                             onClick={() => setState(s => ({ ...s, questionCount: q as any }))}
+                             onClick={() => setState(s => ({ ...s, questionCount: q as any, practiceTimeLimit: q * 2 }))}
                              className={cn(
                                "px-6 py-2 rounded-full text-xs font-bold transition-all border",
                                state.questionCount === q
@@ -351,6 +440,104 @@ export default function App() {
                         ))}
                       </div>
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {state.selectedCourse.topics.map(topic => (
+                      <TopicCard 
+                        key={topic.id}
+                        topic={topic}
+                        active={state.selectedTopic?.id === topic.id}
+                        onClick={() => handleTopicSelect(topic)}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+
+              {state.step === 'READY' && (
+                <motion.div
+                  key="ready"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 1.05 }}
+                  className="max-w-2xl mx-auto space-y-8 mt-8"
+                >
+                  <div className="text-center space-y-4 mb-12">
+                    <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <Zap className="w-10 h-10 text-primary" />
+                    </div>
+                    <h2 className="text-3xl italic font-['Times_New_Roman'] font-bold text-text-primary capitalize">
+                      {state.mode === 'PRACTICE' ? 'Targeted Practice Ready' : 
+                       state.mode === 'MIDSEM' ? 'Midsem Simulation Ready' : 
+                       'Full Exam Simulation Ready'}
+                    </h2>
+                    <p className="text-text-secondary text-sm">
+                      {state.mode === 'PRACTICE' ? 'Focus mode engaged. Time to solidify those concepts.' :
+                       'Deep breath. You are about to enter exam conditions.'}
+                    </p>
+                  </div>
+
+                  <div className="p-8 rounded-2xl bg-surface-container-high border border-border-medium shadow-xl space-y-6">
+                    <div className="flex items-center gap-4 pb-6 border-b border-border-subtle">
+                      <div className="w-12 h-12 bg-bg-sunken rounded-xl flex items-center justify-center shrink-0">
+                        {state.mode === 'PRACTICE' ? <Target className="w-6 h-6 text-primary" /> : <Timer className="w-6 h-6 text-tertiary" />}
+                      </div>
+                      <div>
+                        <h3 className="text-lg font-bold text-text-primary">{state.selectedCourse?.name}</h3>
+                        <p className="text-sm text-text-secondary">
+                          {state.mode === 'PRACTICE' && state.selectedTopic 
+                            ? `Topic: ${state.selectedTopic.name}` 
+                            : state.mode === 'MIDSEM' 
+                            ? 'First Half Syllabus (Weeks 1-6)' 
+                            : 'Comprehensive Coverage'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 rounded-xl bg-bg-sunken border border-border-subtle flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Questions</span>
+                        <span className="text-xl font-bold text-text-primary">
+                          {state.mode === 'PRACTICE' ? state.questionCount :
+                           state.mode === 'MIDSEM' ? 30 : 60}
+                        </span>
+                      </div>
+                      
+                      <div className="p-4 rounded-xl bg-bg-sunken border border-border-subtle flex flex-col gap-1">
+                        <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Time Limit</span>
+                        {state.mode === 'PRACTICE' ? (
+                          <div className="flex items-center gap-2">
+                             <input 
+                               type="number" 
+                               min="1" 
+                               max="120"
+                               value={state.practiceTimeLimit} 
+                               onChange={(e) => setState(s => ({ ...s, practiceTimeLimit: parseInt(e.target.value) || 1 }))}
+                               className="bg-transparent border-b border-primary/50 text-xl font-bold text-text-primary w-16 outline-none focus:border-primary transition-colors text-center"
+                             />
+                             <span className="text-sm font-medium text-text-secondary">mins</span>
+                          </div>
+                        ) : (
+                          <span className="text-xl font-bold text-text-primary">
+                            {state.mode === 'MIDSEM' ? '60 mins' : '150 mins'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {state.mode !== 'PRACTICE' && (
+                      <div className="mt-6 p-4 rounded-xl bg-red-900/10 border border-red-500/20">
+                        <h4 className="flex items-center gap-2 text-sm font-bold text-red-400 mb-2">
+                          <AlertCircle className="w-4 h-4" /> Strict Conditions
+                        </h4>
+                        <ul className="text-xs text-text-secondary space-y-1 list-disc pl-5">
+                          <li>Timer cannot be paused once started.</li>
+                          <li>Ensure stable connection before proceeding.</li>
+                          <li>Results will impact your overall performance metrics.</li>
+                        </ul>
+                      </div>
+                    )}
                   </div>
                 </motion.div>
               )}
@@ -391,8 +578,118 @@ export default function App() {
         </footer>
       </>
     )}
+    
+    <RecentActivitiesDrawer isOpen={isRecentActivitiesOpen} onClose={() => setIsRecentActivitiesOpen(false)} />
   </div>
 </div>
+  );
+}
+
+const MOCK_ACTIVITIES = [
+  {
+    id: "1",
+    type: "in-progress",
+    title: "Advanced Mathematics",
+    subtitle: "Exam Simulation - Midterm",
+    progress: "12 / 20",
+    time: "2 hours ago"
+  },
+  {
+    id: "2",
+    type: "completed",
+    title: "Physics Mechanics",
+    subtitle: "Practice: Vectors & Kinematics",
+    score: "18",
+    total: "20",
+    percent: 90,
+    time: "Yesterday"
+  },
+  {
+    id: "3",
+    type: "completed",
+    title: "Chemistry 101",
+    subtitle: "Practice: Atomic Structure",
+    score: "8",
+    total: "20",
+    percent: 40,
+    time: "3 days ago"
+  }
+];
+
+function RecentActivitiesDrawer({ isOpen, onClose }: { isOpen: boolean, onClose: () => void }) {
+  const inProgressActivities = MOCK_ACTIVITIES.filter(a => a.type === 'in-progress');
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <>
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="fixed inset-0 bg-bg-page/80 backdrop-blur-sm z-50"
+          />
+          <motion.div
+            initial={{ x: '100%' }}
+            animate={{ x: 0 }}
+            exit={{ x: '100%' }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-bg-surface border-l border-border-subtle z-50 flex flex-col shadow-2xl"
+          >
+            <div className="flex items-center justify-between p-6 border-b border-border-subtle shrink-0 bg-bg-surface/80 backdrop-blur-md">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-accent/10 rounded-xl flex items-center justify-center">
+                  <History className="w-5 h-5 text-accent" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-text-primary tracking-tight uppercase">Recent Activities</h2>
+                  <p className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest">Session History & Drafts</p>
+                </div>
+              </div>
+              <button 
+                onClick={onClose}
+                className="p-2 hover:bg-bg-raised rounded-lg text-text-secondary hover:text-text-primary transition-colors active:scale-95"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar">
+               <section className="space-y-4">
+                  <h3 className="text-xs font-black text-text-secondary uppercase tracking-[0.2em]">In Progress</h3>
+                  
+                  {inProgressActivities.length > 0 ? (
+                    <div className="space-y-3">
+                      {inProgressActivities.map(activity => (
+                        <div key={activity.id} className="p-4 rounded-2xl bg-bg-sunken border border-border-subtle hover:border-accent/40 transition-colors cursor-pointer group">
+                           <div className="flex justify-between items-start mb-3">
+                              <div>
+                                 <h4 className="text-sm font-bold text-text-primary">{activity.title}</h4>
+                                 <p className="text-xs text-text-secondary">{activity.subtitle}</p>
+                              </div>
+                              <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest">{activity.time}</span>
+                           </div>
+                           <div className="flex items-center justify-between text-xs font-bold text-accent">
+                              <span className="uppercase tracking-widest">Resume Session</span>
+                              <span>{activity.progress} Questions</span>
+                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center py-12">
+                       <History className="w-12 h-12 text-text-tertiary mb-4 opacity-50" />
+                       <h3 className="text-sm font-bold text-text-primary uppercase tracking-wider">No Sessions In Progress</h3>
+                       <p className="text-xs text-text-tertiary max-w-[200px] leading-relaxed mt-2">Unfinished drafts will appear here.</p>
+                    </div>
+                  )}
+               </section>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -1002,7 +1299,7 @@ const MOCK_QUESTIONS: Question[] = ([
   marks: 1.0 + (i % 3) * 0.5
 })));
 
-function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions }: { onBack: () => void, onFinish: (qs: Question[], ans: Record<number, string>) => void, courseName: string, mode: StudyMode, totalQuestions: number }) {
+function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, practiceTimeLimit }: { onBack: () => void, onFinish: (qs: Question[], ans: Record<number, string>) => void, courseName: string, mode: StudyMode, totalQuestions: number, practiceTimeLimit: number }) {
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
@@ -1014,8 +1311,8 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions }: 
     const saved = localStorage.getItem(storageKey);
     if (saved) return JSON.parse(saved);
     
-    // 1h for midsem, 2h for full exam, 30m for practice
-    const duration = mode === 'MIDSEM' ? 3600000 : mode === 'FULL_EXAM' ? 7200000 : 1800000;
+    // 1h for midsem, 2.5h for full exam, practiceTimeLimit (mins) for practice
+    const duration = mode === 'MIDSEM' ? 3600000 : mode === 'FULL_EXAM' ? 9000000 : practiceTimeLimit * 60000;
     return {
       startedAt: Date.now(),
       durationMs: duration,
