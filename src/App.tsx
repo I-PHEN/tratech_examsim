@@ -41,7 +41,8 @@ import {
   Send,
   Menu,
   LucideIcon,
-  AlertCircle
+  AlertCircle,
+  Circle
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, COURSES, Question, QuestionType, TimerSession } from './types';
 import { cn } from './lib/utils';
@@ -66,6 +67,7 @@ export default function App() {
 
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(false);
   const [isRecentActivitiesOpen, setIsRecentActivitiesOpen] = useState(false);
+  const [openSelect, setOpenSelect] = useState<'year' | 'semester' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
@@ -147,11 +149,75 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             onClick={() => setIsMobileMenuOpen(false)}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] md:hidden"
           />
         )}
       </AnimatePresence>
+
+      {openSelect && (
+        <>
+          <div
+            onClick={() => setOpenSelect(null)}
+            className="fixed inset-0 bg-transparent z-[60] md:hidden"
+          />
+          <div
+            className="fixed bottom-0 left-0 right-0 bg-surface-container-low border-t border-border-subtle rounded-t-[2.5rem] z-[70] p-6 md:hidden flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
+          >
+            <div className="flex items-center justify-end mb-6 px-2 gap-2">
+              <button
+                disabled={openSelect === 'year'}
+                onClick={() => setOpenSelect('year')}
+                className="px-4 py-2 bg-bg-raised text-text-secondary rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                Prev.
+              </button>
+              <button
+                disabled={openSelect === 'semester'}
+                onClick={() => setOpenSelect('semester')}
+                className="px-4 py-2 bg-[#1A1A1A] text-bg-page rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
+              >
+                Next
+              </button>
+            </div>
+            
+            <div className="w-full space-y-2 mb-2">
+              {(openSelect === 'year' ? ['Year 1', 'Year 2', 'Year 3', 'Year 4'] : ['Sem 1', 'Sem 2']).map((item) => (
+                <button
+                  key={item}
+                  onClick={() => { 
+                    setState(p => ({ ...p, [openSelect!]: item as any }));
+                    if (openSelect === 'year') {
+                      setTimeout(() => setOpenSelect('semester'), 50);
+                    } else {
+                      setTimeout(() => setOpenSelect(null), 50);
+                    }
+                  }}
+                  className="w-full flex items-center gap-4 p-3 hover:bg-bg-raised/50 rounded-xl transition-colors active:scale-95"
+                >
+                  <div className={cn(
+                    "w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-colors",
+                    state[openSelect!] === item ? "border-primary bg-transparent" : "border-outline-variant"
+                  )}>
+                     {state[openSelect!] === item && <div className="w-[10px] h-[10px] rounded-full bg-primary" />}
+                  </div>
+                  <span className="font-bold text-[15px] text-text-primary">{item}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 text-center pb-2">
+              <button
+                onClick={() => setOpenSelect(null)}
+                className="px-8 py-3 text-text-primary font-bold text-[15px] tracking-wide rounded-full transition-colors active:bg-bg-raised"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </>
+      )}
 
       {/* Sidebar - Hidden during Exam/Review for max focus */}
       <AnimatePresence>
@@ -161,7 +227,7 @@ export default function App() {
             animate={{ x: 0 }}
             exit={{ x: -100 }}
             className={cn(
-              "bg-bg-surface border-r border-border-subtle transition-all duration-300 z-[60] flex flex-col pt-4 overflow-hidden h-full",
+              "bg-bg-surface border-r border-border-subtle transition-[width,transform] duration-150 ease-out z-[60] flex flex-col pt-4 overflow-hidden h-full",
               "fixed inset-y-0 left-0 md:relative",
               isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
               isSidebarExpanded || isMobileMenuOpen ? "w-64" : "w-16"
@@ -174,8 +240,8 @@ export default function App() {
                 <span className="text-accent font-black">G</span>
               </div>
               <div className={cn(
-                "flex flex-col whitespace-nowrap transition-opacity duration-300",
-                isSidebarExpanded ? "opacity-100 delay-100" : "opacity-0"
+                "flex flex-col whitespace-nowrap transition-opacity duration-100",
+                isSidebarExpanded ? "opacity-100 " : "opacity-0"
               )}>
                 <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
                 <span className="text-[10px] text-text-tertiary uppercase tracking-widest leading-none">Stoic Performance</span>
@@ -196,8 +262,8 @@ export default function App() {
                   <span className="absolute -top-2 -right-2 text-[10px] bg-bg-sunken text-text-primary rounded-full px-1 font-bold border border-border-subtle">7</span>
                 </div>
                 <span className={cn(
-                  "text-sm text-text-secondary font-semibold uppercase tracking-wide transition-opacity duration-300 whitespace-nowrap",
-                  isSidebarExpanded ? "opacity-100 delay-100" : "opacity-0"
+                  "text-sm text-text-secondary font-semibold uppercase tracking-wide transition-opacity duration-100 whitespace-nowrap",
+                  isSidebarExpanded ? "opacity-100 " : "opacity-0"
                 )}>
                   Streak
                 </span>
@@ -209,8 +275,8 @@ export default function App() {
                   <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" alt="Profile" />
                 </div>
                 <div className={cn(
-                  "flex flex-col whitespace-nowrap transition-opacity duration-300",
-                  isSidebarExpanded ? "opacity-100 delay-100" : "opacity-0"
+                  "flex flex-col whitespace-nowrap transition-opacity duration-100",
+                  isSidebarExpanded ? "opacity-100 " : "opacity-0"
                 )}>
                   <span className="text-sm font-semibold text-text-primary">Kwame A.</span>
                   <span className="text-xs text-text-tertiary">Candidate</span>
@@ -247,45 +313,71 @@ export default function App() {
             {state.step === 'MODE_SELECT' ? (
               <button 
                 onClick={() => setIsMobileMenuOpen(true)}
-                className="md:hidden p-2 text-text-secondary hover:text-text-primary transition-colors -ml-1 shrink-0"
+                className="md:hidden p-2 text-text-secondary hover:text-text-primary  -ml-1 shrink-0"
               >
                 <Menu className="w-6 h-6" />
               </button>
             ) : (
               <button 
                 onClick={goBack} 
-                className="p-2 hover:bg-bg-raised/50 rounded-lg transition-colors group shrink-0 -ml-1 md:ml-0"
+                className="p-2 hover:bg-bg-raised/50 rounded-lg  group shrink-0 -ml-1 md:ml-0"
               >
-                <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary group-hover:-translate-x-1 transition-all" />
+                <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary group-hover:-translate-x-1 transition-[transform,opacity,box-shadow]" />
               </button>
             )}
             <div className="flex items-center gap-2 md:gap-6">
               <div className="flex items-center gap-1 md:gap-4">
                 <div className="flex flex-col relative w-[5.5rem] md:w-24">
                    <span className="hidden md:inline-block text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Year</span>
+                   {/* Desktop Select */}
                    <select 
                      value={state.year}
                      onChange={(e) => setState(p => ({ ...p, year: e.target.value as any }))}
-                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pr-5 md:pr-8"
+                     className="hidden md:block appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-[transform,opacity,box-shadow] pr-5 md:pr-8"
                    >
                      <option value="Year 1" className="bg-bg-page text-text-primary">Year 1</option>
                      <option value="Year 2" className="bg-bg-page text-text-primary">Year 2</option>
                      <option value="Year 3" className="bg-bg-page text-text-primary">Year 3</option>
                      <option value="Year 4" className="bg-bg-page text-text-primary">Year 4</option>
                    </select>
-                   <ChevronDown className="absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
+                   <ChevronDown className="hidden md:block absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
+
+                   {/* Mobile Button */}
+                   <button 
+                     onClick={() => setOpenSelect('year')}
+                     className={cn(
+                       "md:hidden flex items-center justify-between w-full bg-surface-container-low border rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors",
+                       openSelect === 'year' ? "border-primary text-primary" : "border-border-subtle text-text-primary"
+                     )}
+                   >
+                     {state.year}
+                     <ChevronDown className={cn("w-3 h-3", openSelect === 'year' ? "text-primary" : "text-text-secondary")} />
+                   </button>
                 </div>
                 <div className="flex flex-col relative w-[6rem] md:w-36">
                    <span className="hidden md:inline-block text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Semester</span>
+                   {/* Desktop Select */}
                    <select 
                      value={state.semester}
                      onChange={(e) => setState(p => ({ ...p, semester: e.target.value as any }))}
-                     className="appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-all pr-5 md:pr-8"
+                     className="hidden md:block appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-[transform,opacity,box-shadow] pr-5 md:pr-8"
                    >
                      <option value="Sem 1" className="bg-bg-page text-text-primary">Sem 1</option>
                      <option value="Sem 2" className="bg-bg-page text-text-primary">Sem 2</option>
                    </select>
-                   <ChevronDown className="absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
+                   <ChevronDown className="hidden md:block absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
+
+                   {/* Mobile Button */}
+                   <button 
+                     onClick={() => setOpenSelect('semester')}
+                     className={cn(
+                       "md:hidden flex items-center justify-between w-full bg-surface-container-low border rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors",
+                       openSelect === 'semester' ? "border-primary text-primary" : "border-border-subtle text-text-primary"
+                     )}
+                   >
+                     {state.semester}
+                     <ChevronDown className={cn("w-3 h-3", openSelect === 'semester' ? "text-primary" : "text-text-secondary")} />
+                   </button>
                 </div>
               </div>
               <div className="text-xs font-medium text-text-secondary hidden sm:block">
@@ -298,7 +390,7 @@ export default function App() {
               <ThemeToggle />
               <button 
                 onClick={() => setIsRecentActivitiesOpen(true)}
-                className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-raised/50 transition-all active:scale-95"
+                className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-raised/50 transition-[transform,opacity,box-shadow] active:scale-95"
               >
                 <History className="w-5 h-5 md:w-5 md:h-5" />
               </button>
@@ -411,7 +503,7 @@ export default function App() {
                         <button
                           key={course.id}
                           onClick={() => handleCourseSelect(course)}
-                          className="group flex flex-col text-left p-4 md:p-5 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-all duration-300 relative overflow-hidden h-auto min-h-36 md:min-h-40"
+                          className="group flex flex-col text-left p-4 md:p-5 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden h-auto min-h-36 md:min-h-40"
                         >
                            <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-primary/5 blur-3xl rounded-full" />
                            <h3 className="text-lg md:text-xl font-bold mb-1.5 md:mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
@@ -461,7 +553,7 @@ export default function App() {
                             key={d}
                             onClick={() => setState(s => ({ ...s, difficulty: d as any }))}
                             className={cn(
-                              "px-6 py-2 rounded-full text-xs font-bold transition-all border",
+                              "px-6 py-2 rounded-full text-xs font-bold transition-[transform,opacity,box-shadow] border",
                               state.difficulty === d 
                                 ? "bg-primary border-primary text-slate-950" 
                                 : "border-outline-variant/30 text-on-surface-variant hover:text-white"
@@ -480,7 +572,7 @@ export default function App() {
                              key={q}
                              onClick={() => setState(s => ({ ...s, questionCount: q as any, practiceTimeLimit: q * 2 }))}
                              className={cn(
-                               "px-6 py-2 rounded-full text-xs font-bold transition-all border",
+                               "px-6 py-2 rounded-full text-xs font-bold transition-[transform,opacity,box-shadow] border",
                                state.questionCount === q
                                  ? "bg-primary border-primary text-slate-950"
                                  : "border-outline-variant/30 text-on-surface-variant hover:text-white"
@@ -518,7 +610,7 @@ export default function App() {
                     <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-6">
                       <Zap className="w-10 h-10 text-primary" />
                     </div>
-                    <h2 className="text-3xl italic font-['Times_New_Roman'] font-bold text-text-primary capitalize">
+                    <h2 className="text-[24px] leading-[35px] italic font-['Times_New_Roman'] font-bold text-text-primary capitalize">
                       {state.mode === 'PRACTICE' ? 'Targeted Practice Ready' : 
                        state.mode === 'MIDSEM' ? 'Midsem Simulation Ready' : 
                        'Full Exam Simulation Ready'}
@@ -594,7 +686,7 @@ export default function App() {
                   <div className="flex justify-center pt-8">
                     <button 
                       onClick={startExam}
-                      className="px-10 py-4 w-full md:w-auto rounded-2xl font-bold flex items-center justify-center gap-3 transition-all duration-300 transform bg-primary text-slate-950 hover:scale-105 hover:shadow-[0_0_30px_theme(colors.primary)] cursor-pointer"
+                      className="px-10 py-4 w-full md:w-auto rounded-2xl font-bold flex items-center justify-center gap-3 transition-[transform,opacity,box-shadow] duration-100 transform bg-primary text-slate-950 hover:scale-105 hover:shadow-[0_0_30px_theme(colors.primary)] cursor-pointer"
                     >
                       <span>Start Solving</span>
                       <ArrowRight className="w-5 h-5" />
@@ -665,7 +757,7 @@ function RecentActivitiesDrawer({ isOpen, onClose }: { isOpen: boolean, onClose:
             initial={{ x: '100%' }}
             animate={{ x: 0 }}
             exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
             className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-bg-surface border-l border-border-subtle z-50 flex flex-col shadow-2xl"
           >
             <div className="flex items-center justify-between p-6 border-b border-border-subtle shrink-0 bg-bg-surface/80 backdrop-blur-md">
@@ -821,7 +913,7 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
 
               <button 
                 onClick={() => document.getElementById('review-list')?.scrollIntoView({ behavior: 'smooth' })}
-                className="w-full md:w-auto px-8 py-5 bg-text-primary text-bg-page font-black text-sm uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-all shadow-xl flex items-center justify-center gap-3"
+                className="w-full md:w-auto px-8 py-5 bg-text-primary text-bg-page font-black text-sm uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-[transform,opacity,box-shadow] shadow-xl flex items-center justify-center gap-3"
               >
                 Review Answers <ChevronDown className="w-4 h-4" />
               </button>
@@ -829,13 +921,13 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
           </section>
 
           {/* Filter Bar */}
-          <div id="review-list" className="flex items-center gap-3 pb-4 border-b border-border-subtle sticky top-0 bg-bg-page z-30 pt-4">
+          <div id="review-list" className="flex flex-wrap items-center gap-2 md:gap-3 pb-4 border-b border-border-subtle sticky top-0 bg-bg-page z-30 pt-4 w-full">
             {(['All', 'Correct', 'Incorrect', 'Unanswered'] as const).map(f => (
               <button 
                 key={f}
                 onClick={() => setFilter(f)}
                 className={cn(
-                  "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border",
+                  "px-4 md:px-6 py-1.5 md:py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
                   filter === f
                     ? "bg-text-primary border-text-primary text-bg-page"
                     : "bg-bg-raised border-border-subtle text-text-tertiary hover:text-text-primary hover:border-border-medium"
@@ -855,58 +947,55 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
               const isExpanded = expandedIdx === q.originalIdx;
 
               return (
-                <motion.div 
-                  layout
+                <div 
                   key={q.id}
                   className={cn(
-                    "bg-bg-surface border border-border-subtle rounded-2xl transition-all overflow-hidden",
+                    "bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden transition-colors",
                     isExpanded ? "ring-2 ring-accent/30 shadow-2xl" : "hover:border-border-medium"
                   )}
                 >
                   {/* Collapsed Item */}
                   <div 
                     onClick={() => setExpandedIdx(isExpanded ? null : q.originalIdx)}
-                    className="p-5 flex items-center justify-between gap-6 cursor-pointer select-none group"
+                    className="p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-6 cursor-pointer select-none group"
                   >
-                    <div className="flex items-center gap-4 flex-1 min-w-0">
-                      <span className="text-xs font-black text-text-tertiary shrink-0 w-8">Q{q.originalIdx + 1}</span>
-                      <p className="text-sm font-medium text-text-primary truncate">{q.prompt}</p>
+                    <div className="flex items-start md:items-center gap-3 md:gap-4 flex-1 min-w-0">
+                      <span className="text-xs font-black text-text-tertiary shrink-0 w-6 md:w-8 mt-0.5 md:mt-0">Q{q.originalIdx + 1}</span>
+                      <p className="text-sm font-medium text-text-primary line-clamp-2 md:truncate">{q.prompt}</p>
                     </div>
                     
-                    <div className="flex items-center gap-4 shrink-0">
-                      <div className={cn(
-                        "px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
-                        isUnanswered ? "bg-bg-raised text-text-tertiary" : isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
-                      )}>
-                        {isUnanswered ? "Unanswered" : isCorrect ? "Correct" : "Incorrect"}
+                    <div className="flex items-center justify-between md:justify-end gap-3 md:gap-4 shrink-0 pl-9 md:pl-0 w-full md:w-auto mt-2 md:mt-0">
+                      <div className="flex items-center gap-2 md:gap-4">
+                        <div className={cn(
+                          "px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
+                          isUnanswered ? "bg-bg-raised text-text-tertiary" : isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
+                        )}>
+                          {isUnanswered ? "Unanswered" : isCorrect ? "Correct" : "Incorrect"}
+                        </div>
+                        
+                        {!isExpanded && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); setJudeIdx(q.originalIdx); }}
+                            className={cn(
+                              "flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border",
+                              isCorrect ? "text-text-tertiary border-border-subtle" : "text-accent border-accent/20 bg-accent/5 hover:bg-accent/10"
+                            )}
+                          >
+                            Ask Jude {isCorrect && "✦"}
+                          </button>
+                        )}
                       </div>
-                      
-                      {!isExpanded && (
-                        <button 
-                          onClick={(e) => { e.stopPropagation(); setJudeIdx(q.originalIdx); }}
-                          className={cn(
-                            "flex items-center gap-2 px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border",
-                            isCorrect ? "text-text-tertiary border-border-subtle" : "text-accent border-accent/20 bg-accent/5 hover:bg-accent/10"
-                          )}
-                        >
-                          Ask Jude {isCorrect && "✦"}
-                        </button>
-                      )}
                       
                       <ChevronRight className={cn("w-4 h-4 text-text-tertiary transition-transform", isExpanded && "rotate-90")} />
                     </div>
                   </div>
 
                   {/* Expanded Content */}
-                  <AnimatePresence>
-                    {isExpanded && (
-                      <motion.div 
-                        initial={{ height: 0, opacity: 0 }}
-                        animate={{ height: "auto", opacity: 1 }}
-                        exit={{ height: 0, opacity: 0 }}
-                        className="border-t border-border-subtle bg-bg-sunken/30"
-                      >
-                        <div className="p-8 space-y-8">
+                  {isExpanded && (
+                    <div 
+                      className="border-t border-border-subtle bg-bg-sunken/30"
+                    >
+                      <div className="p-4 md:p-8 space-y-6 md:space-y-8">
                           <p className="text-lg text-text-primary leading-relaxed font-medium">{q.prompt}</p>
                           
                           {q.type === 'MCQ' ? (
@@ -920,7 +1009,7 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                                   <div 
                                     key={optIdx}
                                     className={cn(
-                                      "flex items-center gap-4 p-5 rounded-2xl border transition-all",
+                                      "flex items-center gap-4 p-5 rounded-2xl border transition-[transform,opacity,box-shadow]",
                                       isCorrectOpt 
                                         ? "bg-success-bg border-success-border text-success-text shadow-[0_4px_12px_rgba(34,197,94,0.1)]" 
                                         : isStudentAns && !isCorrectOpt
@@ -971,19 +1060,19 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                             </div>
                           </div>
 
-                          <div className="flex items-center justify-between pt-6 border-t border-border-subtle">
-                             <div className="flex gap-2">
+                          <div className="flex flex-col-reverse md:flex-row md:items-center justify-between gap-4 pt-6 border-t border-border-subtle">
+                             <div className="flex justify-between w-full md:w-auto gap-2">
                                <button 
                                  disabled={q.originalIdx === 0}
                                  onClick={() => setExpandedIdx(questions[q.originalIdx - 1]?.id ? q.originalIdx - 1 : null)}
-                                 className="p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-all disabled:opacity-30"
+                                 className="flex-1 md:flex-none p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-30 flex justify-center items-center"
                                >
                                  <ChevronLeft className="w-4 h-4" />
                                </button>
                                <button 
                                  disabled={q.originalIdx === questions.length - 1}
                                  onClick={() => setExpandedIdx(questions[q.originalIdx + 1]?.id ? q.originalIdx + 1 : null)}
-                                 className="p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-all disabled:opacity-30"
+                                 className="flex-1 md:flex-none p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-30 flex justify-center items-center"
                                >
                                  <ChevronRight className="w-4 h-4" />
                                </button>
@@ -991,16 +1080,15 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                              
                              <button 
                                 onClick={() => setJudeIdx(q.originalIdx)}
-                                className="px-10 py-4 bg-accent text-bg-page text-xs font-black uppercase tracking-widest rounded-2xl shadow-lg hover:scale-105 active:scale-95 transition-all flex items-center gap-3"
+                                className="w-full md:w-auto px-6 md:px-10 py-3 md:py-4 bg-accent text-bg-page text-[10px] md:text-xs font-black uppercase tracking-widest rounded-xl md:rounded-2xl shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow] flex items-center justify-center gap-3"
                               >
                                 Ask Jude {isCorrect && "✦"}
                               </button>
                           </div>
                         </div>
-                      </motion.div>
+                      </div>
                     )}
-                  </AnimatePresence>
-                </motion.div>
+                </div>
               );
             })}
           </div>
@@ -1165,7 +1253,7 @@ broader concept or common exam trap.`;
               <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest mt-1 italic opacity-60">Academic Tutor ✦ Simulation Mode</span>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-bg-raised/50 rounded-xl transition-all">
+          <button onClick={onClose} className="p-2 hover:bg-bg-raised/50 rounded-xl transition-[transform,opacity,box-shadow]">
             <X className="w-5 h-5 text-text-tertiary" />
           </button>
         </div>
@@ -1218,12 +1306,12 @@ broader concept or common exam trap.`;
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                 placeholder="Ask a follow-up question..."
-                className="w-full bg-bg-raised border border-border-subtle rounded-2xl pl-6 pr-14 py-4 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-all placeholder:text-text-tertiary"
+                className="w-full bg-bg-raised border border-border-subtle rounded-2xl pl-6 pr-14 py-4 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-[transform,opacity,box-shadow] placeholder:text-text-tertiary"
               />
               <button 
                 onClick={handleSend}
                 disabled={!inputValue.trim() || isStreaming}
-                className="absolute right-2 top-2 bottom-2 w-10 bg-accent text-bg-page rounded-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-all disabled:opacity-30 disabled:hover:scale-100"
+                className="absolute right-2 top-2 bottom-2 w-10 bg-accent text-bg-page rounded-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-[transform,opacity,box-shadow] disabled:opacity-30 disabled:hover:scale-100"
               >
                 <Send className="w-4 h-4" />
               </button>
@@ -1255,7 +1343,7 @@ function ThemeToggle() {
   return (
     <button 
       onClick={toggleTheme}
-      className="p-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-all active:scale-95"
+      className="p-2 rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-[transform,opacity,box-shadow] active:scale-95"
       aria-label="Toggle Theme"
     >
       {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
@@ -1335,6 +1423,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [showTimer, setShowTimer] = useState(true);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Persistent Timer Logic
   const storageKey = `engine_session_${courseName}_${mode}`;
@@ -1441,12 +1530,124 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
     if (currentIdx > 0) setCurrentIdx(currentIdx - 1);
   };
 
+  const navigatorJSX = (
+    <div className="space-y-6">
+      <header className="space-y-1">
+        <div className="flex items-center justify-between">
+          <h3 className="text-xs font-black text-accent-text uppercase tracking-widest">Question Navigator</h3>
+          <button 
+            onClick={() => setIsMobileNavOpen(false)} 
+            className="lg:hidden p-1.5 hover:bg-bg-raised rounded-lg transition-[transform,opacity,box-shadow]"
+          >
+            <X className="w-4 h-4 text-text-tertiary hover:text-text-primary" />
+          </button>
+        </div>
+        <div className="h-1 w-12 bg-accent rounded-full" />
+      </header>
+
+      <div className="bg-surface-container-high border border-outline-variant/10 rounded-2xl p-4 flex flex-col gap-3">
+        <div className="flex justify-between items-center text-xs text-text-secondary font-bold">
+           <span>Progress</span>
+           <span>{Object.keys(answers).length} / {totalQuestions}</span>
+        </div>
+        <div className="flex gap-4 text-[10px] uppercase font-black tracking-widest">
+           <span className="flex items-center gap-1.5 text-success-text">
+              <Check className="w-3 h-3"/> {Object.keys(answers).length} done
+           </span>
+           <span className="flex items-center gap-1.5 text-text-tertiary">
+              <Circle className="w-3 h-3"/> {totalQuestions - Object.keys(answers).length} left
+           </span>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-surface-container-low p-1 rounded-xl">
+        <button className="flex-1 py-1.5 bg-bg-surface text-text-primary rounded-lg shadow-sm border border-outline-variant/10 transition-[transform,opacity,box-shadow]">All</button>
+        <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Flagged</button>
+        <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Unanswered <span className="opacity-50 ml-1">{totalQuestions - Object.keys(answers).length}</span></button>
+      </div>
+
+      <div className="grid grid-cols-5 gap-2 lg:gap-3">
+         {questions.map((_, i) => {
+            const num = i + 1;
+            const isActive = currentIdx === i;
+            const isDone = !!answers[i];
+            const isFlagged = flagged.has(i);
+            
+            return (
+              <button 
+                key={i}
+                onClick={() => {
+                  setCurrentIdx(i);
+                  setIsMobileNavOpen(false);
+                }}
+                className={cn(
+                  "w-full aspect-square border transition-[transform,opacity,box-shadow] transform active:scale-95 flex items-center justify-center text-[11px] font-black rounded-[0.85rem] relative overflow-hidden",
+                  isActive 
+                    ? "border-accent bg-accent text-bg-page shadow-[0_0_20px_var(--accent-muted)] z-10 scale-105" 
+                    : isFlagged
+                      ? "border-yellow-400 bg-yellow-400 text-slate-900 shadow-[0_0_12px_rgba(250,204,21,0.5)] scale-105"
+                      : isDone
+                        ? "border-success-border bg-success-bg/80 text-success-text border-2"
+                        : "border-border-subtle bg-surface-container-low text-text-tertiary hover:border-border-medium hover:bg-surface-container-high hover:text-text-primary"
+                )}
+              >
+                {num}
+              </button>
+            );
+         })}
+      </div>
+
+      <div className="flex items-center justify-between text-[9px] uppercase tracking-widest font-black text-text-secondary pt-4 border-t border-border-subtle mt-6">
+        <div className="flex items-center gap-1.5">
+           <div className="w-2 h-2 rounded-full bg-accent" /> Current
+        </div>
+        <div className="flex items-center gap-1.5">
+           <div className="w-2 h-2 rounded-full bg-success-border" /> Answered
+        </div>
+        <div className="flex items-center gap-1.5">
+           <div className="w-2 h-2 rounded-full bg-yellow-400" /> Flagged
+        </div>
+      </div>
+
+      <button onClick={() => { setIsMobileNavOpen(false); handleFinish(); }} className="w-full py-3.5 mt-2 bg-primary hover:bg-primary/90 text-slate-950 font-black text-xs uppercase tracking-widest rounded-[1rem] shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow]">
+        Submit Exam
+      </button>
+    </div>
+  );
+
   return (
     <motion.div 
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       className="flex flex-col h-screen flex-1 bg-bg-page text-text-primary font-sans overflow-hidden"
     >
+      <AnimatePresence>
+        {isMobileNavOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[160] lg:hidden"
+          >
+            {/* Backdrop */}
+            <div 
+              className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+              onClick={() => setIsMobileNavOpen(false)}
+            />
+            {/* Drawer */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="absolute inset-y-0 right-0 w-80 bg-bg-surface border-l border-border-subtle shadow-2xl p-6 overflow-y-auto overscroll-contain flex flex-col"
+            >
+              {navigatorJSX}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {session.pausedAt && (
           <motion.div 
@@ -1469,7 +1670,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
             <button 
               onClick={togglePause}
               disabled={session.pauseCount >= 3 && !session.pausedAt}
-              className="px-12 py-5 bg-accent text-bg-page text-sm font-black uppercase tracking-[0.2em] rounded-2xl shadow-[0_20px_40px_var(--accent-muted)] hover:scale-105 active:scale-95 transition-all flex items-center gap-4 group"
+              className="px-12 py-5 bg-accent text-bg-page text-sm font-black uppercase tracking-[0.2em] rounded-2xl shadow-[0_20px_40px_var(--accent-muted)] hover:scale-105 active:scale-95 transition-[transform,opacity,box-shadow] flex items-center gap-4 group"
             >
               Resume Simulation <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />
             </button>
@@ -1478,35 +1679,45 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
       </AnimatePresence>
 
       {/* HUD Header */}
-      <header className="h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-6 shrink-0 z-50">
+      <header className="relative h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-4 md:px-6 shrink-0 z-50">
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => {
+              localStorage.removeItem(storageKey);
+              onBack();
+            }}
+            className="p-2 -ml-2 hover:bg-bg-raised/50 rounded-lg group shrink-0"
+            title="Terminate Session"
+          >
+            <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary transition-colors" />
+          </button>
           <div className="flex items-center gap-2">
-            <div className="w-10 h-10 bg-accent-muted rounded-xl flex items-center justify-center">
-              <Zap className="w-6 h-6 text-accent fill-accent" />
+            <div className="w-8 h-8 md:w-10 md:h-10 bg-accent-muted rounded-xl flex items-center justify-center shrink-0">
+              <Zap className="w-5 h-5 md:w-6 md:h-6 text-accent fill-accent" />
             </div>
-            <div className="flex flex-col">
+            <div className="hidden md:flex flex-col">
               <h1 className="text-sm font-black text-text-primary tracking-widest uppercase leading-none">
-                The Engine <span className="text-[10px] text-accent-text font-black opacity-60 ml-1">v2.4.0</span>
+                {courseName}
               </h1>
-              <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest mt-1">Stochastic Simulation</span>
+              <span className="text-[10px] text-accent-text font-bold uppercase tracking-widest mt-1">Active Session</span>
             </div>
           </div>
         </div>
 
         {/* Global Timer Section - Fixed in Header */}
-        <div className="hidden md:flex items-center gap-4">
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2 md:gap-4">
           {mode === 'PRACTICE' && (
              <button 
                onClick={(e) => { e.stopPropagation(); togglePause(); }}
-               className="w-10 h-10 rounded-xl bg-bg-raised border border-border-subtle flex items-center justify-center text-text-secondary hover:text-accent transition-all transform active:scale-90"
+               className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-bg-raised border border-border-subtle flex items-center justify-center text-text-secondary hover:text-accent transition-[transform,opacity,box-shadow] transform active:scale-90"
                title="Pause Session"
              >
-               {session.pausedAt ? <Play className="w-4 h-4 fill-current" /> : <Pause className="w-4 h-4 fill-current" />}
+               {session.pausedAt ? <Play className="w-3.5 h-3.5 fill-current" /> : <Pause className="w-3.5 h-3.5 fill-current" />}
              </button>
           )}
 
           <div className={cn(
-            "flex items-center gap-6 px-6 py-2 border rounded-2xl backdrop-blur-md transition-all duration-500 cursor-pointer select-none",
+            "flex items-center gap-3 md:gap-6 px-3 md:px-6 py-1.5 md:py-2 border rounded-2xl backdrop-blur-md transition-[transform,opacity,box-shadow] duration-150 cursor-pointer select-none",
             isUrgent 
               ? "bg-danger-bg border-danger-border shadow-[0_0_20px_var(--danger-border)] animate-pulse" 
               : "bg-bg-raised border-border-subtle hover:bg-bg-raised",
@@ -1515,7 +1726,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
           onClick={() => setShowTimer(!showTimer)}
           >
            <div className={cn(
-             "flex items-center gap-2",
+             "hidden md:flex items-center gap-2",
              isUrgent ? "text-danger-text" : "text-text-secondary"
            )}>
               <Timer className={cn("w-4 h-4", isUrgent && "animate-spin-slow")} />
@@ -1523,133 +1734,95 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
            </div>
            
            <span className={cn(
-             "text-xl font-mono font-black transition-all",
+             "text-lg md:text-xl font-mono font-black transition-[transform,opacity,box-shadow]",
              isUrgent ? "text-danger-text" : "text-text-primary",
              !showTimer && "blur-md select-none"
            )}>
             {timerText}
            </span>
 
-
-           
-           <div className="pl-4 border-l border-border-subtle">
+           <div className="pl-3 md:pl-4 border-l border-border-subtle">
              {showTimer ? <Eye className="w-3.5 h-3.5 text-text-tertiary" /> : <EyeOff className="w-3.5 h-3.5 text-text-tertiary" />}
            </div>
         </div>
       </div>
 
         <div className="flex items-center gap-4">
+           {/* Mobile Navigator Trigger */}
+           <button 
+             onClick={() => setIsMobileNavOpen(true)}
+             className="lg:hidden p-2 text-text-secondary hover:text-text-primary focus:outline-none transition-colors rounded-lg hover:bg-bg-raised"
+           >
+             <Menu className="w-5 h-5" />
+           </button>
+
            <ThemeToggle />
-           <div className="w-8 h-8 rounded-lg bg-bg-sunken border border-border-subtle flex items-center justify-center">
+           <div className="hidden md:flex w-8 h-8 rounded-lg bg-bg-sunken border border-border-subtle items-center justify-center">
               <User className="w-4 h-4 text-accent" />
            </div>
         </div>
       </header>
 
+      {/* Global Progress Bar */}
+      <div className="w-full bg-surface-container-high h-1.5 shrink-0">
+        <div 
+          className="h-full bg-primary rounded-r-full transition-all duration-300 ease-out"
+          style={{ width: `${(Object.keys(answers).length / totalQuestions) * 100}%` }}
+        />
+      </div>
+
       {/* Main Container */}
       <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
-        <div className="max-w-7xl mx-auto px-6 py-10 space-y-8">
-          {/* Header Section */}
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 pb-8 border-b border-border-subtle">
-            <div className="space-y-4">
-              <div className="flex items-center gap-3">
-                <div className="px-2 py-1 bg-accent/10 border border-accent/20 rounded text-[10px] font-black text-accent uppercase tracking-widest">
-                  Active Session
-                </div>
-                <h2 className="text-4xl font-black text-text-primary tracking-tighter uppercase italic">{courseName}</h2>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <StatusTag label="Session Verified" icon={Check} color="bg-success-bg text-success-text border-success-border" />
-                <StatusTag label="Exam Mode Active" icon={Zap} color="bg-accent-muted text-accent-text border-accent-border/20" />
-                <div className={cn(
-                  "md:hidden flex items-center gap-2 px-4 py-1.5 border rounded-full text-[10px] font-black uppercase tracking-widest cursor-pointer",
-                  isUrgent ? "bg-danger-bg text-danger-text border-danger-border animate-pulse" : "bg-bg-raised text-text-primary border-border-subtle"
-                )}
-                onClick={() => setShowTimer(!showTimer)}
-                >
-                  <Timer className="w-3 h-3" /> {showTimer ? timerText : 'Hidden'}
-                </div>
-              </div>
-            </div>
-
-    <button 
-      onClick={() => {
-        localStorage.removeItem(storageKey);
-        onBack();
-      }}
-      className="px-6 py-2.5 bg-bg-surface hover:bg-bg-raised text-text-primary text-[10px] font-black uppercase tracking-widest rounded-xl border border-border-subtle transition-all flex items-center gap-2 shadow-sm"
-    >
-              <ChevronLeft className="w-4 h-4" />
-              Terminate Session
-            </button>
-          </div>
-
-          <div className="grid grid-cols-12 gap-8 items-start">
+        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-10 space-y-8">
+          <div className="grid grid-cols-12 gap-6 md:gap-8 items-start">
             {/* Left/Middle: Question Core */}
             <div className="col-span-12 lg:col-span-9 flex flex-col md:flex-row gap-6">
-               {/* Question Metadata HUD */}
-               <div className="w-full md:w-36 shrink-0 space-y-4 p-5 bg-bg-surface border border-border-subtle rounded-2xl">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-black text-accent-text uppercase tracking-widest">Subjective Node</span>
-                    <h4 className="text-2xl font-black text-text-primary leading-none">{currentIdx + 1}</h4>
-                  </div>
-                  <div className="space-y-2 pt-2 border-t border-border-subtle">
-                    <p className="text-[10px] font-bold text-text-secondary uppercase">Quantum Marks: {currentQuestion.marks.toFixed(2)}</p>
-                    <p className={cn(
-                      "text-[10px] font-bold uppercase flex items-center gap-1",
-                      answers[currentIdx] ? "text-success-text" : "text-orange-500"
-                    )}>
-                      <Zap className={cn("w-3 h-3", answers[currentIdx] && "fill-success-text")} />
-                      {answers[currentIdx] ? "Verdict Recorded" : "Pending Verdict"}
-                    </p>
-                  </div>
-                  <motion.button 
-                    whileTap={{ scale: 0.94 }}
-                    onClick={toggleFlag}
-                    className={cn(
-                      "w-full py-3 flex items-center justify-center gap-2.5 text-[10px] font-black uppercase tracking-[0.15em] transition-all border-2 rounded-xl",
-                      flagged.has(currentIdx)
-                        ? "bg-amber-500 border-amber-500 text-white shadow-[0_8px_20px_rgba(245,158,11,0.3)]"
-                        : "bg-surface-sunken border-border-subtle text-text-tertiary hover:border-border-medium hover:text-text-primary hover:bg-bg-raised"
-                    )}
-                  >
-                    <Flag className={cn("w-3.5 h-3.5", flagged.has(currentIdx) ? "fill-white" : "fill-none")} />
-                    {flagged.has(currentIdx) ? "Marked for Review" : "Flag Question"}
-                  </motion.button>
-               </div>
 
                {/* Question Arena */}
-               <div className="flex-1 bg-bg-surface p-8 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group">
+               <div className="flex-1 bg-bg-surface p-6 md:p-8 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group">
                   <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50" />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] rotate-[-25deg] select-none text-6xl font-black text-accent uppercase">
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] rotate-[-25deg] select-none text-4xl md:text-6xl font-black text-accent uppercase">
                     ENGINE SIMULATION
                   </div>
 
                   {flagged.has(currentIdx) && (
-                    <motion.div 
-                      initial={{ y: -20, opacity: 0 }}
-                      animate={{ y: 0, opacity: 1 }}
-                      className="absolute top-0 left-0 right-0 bg-amber-500/10 border-b border-amber-500/20 py-2 px-8 flex items-center gap-2 z-20 backdrop-blur-sm"
+                    <div 
+                      className="absolute top-0 left-0 right-0 bg-amber-500/10 border-b border-amber-500/20 py-2 px-6 md:px-8 flex items-center gap-2 z-20 backdrop-blur-sm"
                     >
                       <Flag className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
                       <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Flagged for Verification</span>
-                    </motion.div>
+                    </div>
                   )}
 
                   {isUrgent && (
-                    <motion.div 
-                      key="time-warning"
-                      initial={{ x: 50, opacity: 0 }}
-                      animate={{ x: 0, opacity: 1 }}
+                    <div 
                       className="absolute top-4 right-4 bg-danger-bg/80 border border-danger-border py-1 px-3 flex items-center gap-2 z-30 rounded-full backdrop-blur-md animate-pulse shadow-lg"
                     >
                       <Timer className="w-3 h-3 text-danger-text" />
                       <span className="text-[9px] font-black text-danger-text uppercase tracking-widest">Time Critical</span>
-                    </motion.div>
+                    </div>
                   )}
 
-                  <div className={cn("relative z-10 space-y-8", flagged.has(currentIdx) ? "mt-8" : "mt-4")}>
-                    <p className="text-lg text-text-primary leading-relaxed font-medium tracking-tight">
+                  <div className={cn("relative z-10 space-y-6 md:space-y-8", flagged.has(currentIdx) ? "mt-8" : "mt-0 md:mt-4")}>
+                    <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-2xl font-black text-text-primary">Q{currentIdx + 1}</span>
+                        <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">/ {questions.length}</span>
+                      </div>
+                      
+                      <button
+                        onClick={toggleFlag}
+                        className={cn(
+                          "flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border",
+                          flagged.has(currentIdx) ? "bg-amber-500 border-amber-500 text-white" : "border-border-subtle hover:border-border-medium hover:bg-bg-raised text-text-tertiary hover:text-text-primary"
+                        )}
+                      >
+                        <Flag className={cn("w-3 h-3", flagged.has(currentIdx) ? "fill-white" : "fill-none")} />
+                        {flagged.has(currentIdx) ? "Flagged" : "Flag"}
+                      </button>
+                    </div>
+
+                    <p className="text-base md:text-lg text-text-primary leading-relaxed font-medium tracking-tight">
                       {currentQuestion.prompt}
                     </p>
 
@@ -1677,7 +1850,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
                           value={answers[currentIdx] || ''}
                           onChange={(e) => handleAnswer(e.target.value)}
                           placeholder="Type your final result here..."
-                          className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-6 py-4 text-text-primary focus:outline-none focus:border-accent transition-all font-mono"
+                          className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-6 py-4 text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
                         />
                         <p className="text-[10px] text-text-tertiary italic">Numerical answers must match specified precision (±0.01).</p>
                       </div>
@@ -1686,50 +1859,10 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
                </div>
             </div>
 
-            {/* Right Coast: Navigation HUD */}
-            <aside className="col-span-12 lg:col-span-3">
-               <div className="bg-bg-surface border border-border-subtle rounded-3xl p-6 space-y-6 shadow-xl">
-                  <header className="space-y-1">
-                    <h3 className="text-xs font-black text-accent-text uppercase tracking-widest">Engine Navigator</h3>
-                    <div className="h-1 w-12 bg-accent rounded-full" />
-                  </header>
-
-                  <div className="grid grid-cols-5 gap-2">
-                     {questions.map((_, i) => {
-                        const num = i + 1;
-                        const isActive = currentIdx === i;
-                        const isDone = !!answers[i];
-                        const isFlagged = flagged.has(i);
-                        
-                        return (
-                          <button 
-                            key={i}
-                            onClick={() => setCurrentIdx(i)}
-                            className={cn(
-                              "w-full aspect-square border transition-all transform active:scale-95 flex items-center justify-center text-[11px] font-black rounded-lg relative overflow-hidden",
-                              isActive 
-                                ? "border-accent bg-accent text-bg-page shadow-[0_0_20px_var(--accent)] z-10 scale-110" 
-                                : isFlagged
-                                  ? "border-amber-500 bg-amber-500 text-bg-page shadow-[0_0_12px_rgba(245,158,11,0.5)] scale-105"
-                                  : isDone
-                                    ? "border-success-border bg-success-bg/80 text-success-text"
-                                    : "border-border-subtle bg-bg-raised text-text-tertiary hover:border-border-medium hover:text-text-primary"
-                            )}
-                          >
-                            {num}
-                            {isFlagged && (
-                              <div className="absolute top-0 right-0 p-0.5">
-                                <Flag className={cn("w-2 h-2 fill-current", "text-bg-page")} />
-                              </div>
-                            )}
-                          </button>
-                        );
-                     })}
-                  </div>
-
-                  <button className="w-full py-4 mt-4 bg-accent hover:bg-accent-hover text-bg-page font-black text-xs uppercase tracking-widest rounded-xl shadow-[0_10px_20px_-5px_var(--accent-muted)] hover:scale-[1.02] transition-all">
-                    Sync Results ...
-                  </button>
+            {/* Right Coast: Navigation HUD (Desktop) */}
+            <aside className="hidden lg:block lg:col-span-3">
+               <div className="bg-bg-surface border border-border-subtle rounded-3xl p-6 shadow-xl sticky top-8">
+                  {navigatorJSX}
                </div>
             </aside>
           </div>
@@ -1741,9 +1874,9 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
          <button 
           onClick={prevQuestion}
           disabled={currentIdx === 0}
-          className="group flex items-center gap-4 text-text-secondary hover:text-text-primary transition-all disabled:opacity-20 disabled:cursor-not-allowed"
+          className="group flex items-center gap-4 text-text-secondary hover:text-text-primary transition-[transform,opacity,box-shadow] disabled:opacity-20 disabled:cursor-not-allowed"
         >
-            <div className="w-12 h-12 rounded-2xl bg-bg-raised border border-border-subtle flex items-center justify-center group-hover:bg-accent-muted group-hover:border-accent transition-all group-hover:-translate-x-1 group-active:scale-95 shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-bg-raised border border-border-subtle flex items-center justify-center group-hover:bg-accent-muted group-hover:border-accent transition-[transform,opacity,box-shadow] group-hover:-translate-x-1 group-active:scale-95 shadow-sm">
               <ChevronLeft className="w-6 h-6" />
             </div>
             <div className="flex flex-col items-start leading-none">
@@ -1769,7 +1902,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
             </div>
             <button 
               onClick={nextQuestion}
-              className="px-10 py-4 bg-accent hover:bg-accent-hover text-bg-page text-xs font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-all hover:scale-[1.02] active:scale-95 flex items-center gap-3"
+              className="px-10 py-4 bg-accent hover:bg-accent-hover text-bg-page text-xs font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-[transform,opacity,box-shadow] hover:scale-[1.02] active:scale-95 flex items-center gap-3"
             >
               {currentIdx === questions.length - 1 ? 'Commit Verdict' : 'Next Question'}
               <ArrowRight className="w-4 h-4" />
@@ -1782,7 +1915,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
 
 function StatusTag({ label, icon: Icon, color }: { label: string, icon: LucideIcon, color: string }) {
   return (
-    <div className={cn("flex items-center gap-2 px-4 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg border transition-all", color)}>
+    <div className={cn("flex items-center gap-2 px-4 py-1.5 text-[9px] font-black uppercase tracking-widest rounded-lg border transition-[transform,opacity,box-shadow]", color)}>
       <Icon className="w-3 h-3" />
       {label}
     </div>
@@ -1794,14 +1927,14 @@ function QuizOption({ id, label, text, selected, onSelect, key }: { id: string, 
     <button 
       onClick={onSelect}
       className={cn(
-        "flex items-center gap-4 p-5 rounded-2xl border transition-all duration-300 text-left group relative overflow-hidden",
+        "flex items-center gap-4 p-5 rounded-2xl border transition-[transform,opacity,box-shadow] duration-100 text-left group relative overflow-hidden",
         selected 
           ? "bg-accent-muted border-accent/30 shadow-[inset_0_0_20px_var(--accent-muted)]" 
           : "bg-bg-raised/30 border-border-subtle hover:bg-bg-raised/50 hover:border-border-medium"
       )}
     >
       <div className={cn(
-        "w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-all",
+        "w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-[transform,opacity,box-shadow]",
         selected ? "bg-accent border-accent" : "border-border-medium group-hover:border-accent/50"
       )}>
         {selected && <Check className="w-3 h-3 text-bg-page font-black" />}
@@ -1817,7 +1950,7 @@ function QuizOption({ id, label, text, selected, onSelect, key }: { id: string, 
 function SidebarTab({ icon: Icon, label, active = false }: { icon: LucideIcon, label: string, active?: boolean }) {
   return (
     <button className={cn(
-      "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all",
+      "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-[transform,opacity,box-shadow]",
       active ? "bg-surface-container-highest text-primary border border-primary/20 shadow-[0_0_15px_theme(colors.primary/0.1)]" : "text-on-surface-variant hover:text-white"
     )}>
        <Icon className="w-4 h-4" />
@@ -1831,7 +1964,7 @@ function OptionButton({ label, text, selected, onClick }: { label: string, text:
     <button 
       onClick={onClick}
       className={cn(
-        "w-full text-left p-4 rounded-xl border transition-all duration-300 relative overflow-hidden group",
+        "w-full text-left p-4 rounded-xl border transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden group",
         selected 
           ? "bg-surface-container-highest border-primary shadow-[0_0_15px_theme(colors.primary/0.1)]" 
           : "bg-surface-container-low border-outline-variant/10 hover:bg-surface-container-high hover:border-white/20"
@@ -1840,7 +1973,7 @@ function OptionButton({ label, text, selected, onClick }: { label: string, text:
       {selected && <div className="absolute inset-0 bg-primary/2 pointer-events-none" />}
       <div className="flex items-center gap-4 relative z-10">
          <div className={cn(
-           "w-7 h-7 rounded-full border flex items-center justify-center text-[10px] font-bold transition-all shrink-0",
+           "w-7 h-7 rounded-full border flex items-center justify-center text-[10px] font-bold transition-[transform,opacity,box-shadow] shrink-0",
            selected ? "bg-primary border-primary text-slate-950" : "border-outline-variant/30 text-on-surface-variant group-hover:border-primary/50 group-hover:text-primary"
          )}>
            {label}
@@ -1858,8 +1991,8 @@ function OptionButton({ label, text, selected, onClick }: { label: string, text:
 
 function CommandBarItem({ icon: Icon, label }: { icon: LucideIcon, label: string }) {
   return (
-    <button className="flex flex-col items-center gap-1 group px-4 py-2 hover:bg-white/5 rounded-xl transition-all">
-       <Icon className="w-5 h-5 text-on-surface-variant group-hover:text-primary group-hover:scale-110 transition-all" />
+    <button className="flex flex-col items-center gap-1 group px-4 py-2 hover:bg-white/5 rounded-xl transition-[transform,opacity,box-shadow]">
+       <Icon className="w-5 h-5 text-on-surface-variant group-hover:text-primary group-hover:scale-110 transition-[transform,opacity,box-shadow]" />
        <span className="text-[9px] font-black uppercase tracking-widest text-outline group-hover:text-primary transition-colors">{label}</span>
     </button>
   );
@@ -1870,13 +2003,13 @@ function NavItem({ icon: Icon, label, active = false, expanded = false, onClick 
     <button 
       onClick={onClick}
       className={cn(
-        "w-full flex items-center h-10 px-2 rounded-lg transition-all group overflow-hidden relative",
+        "w-full flex items-center h-10 px-2 rounded-lg transition-[transform,opacity,box-shadow] group overflow-hidden relative",
         active ? "bg-accent-muted text-accent-text border-l-2 border-accent" : "text-text-tertiary hover:text-text-primary hover:bg-bg-raised"
       )}
     >
       <Icon className={cn("w-5 h-5 shrink-0 ml-0.5", active && "fill-accent/20")} />
       <span className={cn(
-        "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-300",
+        "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-100",
         expanded ? "opacity-100" : "opacity-0"
       )}>
         {label}
@@ -1889,12 +2022,12 @@ function ModeCard({ title, description, tag, icon: Icon, color = 'primary', onCl
   return (
     <button 
       onClick={onClick}
-      className="flex flex-col text-left group bg-bg-surface rounded-2xl md:rounded-3xl p-4 md:p-5 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-all duration-300 relative overflow-hidden h-auto min-h-40 md:min-h-44"
+      className="flex flex-col text-left group bg-bg-surface rounded-2xl md:rounded-3xl p-4 md:p-5 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden h-auto min-h-40 md:min-h-44"
     >
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-accent-hover opacity-0 group-hover:opacity-100 transition-all" />
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-accent-hover opacity-0 group-hover:opacity-100 transition-[transform,opacity,box-shadow]" />
       <div className="flex justify-between items-start mb-3 md:mb-5">
         <div className={cn(
-          "w-9 h-9 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-500 group-hover:scale-110 group-hover:rotate-6",
+          "w-9 h-9 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-150 group-hover:scale-110 group-hover:rotate-6",
           color === 'primary' ? 'text-accent' : color === 'secondary' ? 'text-accent-text' : 'text-accent'
         )}>
           <Icon className="w-4 h-4 md:w-5 md:h-5" />
@@ -1907,7 +2040,7 @@ function ModeCard({ title, description, tag, icon: Icon, color = 'primary', onCl
       <p className="text-[10px] md:text-[11px] text-text-secondary leading-relaxed mb-3 md:mb-4 opacity-70 group-hover:opacity-100 transition-opacity line-clamp-3">
         {description}
       </p>
-      <div className="mt-auto flex items-center text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity delay-100 text-text-tertiary">
+      <div className="mt-auto flex items-center text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity  text-text-tertiary">
         <span className="mr-2">&mdash;</span> Enter Mode
       </div>
     </button>
@@ -1930,7 +2063,7 @@ function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, 
     <button 
       onClick={onClick}
       className={cn(
-        "group flex flex-col p-4 md:p-5 rounded-2xl transition-all duration-300 relative overflow-hidden h-auto min-h-36 md:min-h-40 text-left",
+        "group flex flex-col p-4 md:p-5 rounded-2xl transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden h-auto min-h-36 md:min-h-40 text-left",
         active 
           ? "bg-accent-muted border-2 border-accent" 
           : "bg-surface-container-high border border-border-subtle hover:border-accent/30"

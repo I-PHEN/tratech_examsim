@@ -148,9 +148,6 @@
 }
 
 @layer base {
-  *, *::before, *::after {
-    transition: background-color 200ms ease, border-color 200ms ease, color 150ms ease;
-  }
 
   /* Exception: disable transition on elements where it causes visual glitches */
   svg *, canvas, img {
