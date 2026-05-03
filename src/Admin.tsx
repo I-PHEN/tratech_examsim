@@ -19,7 +19,7 @@ export function AdminLoginScreen({ onSuccess, onBack }: { onSuccess: () => void,
   };
 
   return (
-    <div className="flex flex-col h-full items-center justify-center bg-bg-surface px-4">
+    <div className="absolute inset-0 flex flex-col items-center justify-center bg-bg-surface px-4 z-50">
       <div className="absolute top-8 left-8">
         <button onClick={onBack} className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors">
           <ArrowLeft className="w-5 h-5" />
@@ -72,7 +72,7 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
   const [activeTab, setActiveTab] = useState<'upload' | 'manage'>('upload');
   
   return (
-    <div className="flex flex-col h-full bg-surface-dim">
+    <div className="absolute inset-0 flex flex-col bg-surface-dim z-50 overflow-hidden">
       <header className="h-20 flex items-center justify-between px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-border-subtle shrink-0">
         <div className="flex items-center gap-6">
           <button onClick={onBack} className="p-2 hover:bg-bg-raised/50 rounded-lg text-text-secondary hover:text-text-primary transition-colors">

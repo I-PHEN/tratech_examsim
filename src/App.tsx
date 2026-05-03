@@ -1933,7 +1933,7 @@ function StatusTag({ label, icon: Icon, color }: { label: string, icon: LucideIc
   );
 }
 
-function QuizOption({ id, label, text, selected, onSelect, key }: { id: string, label: string, text: string, selected: boolean, onSelect: () => void, key?: string | number }) {
+function QuizOption({ id, label, text, selected, onSelect }: { id: string, label: string, text: string, selected: boolean, onSelect: () => void, key?: string | number }) {
   return (
     <button 
       onClick={onSelect}
