@@ -41,7 +41,7 @@ export interface Course {
 }
 
 export interface AppState {
-  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM';
+  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'ADMIN_LOGIN' | 'ADMIN_DASHBOARD';
   mode: StudyMode | null;
   selectedCourse: Course | null;
   selectedTopic: Topic | null;

@@ -42,10 +42,13 @@ import {
   Menu,
   LucideIcon,
   AlertCircle,
-  Circle
+  Circle,
+  Database
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, COURSES, Question, QuestionType, TimerSession } from './types';
 import { cn } from './lib/utils';
+
+import { AdminLoginScreen, AdminDashboardScreen } from './Admin';
 
 // Initialize GenAI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -135,7 +138,7 @@ export default function App() {
       if (state.mode === 'PRACTICE') setState(prev => ({ ...prev, step: 'TOPIC_SELECT', selectedTopic: null }));
       else setState(prev => ({ ...prev, step: 'COURSE_SELECT', selectedCourse: null }));
     }
-    if (state.step === 'EXAM' || state.step === 'REVIEW') {
+    if (state.step === 'EXAM' || state.step === 'REVIEW' || state.step === 'ADMIN_LOGIN' || state.step === 'ADMIN_DASHBOARD') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, results: undefined }));
     }
   };
@@ -219,9 +222,9 @@ export default function App() {
         </>
       )}
 
-      {/* Sidebar - Hidden during Exam/Review for max focus */}
+      {/* Sidebar - Hidden during focus modes */}
       <AnimatePresence>
-        {state.step !== 'EXAM' && state.step !== 'REVIEW' && (
+        {state.step !== 'EXAM' && state.step !== 'REVIEW' && state.step !== 'ADMIN_LOGIN' && state.step !== 'ADMIN_DASHBOARD' && (
           <motion.nav 
             initial={{ x: -100 }}
             animate={{ x: 0 }}
@@ -270,6 +273,7 @@ export default function App() {
               </div>
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Settings} label="Settings" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={HelpCircle} label="Help" expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, step: 'ADMIN_LOGIN' })); setIsMobileMenuOpen(false); }} icon={Database} label="System Admin" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <div className="pt-4 border-t border-border-subtle flex items-center gap-3 px-1 h-[4.5rem]">
                 <div className="w-8 h-8 rounded-full overflow-hidden border border-border-medium shrink-0 ml-[2px]">
                   <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" alt="Profile" />
@@ -305,6 +309,13 @@ export default function App() {
             onBack={goBack}
             courseName={state.selectedCourse?.name || 'Session'}
           />
+        ) : state.step === 'ADMIN_LOGIN' ? (
+          <AdminLoginScreen 
+            onSuccess={() => setState(prev => ({ ...prev, step: 'ADMIN_DASHBOARD' }))} 
+            onBack={goBack} 
+          />
+        ) : state.step === 'ADMIN_DASHBOARD' ? (
+          <AdminDashboardScreen onBack={goBack} />
         ) : (
           <>
             {/* Header */}
