@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, ArrowLeft, Upload, FileText, Settings, Database, Activity, ChevronRight, Plus } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Upload, FileText, Settings, Database, Activity, ChevronRight, Plus, Users, Search, Loader2 } from 'lucide-react';
 import { cn } from './lib/utils';
+import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db, OperationType, handleFirestoreError } from './lib/firebase';
+import { useAuth } from './lib/AuthContext';
 
 export function AdminLoginScreen({ onSuccess, onBack }: { onSuccess: () => void, onBack: () => void }) {
   const [passcode, setPasscode] = useState('');
@@ -27,10 +29,8 @@ export function AdminLoginScreen({ onSuccess, onBack }: { onSuccess: () => void,
         </button>
       </div>
       
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-w-md w-full bg-surface-container-low p-8 rounded-3xl border border-border-subtle shadow-2xl"
+      <div 
+        className="max-w-md w-full bg-surface-container-low p-8 rounded-3xl border border-border-subtle shadow-2xl animate-in zoom-in-95 duration-200"
       >
         <div className="flex justify-center mb-6">
           <div className="w-16 h-16 bg-red-500/10 text-red-500 rounded-2xl flex items-center justify-center">
@@ -63,13 +63,100 @@ export function AdminLoginScreen({ onSuccess, onBack }: { onSuccess: () => void,
             Authenticate
           </button>
         </form>
-      </motion.div>
+      </div>
+    </div>
+  );
+}
+
+function AdminManager() {
+  const [emailToSearch, setEmailToSearch] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState({ text: '', type: '' });
+  const { currentUser } = useAuth();
+
+  const handleAddAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!emailToSearch.trim()) return;
+    setLoading(true);
+    setMsg({ text: '', type: '' });
+
+    try {
+      const usersRef = collection(db, 'users');
+      const q = query(usersRef, where('email', '==', emailToSearch.trim()));
+      const snap = await getDocs(q);
+
+      if (snap.empty) {
+        setMsg({ text: 'User not found.', type: 'error' });
+      } else {
+        const userId = snap.docs[0].id;
+        try {
+          await setDoc(doc(db, 'admins', userId), {
+            addedBy: currentUser?.uid || 'unknown',
+            addedAt: serverTimestamp()
+          });
+          setMsg({ text: 'User promoted to Admin successfully!', type: 'success' });
+          setEmailToSearch('');
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, 'admins');
+          setMsg({ text: 'Failed to add admin.', type: 'error' });
+        }
+      }
+    } catch (err) {
+      handleFirestoreError(err, OperationType.LIST, 'users');
+      setMsg({ text: 'Failed to search user.', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="animate-in fade-in max-w-lg mx-auto w-full bg-surface-container-low border border-border-subtle rounded-3xl p-8 shadow-xl mt-6">
+      <h2 className="text-xl font-bold text-text-primary mb-2 flex items-center gap-3">
+        <Users className="text-primary w-6 h-6" /> Add New Admin
+      </h2>
+      <p className="text-text-secondary text-sm mb-6">
+        Search for a user by their registered email address to grant them system admin access. This grants full privileges!
+      </p>
+
+      <form onSubmit={handleAddAdmin} className="space-y-4">
+        {msg.text && (
+          <div className={cn(
+            "p-3 rounded-lg text-xs font-bold text-center border",
+            msg.type === 'error' ? "bg-danger-muted border-danger/20 text-danger" : "bg-success/10 border-success/30 text-success-text"
+          )}>
+            {msg.text}
+          </div>
+        )}
+        <div className="relative">
+          <label className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest block mb-1">User Email</label>
+          <div className="relative">
+             <input 
+                type="email"
+                value={emailToSearch}
+                onChange={(e) => setEmailToSearch(e.target.value)}
+                placeholder="colleague@university.edu"
+                className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-primary pl-10 transition-colors"
+                required
+             />
+             <Search className="w-4 h-4 text-text-secondary absolute left-4 top-1/2 -translate-y-1/2" />
+          </div>
+        </div>
+
+        <button 
+          disabled={loading}
+          type="submit"
+          className="w-full bg-primary text-slate-950 font-bold py-3 rounded-xl hover:shadow-[0_0_20px_theme(colors.primary/0.4)] flex items-center justify-center gap-2 transition-all uppercase tracking-widest text-sm disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Plus className="w-5 h-5" />}
+          {loading ? 'Searching...' : 'Grant Admin Access'}
+        </button>
+      </form>
     </div>
   );
 }
 
 export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'upload' | 'manage'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'manage' | 'admins'>('upload');
   
   return (
     <div className="absolute inset-0 flex flex-col bg-surface-dim z-50 overflow-hidden">
@@ -91,7 +178,7 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
       <main className="flex-1 overflow-y-auto p-8 flex flex-col items-center">
         <div className="w-full max-w-5xl">
           
-          <div className="flex gap-4 mb-8">
+          <div className="flex flex-wrap gap-4 mb-8">
             <button 
               onClick={() => setActiveTab('upload')}
               className={cn(
@@ -112,15 +199,23 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
               <FileText className="w-5 h-5" />
               Database
             </button>
+            <button 
+              onClick={() => setActiveTab('admins')}
+              className={cn(
+                "flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
+                activeTab === 'admins' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
+              )}
+            >
+              <Users className="w-5 h-5" />
+              Manage Admins
+            </button>
           </div>
 
-          <AnimatePresence mode="wait">
-            {activeTab === 'upload' && (
-              <motion.div
-                key="upload"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
+          {activeTab === 'admins' && <AdminManager />}
+
+          {activeTab === 'upload' && (
+              <div
+                className="animate-in fade-in duration-200"
               >
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                   {/* Uploader Card */}
@@ -185,25 +280,19 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
                     </div>
                   </div>
                 </div>
-              </motion.div>
+              </div>
             )}
 
             {activeTab === 'manage' && (
-              <motion.div
-                key="manage"
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="bg-surface-container-low border border-border-subtle rounded-3xl p-8"
+              <div
+                className="bg-surface-container-low border border-border-subtle rounded-3xl p-8 animate-in fade-in duration-200"
               >
                  <div className="flex items-center justify-center min-h-[300px] text-text-secondary flex-col gap-4">
                     <Database className="w-12 h-12 opacity-20" />
                     <p>Database management coming soon.</p>
                  </div>
-              </motion.div>
+              </div>
             )}
-          </AnimatePresence>
-
         </div>
       </main>
     </div>

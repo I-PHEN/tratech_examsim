@@ -1,0 +1,78 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Phase 0: Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Primitive Definition
+    function isValidId(id) { 
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+    function isVerified() { return request.auth.token.email_verified == true; }
+    
+    // Admin check: User is signed in and their UID exists in the `admins` collection.
+    // Also include a bootstrap admin for initial setup based on email.
+    function isAdmin() { 
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        request.auth.token.email == 'iphhennom@gmail.com'
+      ); 
+    }
+
+    // Validation Blueprint for User
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'createdAt']) && 
+             data.keys().size() == 2 &&
+             data.email is string && data.email.size() <= 256 &&
+             data.createdAt is timestamp;
+    }
+
+    // Validation Blueprint for Admin
+    function isValidAdmin(data) {
+      return data.keys().hasAll(['addedBy', 'addedAt']) && 
+             data.keys().size() == 2 &&
+             data.addedBy is string && data.addedBy.size() <= 128 &&
+             data.addedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      // Users can only read their own profile, unless admin
+      allow get: if isValidId(userId) && isSignedIn() && (request.auth.uid == userId || isAdmin());
+      // No list access to users collection for non-admins to prevent PII leak
+      allow list: if isAdmin();
+      
+      // User creation: Must be verified, UID must match auth UID
+      allow create: if isValidId(userId) && 
+                       isSignedIn() && isVerified() &&
+                       request.auth.uid == userId &&
+                       isValidUser(incoming()) &&
+                       incoming().createdAt == request.time;
+      
+      // User update: Can only update specific fields (e.g., none currently immutable except email and createdAt)
+      // Since no mutable fields are defined, we don't allow updates, or we can allow nothing.
+      allow update: if false;
+      
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    match /admins/{userId} {
+      allow get: if isValidId(userId) && isSignedIn();
+      allow list: if isSignedIn(); // We might allow admins to see other admins
+
+      allow create: if isValidId(userId) && 
+                       isAdmin() && 
+                       isValidAdmin(incoming()) &&
+                       incoming().addedBy == request.auth.uid &&
+                       incoming().addedAt == request.time;
+
+      allow update: if false; // immutable record once added
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+  }
+}

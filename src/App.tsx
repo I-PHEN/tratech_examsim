@@ -4,8 +4,11 @@
  */
 
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { useNavigate } from 'react-router-dom';
 import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
+import { signOut } from 'firebase/auth';
+import { auth } from './lib/firebase';
+import { useAuth } from './lib/AuthContext';
 import { 
   Home, 
   Library, 
@@ -43,17 +46,27 @@ import {
   LucideIcon,
   AlertCircle,
   Circle,
-  Database
+  Database,
+  LogOut
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, COURSES, Question, QuestionType, TimerSession } from './types';
 import { cn } from './lib/utils';
-
-import { AdminLoginScreen, AdminDashboardScreen } from './Admin';
 
 // Initialize GenAI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 export default function App() {
+  const navigate = useNavigate();
+  const { currentUser, isAdmin } = useAuth();
+  
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Failed to log out", error);
+    }
+  };
+
   const [state, setState] = useState<AppState & { 
     results?: { questions: Question[], answers: Record<number, string> } 
   }>({
@@ -138,26 +151,20 @@ export default function App() {
       if (state.mode === 'PRACTICE') setState(prev => ({ ...prev, step: 'TOPIC_SELECT', selectedTopic: null }));
       else setState(prev => ({ ...prev, step: 'COURSE_SELECT', selectedCourse: null }));
     }
-    if (state.step === 'EXAM' || state.step === 'REVIEW' || state.step === 'ADMIN_LOGIN' || state.step === 'ADMIN_DASHBOARD') {
+    if (state.step === 'EXAM' || state.step === 'REVIEW') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, results: undefined }));
     }
   };
 
   return (
-    <div className="flex h-screen bg-surface-dim overflow-hidden font-sans">
+    <div className="fixed inset-0 flex bg-surface-dim overflow-hidden font-sans">
       {/* Mobile Overlay */}
-      <AnimatePresence>
-        {isMobileMenuOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-            onClick={() => setIsMobileMenuOpen(false)}
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] md:hidden"
-          />
-        )}
-      </AnimatePresence>
+      {isMobileMenuOpen && (
+        <div 
+          onClick={() => setIsMobileMenuOpen(false)}
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[55] md:hidden"
+        />
+      )}
 
       {openSelect && (
         <>
@@ -166,26 +173,13 @@ export default function App() {
             className="fixed inset-0 bg-transparent z-[60] md:hidden"
           />
           <div
-            className="fixed bottom-0 left-0 right-0 bg-surface-container-low border-t border-border-subtle rounded-t-[2.5rem] z-[70] p-6 md:hidden flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
+            className="fixed bottom-0 left-0 right-0 bg-surface-container-low border-t border-border-subtle rounded-t-[2rem] z-[70] p-4 pb-8 md:hidden flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
           >
-            <div className="flex items-center justify-end mb-6 px-2 gap-2">
-              <button
-                disabled={openSelect === 'year'}
-                onClick={() => setOpenSelect('year')}
-                className="px-4 py-2 bg-bg-raised text-text-secondary rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
-              >
-                Prev.
-              </button>
-              <button
-                disabled={openSelect === 'semester'}
-                onClick={() => setOpenSelect('semester')}
-                className="px-4 py-2 bg-[#1A1A1A] text-bg-page rounded-lg text-xs font-bold transition-colors disabled:opacity-50"
-              >
-                Next
-              </button>
+            <div className="flex justify-center mb-4">
+              <div className="w-10 h-1.5 bg-outline-variant/30 rounded-full" />
             </div>
             
-            <div className="w-full space-y-2 mb-2">
+            <div className="w-full space-y-1">
               {(openSelect === 'year' ? ['Year 1', 'Year 2', 'Year 3', 'Year 4'] : ['Sem 1', 'Sem 2']).map((item) => (
                 <button
                   key={item}
@@ -197,47 +191,34 @@ export default function App() {
                       setTimeout(() => setOpenSelect(null), 50);
                     }
                   }}
-                  className="w-full flex items-center gap-4 p-3 hover:bg-bg-raised/50 rounded-xl transition-colors active:scale-95"
+                  className="w-full flex items-center justify-between gap-4 p-3 hover:bg-bg-raised/50 rounded-xl transition-colors active:scale-95"
                 >
+                  <span className="font-bold text-sm text-text-primary">{item}</span>
                   <div className={cn(
-                    "w-5 h-5 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-colors",
+                    "w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-colors",
                     state[openSelect!] === item ? "border-primary bg-transparent" : "border-outline-variant"
                   )}>
-                     {state[openSelect!] === item && <div className="w-[10px] h-[10px] rounded-full bg-primary" />}
+                     {state[openSelect!] === item && <div className="w-2 h-2 rounded-full bg-primary" />}
                   </div>
-                  <span className="font-bold text-[15px] text-text-primary">{item}</span>
                 </button>
               ))}
-            </div>
-
-            <div className="mt-4 text-center pb-2">
-              <button
-                onClick={() => setOpenSelect(null)}
-                className="px-8 py-3 text-text-primary font-bold text-[15px] tracking-wide rounded-full transition-colors active:bg-bg-raised"
-              >
-                Done
-              </button>
             </div>
           </div>
         </>
       )}
 
       {/* Sidebar - Hidden during focus modes */}
-      <AnimatePresence>
-        {state.step !== 'EXAM' && state.step !== 'REVIEW' && state.step !== 'ADMIN_LOGIN' && state.step !== 'ADMIN_DASHBOARD' && (
-          <motion.nav 
-            initial={{ x: -100 }}
-            animate={{ x: 0 }}
-            exit={{ x: -100 }}
-            className={cn(
-              "bg-bg-surface border-r border-border-subtle transition-[width,transform] duration-150 ease-out z-[60] flex flex-col pt-4 overflow-hidden h-full",
-              "fixed inset-y-0 left-0 md:relative",
-              isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-              isSidebarExpanded || isMobileMenuOpen ? "w-64" : "w-16"
-            )}
-            onMouseEnter={() => setIsSidebarExpanded(true)}
-            onMouseLeave={() => setIsSidebarExpanded(false)}
-          >
+      {state.step !== 'EXAM' && state.step !== 'REVIEW' && (
+        <nav 
+          className={cn(
+            "bg-bg-surface border-r border-border-subtle transition-[width,transform] duration-200 ease-out z-[60] flex flex-col pt-4 overflow-hidden h-full will-change-transform",
+            "fixed inset-y-0 left-0 md:relative",
+            isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+            isSidebarExpanded || isMobileMenuOpen ? "w-64" : "w-16"
+          )}
+          onMouseEnter={() => setIsSidebarExpanded(true)}
+          onMouseLeave={() => setIsSidebarExpanded(false)}
+        >
             <div className="px-4 mb-8 flex items-center gap-3 h-8 shrink-0">
               <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center shrink-0">
                 <span className="text-accent font-black">G</span>
@@ -256,43 +237,60 @@ export default function App() {
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Target} label="Targeted Practice" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setIsRecentActivitiesOpen(true); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Activity} label="Performance" expanded={isSidebarExpanded || isMobileMenuOpen} />
-            </div>
-
-            <div className="mt-auto px-3 pb-6 space-y-4">
-              <div className="flex items-center gap-3 px-2 h-6">
-                <div className="relative shrink-0 ml-[2px]">
+              
+              <div className="w-full flex items-center h-10 px-2 rounded-lg text-text-tertiary cursor-default">
+                <div className="relative shrink-0 ml-0.5 flex items-center justify-center">
                   <Zap className="w-5 h-5 text-tertiary fill-tertiary" />
-                  <span className="absolute -top-2 -right-2 text-[10px] bg-bg-sunken text-text-primary rounded-full px-1 font-bold border border-border-subtle">7</span>
+                  <span className="absolute -top-2 -right-2 text-[10px] bg-bg-sunken text-text-primary rounded-full px-1 font-bold border border-border-subtle z-10">7</span>
                 </div>
                 <span className={cn(
-                  "text-sm text-text-secondary font-semibold uppercase tracking-wide transition-opacity duration-100 whitespace-nowrap",
-                  isSidebarExpanded ? "opacity-100 " : "opacity-0"
+                  "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-100",
+                  isSidebarExpanded || isMobileMenuOpen ? "opacity-100" : "opacity-0"
                 )}>
                   Streak
                 </span>
               </div>
+            </div>
+
+            <div className="mt-auto px-3 pb-6 space-y-2">
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Settings} label="Settings" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={HelpCircle} label="Help" expanded={isSidebarExpanded || isMobileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'ADMIN_LOGIN' })); setIsMobileMenuOpen(false); }} icon={Database} label="System Admin" expanded={isSidebarExpanded || isMobileMenuOpen} />
-              <div className="pt-4 border-t border-border-subtle flex items-center gap-3 px-1 h-[4.5rem]">
-                <div className="w-8 h-8 rounded-full overflow-hidden border border-border-medium shrink-0 ml-[2px]">
-                  <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=100&h=100&fit=crop" alt="Profile" />
+              {isAdmin && (
+                <NavItem onClick={() => { navigate('/admin'); setIsMobileMenuOpen(false); }} icon={Database} label="System Admin" expanded={isSidebarExpanded || isMobileMenuOpen} />
+              )}
+              <div className="pt-4 border-t border-border-subtle flex flex-col gap-3 px-1">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0 ml-[2px]">
+                    <span className="text-primary font-bold text-xs uppercase">{currentUser?.email?.charAt(0) || 'U'}</span>
+                  </div>
+                  <div className={cn(
+                    "flex flex-col whitespace-nowrap transition-opacity duration-100 min-w-0 flex-1",
+                    isSidebarExpanded ? "opacity-100 " : "opacity-0 hidden md:flex" // hidden on very narrow menus
+                  )}>
+                    <span className="text-sm font-semibold text-text-primary truncate">{currentUser?.email || 'User'}</span>
+                    <span className="text-xs text-text-tertiary">Candidate</span>
+                  </div>
                 </div>
-                <div className={cn(
-                  "flex flex-col whitespace-nowrap transition-opacity duration-100",
-                  isSidebarExpanded ? "opacity-100 " : "opacity-0"
-                )}>
-                  <span className="text-sm font-semibold text-text-primary">Kwame A.</span>
-                  <span className="text-xs text-text-tertiary">Candidate</span>
-                </div>
+                <button 
+                  onClick={handleLogout}
+                  className="flex items-center h-10 px-1 rounded-lg text-text-secondary hover:text-danger hover:bg-danger/10 w-full transition-colors group overflow-hidden relative mt-1"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-5 h-5 shrink-0 ml-1.5" />
+                  <span className={cn(
+                    "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-100",
+                    isSidebarExpanded || isMobileMenuOpen ? "opacity-100" : "opacity-0"
+                  )}>
+                    Sign Out
+                  </span>
+                </button>
               </div>
             </div>
-          </motion.nav>
-        )}
-      </AnimatePresence>
+          </nav>
+      )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative h-screen">
+      <div className="flex-1 flex flex-col min-w-0 relative h-full">
         {state.step === 'EXAM' ? (
           <ExamSimulation 
             onBack={goBack} 
@@ -309,13 +307,6 @@ export default function App() {
             onBack={goBack}
             courseName={state.selectedCourse?.name || 'Session'}
           />
-        ) : state.step === 'ADMIN_LOGIN' ? (
-          <AdminLoginScreen 
-            onSuccess={() => setState(prev => ({ ...prev, step: 'ADMIN_DASHBOARD' }))} 
-            onBack={goBack} 
-          />
-        ) : state.step === 'ADMIN_DASHBOARD' ? (
-          <AdminDashboardScreen onBack={goBack} />
         ) : (
           <>
             {/* Header */}
@@ -412,13 +403,8 @@ export default function App() {
         {/* Dynamic Content */}
         <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 pb-32">
           <div className="max-w-5xl mx-auto">
-            <AnimatePresence mode="wait">
               {state.step === 'MODE_SELECT' && (
-                <motion.div
-                  key="mode"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
+                <div
                   className="space-y-8 md:space-y-12"
                 >
                   <header>
@@ -492,15 +478,11 @@ export default function App() {
                       ))}
                     </div>
                   </section>
-                </motion.div>
+                </div>
               )}
 
               {state.step === 'COURSE_SELECT' && (
-                <motion.div
-                  key="course"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
+                <div
                   className="space-y-8 md:space-y-12"
                 >
                   <header>
@@ -536,15 +518,11 @@ export default function App() {
                       </p>
                     </div>
                   )}
-                </motion.div>
+                </div>
               )}
 
               {state.step === 'TOPIC_SELECT' && state.selectedCourse && (
-                <motion.div
-                  key="topic"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
+                <div
                   className="space-y-6 md:space-y-8"
                 >
                   <header>
@@ -606,15 +584,11 @@ export default function App() {
                       />
                     ))}
                   </div>
-                </motion.div>
+                </div>
               )}
 
               {state.step === 'READY' && (
-                <motion.div
-                  key="ready"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 1.05 }}
+                <div
                   className="max-w-2xl mx-auto space-y-8 mt-8"
                 >
                   <div className="text-center space-y-4 mb-12">
@@ -668,6 +642,7 @@ export default function App() {
                                max="120"
                                value={state.practiceTimeLimit} 
                                onChange={(e) => setState(s => ({ ...s, practiceTimeLimit: parseInt(e.target.value) || 1 }))}
+                               onBlur={() => window.scrollTo(0, 0)}
                                className="bg-transparent border-b border-primary/50 text-xl font-bold text-text-primary w-16 outline-none focus:border-primary transition-colors text-center"
                              />
                              <span className="text-sm font-medium text-text-secondary">mins</span>
@@ -703,9 +678,8 @@ export default function App() {
                       <ArrowRight className="w-5 h-5" />
                     </button>
                   </div>
-                </motion.div>
+                </div>
               )}
-            </AnimatePresence>
           </div>
         </main>
 
@@ -754,24 +728,21 @@ function RecentActivitiesDrawer({ isOpen, onClose }: { isOpen: boolean, onClose:
   const inProgressActivities = MOCK_ACTIVITIES.filter(a => a.type === 'in-progress');
 
   return (
-    <AnimatePresence>
-      {isOpen && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            onClick={onClose}
-            className="fixed inset-0 bg-bg-page/80 backdrop-blur-sm z-50"
-          />
-          <motion.div
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ duration: 0.15, ease: "easeOut" }}
-            className="fixed right-0 top-0 bottom-0 w-full max-w-md bg-bg-surface border-l border-border-subtle z-50 flex flex-col shadow-2xl"
-          >
-            <div className="flex items-center justify-between p-6 border-b border-border-subtle shrink-0 bg-bg-surface/80 backdrop-blur-md">
+    <>
+      <div
+        onClick={onClose}
+        className={cn(
+          "fixed inset-0 bg-bg-page/80 backdrop-blur-sm z-50 transition-opacity duration-300",
+          isOpen ? "opacity-100" : "opacity-0 pointer-events-none"
+        )}
+      />
+      <div
+        className={cn(
+          "fixed right-0 top-0 bottom-0 w-full max-w-md bg-bg-surface border-l border-border-subtle z-50 flex flex-col shadow-2xl transition-transform duration-300 ease-out will-change-transform",
+          isOpen ? "translate-x-0" : "translate-x-full"
+        )}
+      >
+        <div className="flex items-center justify-between p-6 border-b border-border-subtle shrink-0 bg-bg-surface/80 backdrop-blur-md">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-accent/10 rounded-xl flex items-center justify-center">
                   <History className="w-5 h-5 text-accent" />
@@ -820,10 +791,8 @@ function RecentActivitiesDrawer({ isOpen, onClose }: { isOpen: boolean, onClose:
                   )}
                </section>
             </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
+          </div>
+    </>
   );
 }
 
@@ -869,10 +838,8 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
   const isPassed = stats.percent >= 50;
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-col h-screen bg-bg-page text-text-primary font-sans overflow-hidden"
+    <div 
+      className="flex flex-col h-full bg-bg-page text-text-primary font-sans overflow-hidden"
     >
       {/* Header HUD */}
       <header className="h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-6 shrink-0 z-50">
@@ -1107,7 +1074,6 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
       </div>
 
       {/* Jude Integration Panel */}
-      <AnimatePresence>
          {judeIdx !== null && (
            <JudePanel 
              question={questions[judeIdx]} 
@@ -1115,8 +1081,7 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
              onClose={() => setJudeIdx(null)}
            />
          )}
-      </AnimatePresence>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1237,20 +1202,13 @@ broader concept or common exam trap.`;
   return (
     <>
       {/* Backdrop */}
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+      <div 
         onClick={onClose}
         className="fixed inset-0 bg-bg-page/40 backdrop-blur-sm z-[100]"
       />
       
       {/* Panel */}
-      <motion.aside
-        initial={{ x: "100%" }}
-        animate={{ x: 0 }}
-        exit={{ x: "100%" }}
-        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+      <aside
         className="fixed top-0 right-0 h-full w-full md:w-[450px] bg-bg-surface border-l border-border-subtle shadow-[0_0_50px_rgba(0,0,0,0.3)] z-[110] flex flex-col"
       >
         {/* Header */}
@@ -1316,6 +1274,7 @@ broader concept or common exam trap.`;
                 value={inputValue}
                 onChange={(e) => setInputValue(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                onBlur={() => window.scrollTo(0, 0)}
                 placeholder="Ask a follow-up question..."
                 className="w-full bg-bg-raised border border-border-subtle rounded-2xl pl-6 pr-14 py-4 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-[transform,opacity,box-shadow] placeholder:text-text-tertiary"
               />
@@ -1331,7 +1290,7 @@ broader concept or common exam trap.`;
              Conversation context restricted to Simulation Node {question.id}
            </p>
         </div>
-      </motion.aside>
+      </aside>
     </>
   );
 }
@@ -1542,13 +1501,13 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   };
 
   const navigatorJSX = (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <header className="space-y-1">
         <div className="flex items-center justify-between">
-          <h3 className="text-xs font-black text-accent-text uppercase tracking-widest">Question Navigator</h3>
+          <h3 className="text-[10px] font-black text-accent-text uppercase tracking-widest">Question Navigator</h3>
           <button 
             onClick={() => setIsMobileNavOpen(false)} 
-            className="lg:hidden p-1.5 hover:bg-bg-raised rounded-lg transition-[transform,opacity,box-shadow]"
+            className="lg:hidden p-1 hover:bg-bg-raised rounded-lg transition-[transform,opacity,box-shadow]"
           >
             <X className="w-4 h-4 text-text-tertiary hover:text-text-primary" />
           </button>
@@ -1556,28 +1515,28 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
         <div className="h-1 w-12 bg-accent rounded-full" />
       </header>
 
-      <div className="bg-surface-container-high border border-outline-variant/10 rounded-2xl p-4 flex flex-col gap-3">
-        <div className="flex justify-between items-center text-xs text-text-secondary font-bold">
+      <div className="bg-surface-container-high border border-outline-variant/10 rounded-2xl p-3 flex flex-col gap-2">
+        <div className="flex justify-between items-center text-[10px] text-text-secondary font-bold">
            <span>Progress</span>
            <span>{Object.keys(answers).length} / {totalQuestions}</span>
         </div>
-        <div className="flex gap-4 text-[10px] uppercase font-black tracking-widest">
-           <span className="flex items-center gap-1.5 text-success-text">
-              <Check className="w-3 h-3"/> {Object.keys(answers).length} done
+        <div className="flex gap-3 text-[9px] uppercase font-black tracking-widest">
+           <span className="flex items-center gap-1 text-success-text">
+              <Check className="w-2.5 h-2.5"/> {Object.keys(answers).length} done
            </span>
-           <span className="flex items-center gap-1.5 text-text-tertiary">
-              <Circle className="w-3 h-3"/> {totalQuestions - Object.keys(answers).length} left
+           <span className="flex items-center gap-1 text-text-tertiary">
+              <Circle className="w-2.5 h-2.5"/> {totalQuestions - Object.keys(answers).length} left
            </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest bg-surface-container-low p-1 rounded-xl">
+      <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest bg-surface-container-low p-1 rounded-xl">
         <button className="flex-1 py-1.5 bg-bg-surface text-text-primary rounded-lg shadow-sm border border-outline-variant/10 transition-[transform,opacity,box-shadow]">All</button>
         <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Flagged</button>
         <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Unanswered <span className="opacity-50 ml-1">{totalQuestions - Object.keys(answers).length}</span></button>
       </div>
 
-      <div className="grid grid-cols-5 gap-2 lg:gap-3">
+      <div className="grid grid-cols-5 gap-1.5 lg:gap-2">
          {questions.map((_, i) => {
             const num = i + 1;
             const isActive = currentIdx === i;
@@ -1627,18 +1586,12 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   );
 
   return (
-    <motion.div 
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="flex flex-col h-screen flex-1 bg-bg-page text-text-primary font-sans overflow-hidden"
+    <div 
+      className="flex flex-col h-full flex-1 bg-bg-page text-text-primary font-sans overflow-hidden"
     >
-      <AnimatePresence>
         {isMobileNavOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[160] lg:hidden"
+          <div
+            className="fixed inset-0 z-[160] lg:hidden animate-in fade-in duration-200"
           >
             {/* Backdrop */}
             <div 
@@ -1646,26 +1599,17 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
               onClick={() => setIsMobileNavOpen(false)}
             />
             {/* Drawer */}
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
-              className="absolute inset-y-0 right-0 w-80 bg-bg-surface border-l border-border-subtle shadow-2xl p-6 overflow-y-auto overscroll-contain flex flex-col"
+            <div
+              className="absolute inset-y-0 right-0 w-80 bg-bg-surface border-l border-border-subtle shadow-2xl p-6 overflow-y-auto overscroll-contain flex flex-col animate-in slide-in-from-right duration-200"
             >
               {navigatorJSX}
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         )}
-      </AnimatePresence>
 
-      <AnimatePresence>
         {session.pausedAt && (
-          <motion.div 
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[200] bg-bg-page flex flex-col items-center justify-center p-8 text-center"
+          <div 
+            className="fixed inset-0 z-[200] bg-bg-page flex flex-col items-center justify-center p-8 text-center animate-in fade-in zoom-in-95 duration-200"
           >
             <div className="w-24 h-24 bg-accent/10 border border-accent/20 rounded-3xl flex items-center justify-center mb-8 animate-pulse">
               <Pause className="w-10 h-10 text-accent fill-accent" />
@@ -1685,12 +1629,11 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
             >
               Resume Simulation <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />
             </button>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
 
       {/* HUD Header */}
-      <header className="relative h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-4 md:px-6 shrink-0 z-50">
+      <header className="relative h-12 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-4 md:px-6 shrink-0 z-50">
         <div className="flex items-center gap-4">
           <button 
             onClick={() => {
@@ -1783,42 +1726,39 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
       </div>
 
       {/* Main Container */}
-      <div className="flex-1 overflow-y-auto no-scrollbar pb-32">
-        <div className="max-w-7xl mx-auto px-4 md:px-6 py-6 md:py-10 space-y-8">
-          <div className="grid grid-cols-12 gap-6 md:gap-8 items-start">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="max-w-7xl mx-auto w-full px-3 md:px-6 py-2 md:py-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="grid grid-cols-12 gap-4 md:gap-5 flex-1 min-h-0 overflow-hidden">
             {/* Left/Middle: Question Core */}
-            <div className="col-span-12 lg:col-span-9 flex flex-col md:flex-row gap-6">
+            <div className="col-span-12 lg:col-span-9 flex flex-col min-h-0 h-full overflow-hidden">
 
                {/* Question Arena */}
-               <div className="flex-1 bg-bg-surface p-6 md:p-8 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group">
-                  <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50" />
-                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] rotate-[-25deg] select-none text-4xl md:text-6xl font-black text-accent uppercase">
-                    ENGINE SIMULATION
-                  </div>
-
+               <div className="bg-bg-surface p-4 md:p-6 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
+                  <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50 pointer-events-none" />
+                  
                   {flagged.has(currentIdx) && (
                     <div 
-                      className="absolute top-0 left-0 right-0 bg-amber-500/10 border-b border-amber-500/20 py-2 px-6 md:px-8 flex items-center gap-2 z-20 backdrop-blur-sm"
+                      className="absolute top-0 left-0 right-0 bg-amber-500/10 border-b border-amber-500/20 py-1.5 px-4 md:px-6 flex items-center gap-2 z-20 backdrop-blur-sm"
                     >
-                      <Flag className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
-                      <span className="text-[10px] font-black text-amber-500 uppercase tracking-widest">Flagged for Verification</span>
+                      <Flag className="w-3 h-3 text-amber-500 fill-amber-500" />
+                      <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Flagged for Verification</span>
                     </div>
                   )}
 
                   {isUrgent && (
                     <div 
-                      className="absolute top-4 right-4 bg-danger-bg/80 border border-danger-border py-1 px-3 flex items-center gap-2 z-30 rounded-full backdrop-blur-md animate-pulse shadow-lg"
+                      className="absolute top-3 right-3 bg-danger-bg/80 border border-danger-border py-0.5 px-2.5 flex items-center gap-1.5 z-30 rounded-full backdrop-blur-md animate-pulse shadow-lg pointer-events-none"
                     >
-                      <Timer className="w-3 h-3 text-danger-text" />
-                      <span className="text-[9px] font-black text-danger-text uppercase tracking-widest">Time Critical</span>
+                      <Timer className="w-2.5 h-2.5 text-danger-text" />
+                      <span className="text-[8px] font-black text-danger-text uppercase tracking-widest">Time Critical</span>
                     </div>
                   )}
 
-                  <div className={cn("relative z-10 space-y-6 md:space-y-8", flagged.has(currentIdx) ? "mt-8" : "mt-0 md:mt-4")}>
-                    <div className="flex items-center justify-between border-b border-border-subtle pb-4">
+                  <div className={cn("relative z-10 flex flex-col flex-1 overflow-y-auto no-scrollbar", flagged.has(currentIdx) ? "mt-5" : "mt-0")}>
+                    <div className="flex items-center justify-between border-b border-border-subtle pb-2 shrink-0 mt-3 md:mt-0">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-2xl font-black text-text-primary">Q{currentIdx + 1}</span>
-                        <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">/ {questions.length}</span>
+                        <span className="text-xl font-black text-text-primary">Q{currentIdx + 1}</span>
+                        <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest">/ {questions.length}</span>
                       </div>
                       
                       <button
@@ -1833,46 +1773,68 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
                       </button>
                     </div>
 
-                    <p className="text-base md:text-lg text-text-primary leading-relaxed font-medium tracking-tight">
-                      {currentQuestion.prompt}
-                    </p>
+                    <div className="py-4 space-y-4">
+                      <p className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
+                        {currentQuestion.prompt}
+                      </p>
 
-                    {currentQuestion.type === 'MCQ' ? (
-                      <div className="grid grid-cols-1 gap-4">
-                        {currentQuestion.options?.map((opt, i) => {
-                          const label = String.fromCharCode(65 + i) + '.';
-                          return (
-                            <QuizOption 
-                              key={i}
-                              id={`opt-${i}`} 
-                              label={label} 
-                              text={opt} 
-                              selected={answers[currentIdx] === opt}
-                              onSelect={() => handleAnswer(opt)}
-                            />
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="space-y-4">
-                        <label className="block text-[10px] font-black text-accent-text uppercase tracking-widest">Input Response</label>
-                        <input 
-                          type="text"
-                          value={answers[currentIdx] || ''}
-                          onChange={(e) => handleAnswer(e.target.value)}
-                          placeholder="Type your final result here..."
-                          className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-6 py-4 text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
-                        />
-                        <p className="text-[10px] text-text-tertiary italic">Numerical answers must match specified precision (±0.01).</p>
-                      </div>
-                    )}
+                      {currentQuestion.type === 'MCQ' ? (
+                        <div className="grid grid-cols-1 gap-2.5">
+                          {currentQuestion.options?.map((opt, i) => {
+                            const label = String.fromCharCode(65 + i) + '.';
+                            return (
+                              <QuizOption 
+                                key={i}
+                                id={`opt-${i}`} 
+                                label={label} 
+                                text={opt} 
+                                selected={answers[currentIdx] === opt}
+                                onSelect={() => handleAnswer(opt)}
+                              />
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="space-y-3">
+                          <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Input Response</label>
+                          <input 
+                            type="text"
+                            value={answers[currentIdx] || ''}
+                            onChange={(e) => handleAnswer(e.target.value)}
+                            onBlur={() => window.scrollTo(0, 0)}
+                            placeholder="Type your final result here..."
+                            className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
+                          />
+                          <p className="text-[9px] text-text-tertiary italic">Numerical answers must match specified precision (±0.01).</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center justify-between gap-3 shrink-0 pt-4 pb-1 border-t border-border-subtle relative z-10 bg-bg-surface">
+                    <button 
+                     onClick={prevQuestion}
+                     disabled={currentIdx === 0}
+                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-raised transition-all disabled:opacity-50 disabled:cursor-not-allowed group active:scale-95 shadow-sm"
+                   >
+                       <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
+                       <span className="text-[11px] font-black uppercase tracking-widest">Previous</span>
+                    </button>
+                    
+                   <button 
+                     onClick={nextQuestion}
+                     className="flex-[1.5] sm:flex-none flex items-center justify-center gap-2.5 px-6 py-3 bg-accent hover:bg-accent-hover text-bg-page text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-all hover:scale-[1.02] active:scale-95"
+                   >
+                     {currentIdx === questions.length - 1 ? 'Commit Verdict' : 'Next'}
+                     <ArrowRight className="w-5 h-5" />
+                   </button>
                   </div>
                </div>
             </div>
 
             {/* Right Coast: Navigation HUD (Desktop) */}
-            <aside className="hidden lg:block lg:col-span-3">
-               <div className="bg-bg-surface border border-border-subtle rounded-3xl p-6 shadow-xl sticky top-8">
+            <aside className="hidden lg:flex lg:col-span-3 flex-col h-full min-h-0">
+               <div className="bg-bg-surface border border-border-subtle rounded-3xl p-4 md:p-5 shadow-xl flex-1 overflow-y-auto no-scrollbar">
                   {navigatorJSX}
                </div>
             </aside>
@@ -1880,47 +1842,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
         </div>
       </div>
 
-      {/* Controller Footer */}
-      <footer className="fixed bottom-0 left-0 right-0 h-24 bg-bg-surface/90 backdrop-blur-2xl border-t border-border-subtle px-8 flex items-center justify-between z-[100] shadow-[0_-10px_30px_rgba(0,0,0,0.1)]">
-         <button 
-          onClick={prevQuestion}
-          disabled={currentIdx === 0}
-          className="group flex items-center gap-4 text-text-secondary hover:text-text-primary transition-[transform,opacity,box-shadow] disabled:opacity-20 disabled:cursor-not-allowed"
-        >
-            <div className="w-12 h-12 rounded-2xl bg-bg-raised border border-border-subtle flex items-center justify-center group-hover:bg-accent-muted group-hover:border-accent transition-[transform,opacity,box-shadow] group-hover:-translate-x-1 group-active:scale-95 shadow-sm">
-              <ChevronLeft className="w-6 h-6" />
-            </div>
-            <div className="flex flex-col items-start leading-none">
-              <span className="text-[10px] font-black uppercase tracking-[0.2em] opacity-50">Back</span>
-              <span className="text-xs font-black uppercase tracking-widest">Recall Previous</span>
-            </div>
-         </button>
-         
-         <div className="flex items-center gap-6">
-            <div className="hidden lg:flex flex-col items-end mr-6 text-right space-y-2">
-               <div className="flex items-center justify-between w-48">
-                  <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest leading-none">Global Progress</span>
-                  <span className="text-[10px] font-black text-accent">{Math.round((Object.keys(answers).length / questions.length) * 100)}%</span>
-               </div>
-               <div className="w-48 h-2 bg-bg-sunken border border-border-subtle rounded-full overflow-hidden p-[1.5px] shadow-[inset_0_2px_4px_rgba(0,0,0,0.1)]">
-                  <motion.div 
-                    initial={{ width: 0 }}
-                    animate={{ width: `${(Object.keys(answers).length / questions.length) * 100}%` }}
-                    transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-                    className="h-full bg-accent rounded-full shadow-[0_0_25px_var(--accent),0_0_10px_var(--accent)] brightness-125" 
-                  />
-               </div>
-            </div>
-            <button 
-              onClick={nextQuestion}
-              className="px-10 py-4 bg-accent hover:bg-accent-hover text-bg-page text-xs font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-[transform,opacity,box-shadow] hover:scale-[1.02] active:scale-95 flex items-center gap-3"
-            >
-              {currentIdx === questions.length - 1 ? 'Commit Verdict' : 'Next Question'}
-              <ArrowRight className="w-4 h-4" />
-            </button>
-         </div>
-      </footer>
-    </motion.div>
+    </div>
   );
 }
 
@@ -1938,19 +1860,19 @@ function QuizOption({ id, label, text, selected, onSelect }: { id: string, label
     <button 
       onClick={onSelect}
       className={cn(
-        "flex items-center gap-4 p-5 rounded-2xl border transition-[transform,opacity,box-shadow] duration-100 text-left group relative overflow-hidden",
+        "flex items-center gap-3 p-3.5 rounded-2xl border transition-[transform,opacity,box-shadow] duration-100 text-left group relative overflow-hidden",
         selected 
           ? "bg-accent-muted border-accent/30 shadow-[inset_0_0_20px_var(--accent-muted)]" 
           : "bg-bg-raised/30 border-border-subtle hover:bg-bg-raised/50 hover:border-border-medium"
       )}
     >
       <div className={cn(
-        "w-6 h-6 rounded-full border flex items-center justify-center shrink-0 transition-[transform,opacity,box-shadow]",
+        "w-5 h-5 rounded-full border flex items-center justify-center shrink-0 transition-[transform,opacity,box-shadow]",
         selected ? "bg-accent border-accent" : "border-border-medium group-hover:border-accent/50"
       )}>
-        {selected && <Check className="w-3 h-3 text-bg-page font-black" />}
+        {selected && <Check className="w-2.5 h-2.5 text-bg-page font-black" />}
       </div>
-      <div className="flex gap-3 text-sm relative z-10">
+      <div className="flex gap-2.5 text-[13px] relative z-10">
         <span className={cn("font-black tracking-widest uppercase shrink-0 transition-colors", selected ? "text-accent-text" : "text-text-tertiary")}>{label}</span>
         <span className={cn("font-medium transition-colors", selected ? "text-text-primary" : "text-text-secondary group-hover:text-text-primary")}>{text}</span>
       </div>
@@ -2014,7 +1936,7 @@ function NavItem({ icon: Icon, label, active = false, expanded = false, onClick 
     <button 
       onClick={onClick}
       className={cn(
-        "w-full flex items-center h-10 px-2 rounded-lg transition-[transform,opacity,box-shadow] group overflow-hidden relative",
+        "w-full flex items-center h-10 px-2 rounded-lg transition-colors group overflow-hidden relative",
         active ? "bg-accent-muted text-accent-text border-l-2 border-accent" : "text-text-tertiary hover:text-text-primary hover:bg-bg-raised"
       )}
     >
@@ -2104,9 +2026,8 @@ function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, 
             <span className={active ? "text-accent-text" : "text-text-tertiary"}>{topic.mastery}% Mastery</span>
           </div>
           <div className="w-full h-1 bg-bg-sunken rounded-full overflow-hidden">
-            <motion.div 
-              initial={{ width: 0 }}
-              animate={{ width: `${topic.mastery}%` }}
+            <div 
+              style={{ width: `${topic.mastery}%` }}
               className={cn("h-full rounded-full transition-colors", active ? "bg-accent" : "bg-text-tertiary/40")}
             />
           </div>

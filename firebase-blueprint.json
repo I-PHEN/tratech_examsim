@@ -1,0 +1,50 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A standard user of the application.",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "User's email address"
+        },
+        "createdAt": {
+          "type": "number",
+          "description": "Timestamp when the user account was created"
+        }
+      },
+      "required": ["email", "createdAt"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "A user with system admin privileges.",
+      "type": "object",
+      "properties": {
+        "addedBy": {
+          "type": "string",
+          "description": "UID of the admin who granted access"
+        },
+        "addedAt": {
+          "type": "number",
+          "description": "Timestamp when admin access was granted"
+        }
+      },
+      "required": ["addedBy", "addedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/User"
+      },
+      "description": "Store information about users that log into the application."
+    },
+    "admins/{userId}": {
+      "schema": {
+        "$ref": "#/entities/Admin"
+      },
+      "description": "Whitelisted UIDs for admin access."
+    }
+  }
+}
