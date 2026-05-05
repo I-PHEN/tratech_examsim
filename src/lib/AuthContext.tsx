@@ -3,28 +3,58 @@ import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
+interface UserProfile {
+  department?: string;
+  year?: string;
+  semester?: string;
+  [key: string]: any;
+}
+
 interface AuthContextType {
   currentUser: User | null;
+  userProfile: UserProfile | null;
   isAdmin: boolean;
   isLoading: boolean;
+  refreshProfile: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({
   currentUser: null,
+  userProfile: null,
   isAdmin: false,
   isLoading: true,
+  refreshProfile: async () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+
+  const fetchProfile = async (uid: string) => {
+    try {
+      const docRef = doc(db, 'users', uid);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        setUserProfile(docSnap.data() as UserProfile);
+      } else {
+        setUserProfile({});
+      }
+    } catch (e) {
+      console.error(e);
+      setUserProfile({});
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       
       if (user) {
+        // Fetch user profile
+        await fetchProfile(user.uid);
+
         // Check if admin
         try {
           const adminDoc = await getDoc(doc(db, 'admins', user.uid));
@@ -34,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsAdmin(user.email === 'iphhennom@gmail.com');
         }
       } else {
+        setUserProfile(null);
         setIsAdmin(false);
       }
       
@@ -43,8 +74,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return unsubscribe;
   }, []);
 
+  const refreshProfile = async () => {
+    if (currentUser) {
+      await fetchProfile(currentUser.uid);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, isAdmin, isLoading }}>
+    <AuthContext.Provider value={{ currentUser, userProfile, isAdmin, isLoading, refreshProfile }}>
       {children}
     </AuthContext.Provider>
   );

@@ -237,19 +237,6 @@ export default function App() {
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Target} label="Targeted Practice" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setIsRecentActivitiesOpen(true); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => setIsMobileMenuOpen(false)} icon={Activity} label="Performance" expanded={isSidebarExpanded || isMobileMenuOpen} />
-              
-              <div className="w-full flex items-center h-10 px-2 rounded-lg text-text-tertiary cursor-default">
-                <div className="relative shrink-0 ml-0.5 flex items-center justify-center">
-                  <Zap className="w-5 h-5 text-tertiary fill-tertiary" />
-                  <span className="absolute -top-2 -right-2 text-[10px] bg-bg-sunken text-text-primary rounded-full px-1 font-bold border border-border-subtle z-10">7</span>
-                </div>
-                <span className={cn(
-                  "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-100",
-                  isSidebarExpanded || isMobileMenuOpen ? "opacity-100" : "opacity-0"
-                )}>
-                  Streak
-                </span>
-              </div>
             </div>
 
             <div className="mt-auto px-3 pb-6 space-y-2">
@@ -387,7 +374,12 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1 md:gap-6">
+          <div className="flex items-center gap-1 md:gap-4">
+             <div className="flex items-center gap-1.5 md:gap-2 px-2.5 py-1.5 rounded-full bg-surface-container-low border border-border-subtle cursor-default">
+               <Zap className="w-4 h-4 text-tertiary fill-tertiary" />
+               <span className="text-xs md:text-sm font-bold text-text-primary">7</span>
+               <span className="hidden sm:inline-block text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Streak</span>
+             </div>
             <div className="flex items-center gap-1 md:gap-2">
               <ThemeToggle />
               <button 

@@ -5,6 +5,7 @@ import App from './App.tsx';
 import { AdminLoginScreen, AdminDashboardScreen } from './Admin.tsx';
 import { AuthProvider, useAuth } from './lib/AuthContext.tsx';
 import { OnboardingScreen } from './OnboardingScreen.tsx';
+import { ProfileSetupScreen } from './ProfileSetupScreen.tsx';
 import './index.css';
 
 function AdminRoute() {
@@ -26,9 +27,9 @@ function AdminRoute() {
 }
 
 function ProtectedApp() {
-  const { currentUser, isLoading } = useAuth();
+  const { currentUser, userProfile, isLoading } = useAuth();
 
-  if (isLoading) {
+  if (isLoading || (currentUser && userProfile === null)) {
     return (
       <div className="fixed inset-0 bg-bg-surface flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-t-2 border-primary animate-spin" />
@@ -38,6 +39,10 @@ function ProtectedApp() {
 
   if (!currentUser) {
     return <OnboardingScreen />;
+  }
+
+  if (userProfile && (!userProfile.department || !userProfile.year || !userProfile.semester)) {
+    return <ProfileSetupScreen />;
   }
 
   return <App />;
