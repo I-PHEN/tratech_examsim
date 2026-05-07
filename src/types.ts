@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-export type StudyMode = 'PRACTICE' | 'MIDSEM' | 'FULL_EXAM';
+export type StudyMode = 'PRACTICE' | 'MIDSEM' | 'FULL_EXAM' | 'DIAGNOSTIC';
 
 export type QuestionType = 'MCQ' | 'INPUT';
 
@@ -41,7 +41,8 @@ export interface Course {
 }
 
 export interface AppState {
-  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW';
+  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
+  returnStep?: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
   mode: StudyMode | null;
   selectedCourse: Course | null;
   selectedTopic: Topic | null;

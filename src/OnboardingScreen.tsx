@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { 
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signInWithPopup,
   sendPasswordResetEmail
 } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db } from './lib/firebase';
 import { Target, Zap, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
 import { cn } from './lib/utils';
@@ -44,10 +44,14 @@ export function OnboardingScreen() {
 
   const createUserDocument = async (user: any) => {
     try {
-      await setDoc(doc(db, 'users', user.uid), {
-        email: user.email,
-        createdAt: new Date(),
-      }, { merge: true });
+      const userRef = doc(db, 'users', user.uid);
+      const docSnap = await getDoc(userRef);
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          email: user.email,
+          createdAt: serverTimestamp(),
+        });
+      }
     } catch (e) {
       console.error("Error creating user doc", e);
     }

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { doc, setDoc } from 'firebase/firestore';
+import React, { useState } from 'react';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
 import { Loader2, ArrowRight } from 'lucide-react';
@@ -20,12 +20,26 @@ export function ProfileSetupScreen() {
     setError(null);
 
     try {
-      await setDoc(doc(db, 'users', currentUser.uid), {
-        department,
-        year,
-        semester,
-        updatedAt: new Date(),
-      }, { merge: true });
+      const userRef = doc(db, 'users', currentUser.uid);
+      const docSnap = await getDoc(userRef);
+      
+      if (!docSnap.exists()) {
+        await setDoc(userRef, {
+          email: currentUser.email,
+          createdAt: serverTimestamp(),
+          department,
+          year,
+          semester,
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        await setDoc(userRef, {
+          department,
+          year,
+          semester,
+          updatedAt: serverTimestamp(),
+        }, { merge: true });
+      }
       
       await refreshProfile();
     } catch (err) {
@@ -70,13 +84,17 @@ export function ProfileSetupScreen() {
                 className="w-full px-4 py-3 bg-bg-surface border border-border-subtle rounded-xl focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-text-primary text-sm font-medium transition-colors appearance-none cursor-pointer"
               >
                 <option value="" disabled>Select Department</option>
-                <option value="Computer Science">Computer Science</option>
-                <option value="Physics">Physics</option>
-                <option value="Mathematics">Mathematics</option>
-                <option value="Engineering">Engineering</option>
-                <option value="Biology">Biology</option>
-                <option value="Other">Other</option>
+                <option value="Chemical Engineering">Chemical Engineering</option>
+                <option value="Petroleum Engineering">Petroleum Engineering</option>
+                <option value="Mechanical Engineering">Mechanical Engineering</option>
+                <option value="Electrical Engineering">Electrical Engineering</option>
+                <option value="Civil Engineering">Civil Engineering</option>
               </select>
+              {department && department !== "Chemical Engineering" && (
+                <p className="text-xs text-amber-500 font-medium px-1 pt-1">
+                  Note: We currently only have courses available for Chemical Engineering.
+                </p>
+              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -89,11 +107,10 @@ export function ProfileSetupScreen() {
                   className="w-full px-4 py-3 bg-bg-surface border border-border-subtle rounded-xl focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-text-primary text-sm font-medium transition-colors appearance-none cursor-pointer"
                 >
                   <option value="" disabled>Select Year</option>
-                  <option value="1">Year 1</option>
-                  <option value="2">Year 2</option>
-                  <option value="3">Year 3</option>
-                  <option value="4">Year 4</option>
-                  <option value="5">Year 5+</option>
+                  <option value="Year 1">Year 1</option>
+                  <option value="Year 2">Year 2</option>
+                  <option value="Year 3">Year 3</option>
+                  <option value="Year 4">Year 4</option>
                 </select>
               </div>
 
@@ -106,8 +123,8 @@ export function ProfileSetupScreen() {
                   className="w-full px-4 py-3 bg-bg-surface border border-border-subtle rounded-xl focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-text-primary text-sm font-medium transition-colors appearance-none cursor-pointer"
                 >
                   <option value="" disabled>Select Sem</option>
-                  <option value="1">Semester 1</option>
-                  <option value="2">Semester 2</option>
+                  <option value="Sem 1">Semester 1</option>
+                  <option value="Sem 2">Semester 2</option>
                 </select>
               </div>
             </div>
@@ -120,6 +137,20 @@ export function ProfileSetupScreen() {
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               Let's Go
               {!loading && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
+            </button>
+            
+            <button
+              type="button"
+              onClick={() => {
+                import('firebase/auth').then(({ signOut }) => {
+                  import('./lib/firebase').then(({ auth }) => {
+                    signOut(auth);
+                  });
+                });
+              }}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-transparent text-text-tertiary hover:text-text-primary font-bold rounded-xl transition-colors uppercase tracking-widest text-[10px]"
+            >
+              Sign out instead
             </button>
           </form>
         </div>

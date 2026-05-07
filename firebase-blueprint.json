@@ -12,6 +12,22 @@
         "createdAt": {
           "type": "number",
           "description": "Timestamp when the user account was created"
+        },
+        "department": {
+          "type": "string",
+          "description": "User's selected department"
+        },
+        "year": {
+          "type": "string",
+          "description": "User's year of study"
+        },
+        "semester": {
+          "type": "string",
+          "description": "User's current semester"
+        },
+        "updatedAt": {
+          "type": "number",
+          "description": "Timestamp when the user account was last updated"
         }
       },
       "required": ["email", "createdAt"]
