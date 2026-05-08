@@ -60,10 +60,56 @@ import { HelpScreen } from './components/HelpScreen';
 // Initialize GenAI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
+const ACCENT_COLORS: Record<string, { light: any, dark: any }> = {
+  blue: {
+    light: { accent: '#5B6CF9', hover: '#4A5AE8', muted: '#5B6CF914', text: '#3A48D4' },
+    dark: { accent: '#7B8CFA', hover: '#8F9EFB', muted: '#7B8CFA18', text: '#A0ADFB' }
+  },
+  green: {
+    light: { accent: '#10B981', hover: '#059669', muted: '#10B98114', text: '#047857' },
+    dark: { accent: '#34D399', hover: '#6EE7B7', muted: '#34D39918', text: '#A7F3D0' }
+  },
+  purple: {
+    light: { accent: '#8B5CF6', hover: '#7C3AED', muted: '#8B5CF614', text: '#6D28D9' },
+    dark: { accent: '#A78BFA', hover: '#C4B5FD', muted: '#A78BFA18', text: '#DDD6FE' }
+  },
+  rose: {
+    light: { accent: '#F43F5E', hover: '#E11D48', muted: '#F43F5E14', text: '#BE123C' },
+    dark: { accent: '#FB7185', hover: '#FDA4AF', muted: '#FB718518', text: '#FECDD3' }
+  }
+};
+
 export default function App() {
   const navigate = useNavigate();
   const { currentUser, isAdmin, userProfile } = useAuth();
   
+  useEffect(() => {
+    const handleThemeChange = () => {
+      const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+      const colorId = userProfile?.themeAccent || 'blue';
+      const selectedColor = ACCENT_COLORS[colorId] || ACCENT_COLORS['blue'];
+      const themeColors = isDark ? selectedColor.dark : selectedColor.light;
+      
+      document.documentElement.style.setProperty('--accent', themeColors.accent);
+      document.documentElement.style.setProperty('--accent-hover', themeColors.hover);
+      document.documentElement.style.setProperty('--accent-muted', themeColors.muted);
+      document.documentElement.style.setProperty('--accent-text', themeColors.text);
+    };
+
+    handleThemeChange();
+
+    const observer = new MutationObserver(handleThemeChange);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    
+    return () => {
+      observer.disconnect();
+      document.documentElement.style.removeProperty('--accent');
+      document.documentElement.style.removeProperty('--accent-hover');
+      document.documentElement.style.removeProperty('--accent-muted');
+      document.documentElement.style.removeProperty('--accent-text');
+    };
+  }, [userProfile?.themeAccent]);
+
   const initialYear = userProfile?.year ? (userProfile.year.startsWith("Year") ? userProfile.year : `Year ${userProfile.year}`) : 'Year 3';
   const initialSem = userProfile?.semester ? (userProfile.semester.startsWith("Sem") ? userProfile.semester : `Sem ${userProfile.semester}`) : 'Sem 1';
 
@@ -89,6 +135,19 @@ export default function App() {
     semester: initialSem as any
   });
 
+  const [activeExam, setActiveExam] = useState<any>(null);
+
+  useEffect(() => {
+    if (state.step === 'MODE_SELECT') {
+      const saved = localStorage.getItem('active_exam');
+      if (saved) {
+        try { setActiveExam(JSON.parse(saved)); } catch(e){}
+      } else {
+        setActiveExam(null);
+      }
+    }
+  }, [state.step]);
+
   useEffect(() => {
     if (userProfile) {
       const year = userProfile.year ? (userProfile.year.startsWith("Year") ? userProfile.year : `Year ${userProfile.year}`) : 'Year 3';
@@ -102,6 +161,23 @@ export default function App() {
   const [openSelect, setOpenSelect] = useState<'year' | 'semester' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+
+    if (isProfileMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isProfileMenuOpen]);
 
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
@@ -236,14 +312,20 @@ export default function App() {
       {/* Sidebar - Hidden during focus modes */}
       {state.step !== 'EXAM' && state.step !== 'REVIEW' && (
         <nav 
+          onClick={() => {
+            if (!isSidebarExpanded && !isMobileMenuOpen) {
+              setIsSidebarExpanded(true);
+            }
+          }}
           className={cn(
             "bg-bg-surface border-r border-border-subtle transition-[width,transform] duration-200 ease-out z-[60] flex flex-col pt-4 overflow-visible h-full will-change-transform",
+            !isSidebarExpanded && !isMobileMenuOpen ? "cursor-pointer" : "cursor-default",
             "fixed inset-y-0 left-0 md:relative",
             isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
-            isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen ? "w-64" : "w-16"
+            isSidebarExpanded || isMobileMenuOpen ? "w-64" : "w-16"
           )}
         >
-            <div className="px-3 mb-8 flex items-center gap-2 h-10 shrink-0 overflow-hidden">
+            <div className="px-3 mb-8 flex items-center gap-2 h-10 shrink-0 overflow-hidden cursor-default" onClick={(e) => e.stopPropagation()}>
               <button 
                 onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
                 className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors"
@@ -253,7 +335,7 @@ export default function App() {
               </button>
               <div className={cn(
                 "flex flex-col whitespace-nowrap transition-opacity duration-100",
-                isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen ? "opacity-100 " : "opacity-0"
+                isSidebarExpanded || isMobileMenuOpen ? "opacity-100 " : "opacity-0"
               )}>
                 <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
                 <span className="text-[10px] text-text-tertiary uppercase tracking-widest leading-none">Stoic Performance</span>
@@ -261,26 +343,30 @@ export default function App() {
             </div>
 
             <div className="flex-1 px-3 space-y-2">
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'MODE_SELECT' })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, step: 'MODE_SELECT' })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
             </div>
 
             <div className="mt-auto relative">
               
               {isProfileMenuOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setIsProfileMenuOpen(false)} />
-                  <div className="absolute bottom-full left-3 w-56 mb-2 bg-surface-container border border-border-subtle rounded-2xl p-2 z-50 flex flex-col animate-fade-in origin-bottom-left shadow-xl">
-                     <div className="px-3 py-2 border-b border-white/5 mb-1">
+                  <div 
+                    ref={profileMenuRef}
+                    onClick={(e) => e.stopPropagation()}
+                    className={cn(
+                    "absolute z-50 flex flex-col animate-fade-in shadow-2xl bg-bg-raised border border-border-medium rounded-2xl p-2",
+                    isSidebarExpanded || isMobileMenuOpen ? "bottom-full left-3 w-[calc(100%-1.5rem)] mb-2 origin-bottom" : "bottom-0 left-full ml-2 w-64 origin-bottom-left"
+                  )}>
+                     <div className="px-3 py-2 border-b border-border-subtle mb-1">
                         <span className="text-sm font-semibold text-text-primary truncate block">{currentUser?.email || 'User'}</span>
                      </div>
-                     <button onClick={() => { setIsProfileMenuOpen(false); setState(p => ({ ...p, step: 'SETTINGS' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left">
+                     <button onClick={() => { setIsProfileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'SETTINGS' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left">
                         <Settings className="w-4 h-4" />
                         Settings
                      </button>
-                     <button onClick={() => { setIsProfileMenuOpen(false); setState(p => ({ ...p, step: 'HELP' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left mb-1">
+                     <button onClick={() => { setIsProfileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'HELP' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left mb-1">
                         <HelpCircle className="w-4 h-4" />
                         Get help
                      </button>
@@ -290,17 +376,16 @@ export default function App() {
                         Log out
                      </button>
                   </div>
-                </>
               )}
 
               <div className="px-3 pb-6 space-y-2">
                 {isAdmin && (
-                  <NavItem onClick={() => { navigate('/admin'); setIsMobileMenuOpen(false); }} icon={Database} label="System Admin" expanded={isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen} />
+                  <NavItem onClick={() => { navigate('/admin'); setIsMobileMenuOpen(false); }} icon={Database} label="System Admin" expanded={isSidebarExpanded || isMobileMenuOpen} />
                 )}
                 
                 <div className="pt-4 border-t border-border-subtle flex flex-col gap-3 mt-2">
                   <button 
-                    onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                    onClick={(e) => { e.stopPropagation(); setIsProfileMenuOpen(!isProfileMenuOpen); }}
                     className="flex items-center gap-3 w-full hover:bg-surface-container-high p-1 rounded-xl transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary/20 overflow-hidden"
                   >
                   <div className="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
@@ -308,7 +393,7 @@ export default function App() {
                   </div>
                   <div className={cn(
                     "flex flex-col whitespace-nowrap transition-opacity duration-100 min-w-0 flex-1",
-                    isSidebarExpanded || isMobileMenuOpen || isProfileMenuOpen ? "opacity-100" : "opacity-0 hidden w-0" 
+                    isSidebarExpanded || isMobileMenuOpen ? "opacity-100" : "opacity-0 hidden w-0" 
                   )}>
                     <span className="text-sm font-semibold text-text-primary truncate">{currentUser?.email || 'User'}</span>
                     <span className="text-xs text-text-tertiary">Candidate</span>
@@ -330,6 +415,8 @@ export default function App() {
             mode={state.mode!} 
             totalQuestions={state.mode === 'PRACTICE' ? state.questionCount : state.mode === 'DIAGNOSTIC' ? 20 : state.mode === 'MIDSEM' ? 30 : 60}
             practiceTimeLimit={state.practiceTimeLimit}
+            appStateToSave={state}
+            resumeData={state.resumeData}
           />
         ) : state.step === 'REVIEW' ? (
           <ReviewScreen 
@@ -494,37 +581,44 @@ export default function App() {
                 >
                   <header>
                     <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">
-                      {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 18 ? 'Good Afternoon' : 'Good Evening'}, {currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Engineer'}
+                      {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 18 ? 'Good Afternoon' : 'Good Evening'}, {userProfile?.preferredName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Engineer'}
                     </p>
                     <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">What do you want to tackle today?</h2>
                   </header>
 
                   {/* Resume Section */}
-                  <section className="pb-2 md:pb-4 -mt-2 md:-mt-4">
-                     <div className="bg-surface-container-high border border-outline-variant/30 rounded-2xl md:rounded-3xl p-5 border-l-4 border-l-accent flex flex-col md:flex-row shadow-sm hover:border-primary/30 hover:border-l-accent transition-[transform,opacity,box-shadow] group cursor-pointer" onClick={() => handleModeSelect('MIDSEM')}>
-                        <div className="flex-1">
-                           <p className="text-[9px] md:text-[10px] text-accent-text font-black uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                             <span className="relative flex h-2 w-2">
-                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                              <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
-                             </span>
-                             Resume Session
-                           </p>
-                           <h3 className="text-base md:text-lg font-bold text-text-primary mb-1">Process Dynamics and Control</h3>
-                           <p className="text-xs text-text-secondary">Midsem Simulation • 14/30 Questions</p>
-                        </div>
-                        <div className="mt-4 md:mt-0 flex items-center justify-between md:justify-end gap-4 md:gap-6 md:min-w-[180px]">
-                           <div className="flex items-center gap-1.5">
-                              <Timer className="w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary" />
-                              <span className="text-xs md:text-sm font-bold font-mono text-text-primary">24:15</span>
-                           </div>
-                           <button className="px-4 py-2 bg-primary group-hover:bg-primary-container group-hover:-translate-y-0.5 text-bg-base font-bold text-[10px] md:text-[11px] uppercase tracking-widest rounded-xl transition-[transform,opacity,box-shadow] flex items-center gap-2 shadow-[0_4px_20px_theme(colors.primary/0.2)]">
-                             Continue
-                             <ArrowRight className="w-3.5 h-3.5" />
-                           </button>
-                        </div>
-                     </div>
-                  </section>
+                  {activeExam && (
+                   <section className="pb-2 md:pb-4 -mt-2 md:-mt-4">
+                      <div className="bg-surface-container-high border border-outline-variant/30 rounded-2xl md:rounded-3xl p-5 border-l-4 border-l-accent flex flex-col md:flex-row shadow-sm hover:border-primary/30 hover:border-l-accent transition-[transform,opacity,box-shadow] group cursor-pointer" onClick={() => {
+                        setState({
+                          ...activeExam.appState,
+                          resumeData: activeExam.examState
+                        });
+                      }}>
+                         <div className="flex-1">
+                            <p className="text-[9px] md:text-[10px] text-accent-text font-black uppercase tracking-widest mb-1.5 flex items-center gap-2">
+                              <span className="relative flex h-2 w-2">
+                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
+                               <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
+                              </span>
+                              Resume Session
+                            </p>
+                            <h3 className="text-base md:text-lg font-bold text-text-primary mb-1">{activeExam.appState.selectedCourse?.name || 'Exam Session'}</h3>
+                            <p className="text-xs text-text-secondary">{activeExam.appState.mode === 'MIDSEM' ? 'Midsem Simulation' : activeExam.appState.mode === 'FULL_EXAM' ? 'Full Exam' : 'Practice'} • {activeExam.examState.currentIdx + 1} / {activeExam.appState.questionCount || 20} Questions</p>
+                         </div>
+                         <div className="mt-4 md:mt-0 flex items-center justify-between md:justify-end gap-4 md:gap-6 md:min-w-[180px]">
+                            <div className="flex items-center gap-1.5">
+                               <Timer className="w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary" />
+                               <span className="text-xs md:text-sm font-bold font-mono text-text-primary">Resume</span>
+                            </div>
+                            <button className="px-4 py-2 bg-primary group-hover:bg-primary-container group-hover:-translate-y-0.5 text-bg-base font-bold text-[10px] md:text-[11px] uppercase tracking-widest rounded-xl transition-[transform,opacity,box-shadow] flex items-center gap-2 shadow-[0_4px_20px_theme(colors.primary/0.2)]">
+                              Continue
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+                         </div>
+                      </div>
+                   </section>
+                  )}
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <ModeCard 
@@ -1197,6 +1291,7 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
 }
 
 function JudePanel({ question, answer, onClose }: { question: Question, answer: string, onClose: () => void }) {
+  const { currentUser, userProfile } = useAuth();
   const [messages, setMessages] = useState<{ role: 'user' | 'jude', content: string }[]>([]);
   const [isStreaming, setIsStreaming] = useState(true);
   const [streamedText, setStreamedText] = useState("");
@@ -1281,7 +1376,7 @@ broader concept or common exam trap.`;
       const chat = ai.chats.create({
          model: "gemini-3-flash-preview",
          config: {
-           systemInstruction: "You are Jude, the AI tutor. Help the student with this specific question only. Be concise."
+           systemInstruction: `You are Jude, the AI tutor. Help the student (${userProfile?.preferredName || currentUser?.displayName || 'Student'}) with this specific question only. Be concise.`
          },
          history: [
            { role: 'user', parts: [{ text: `I'm asking about this question: ${question.prompt}` }] },
@@ -1509,16 +1604,17 @@ const MOCK_QUESTIONS: Question[] = ([
   marks: 1.0 + (i % 3) * 0.5
 })));
 
-function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, practiceTimeLimit }: { onBack: () => void, onFinish: (qs: Question[], ans: Record<number, string>) => void, courseName: string, mode: StudyMode, totalQuestions: number, practiceTimeLimit: number }) {
-  const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [flagged, setFlagged] = useState<Set<number>>(new Set());
+function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, practiceTimeLimit, appStateToSave, resumeData }: { onBack: () => void, onFinish: (qs: Question[], ans: Record<number, string>) => void, courseName: string, mode: StudyMode, totalQuestions: number, practiceTimeLimit: number, appStateToSave?: any, resumeData?: any }) {
+  const [currentIdx, setCurrentIdx] = useState(resumeData ? resumeData.currentIdx : 0);
+  const [answers, setAnswers] = useState<Record<number, string>>(resumeData ? resumeData.answers : {});
+  const [flagged, setFlagged] = useState<Set<number>>(new Set(resumeData ? resumeData.flagged : []));
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   // Persistent Timer Logic
   const storageKey = `engine_session_${courseName}_${mode}`;
   const [session, setSession] = useState<TimerSession>(() => {
+    if (resumeData && resumeData.session) return resumeData.session;
     const saved = localStorage.getItem(storageKey);
     if (saved) return JSON.parse(saved);
     
@@ -1542,7 +1638,18 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [session]);
+    if (appStateToSave) {
+      localStorage.setItem('active_exam', JSON.stringify({
+        appState: appStateToSave,
+        examState: {
+          answers,
+          flagged: Array.from(flagged),
+          currentIdx,
+          session
+        }
+      }));
+    }
+  }, [session, appStateToSave, answers, flagged, currentIdx]);
 
   const togglePause = () => {
     if (mode !== 'PRACTICE') return;
@@ -1588,6 +1695,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   const currentQuestion = questions[currentIdx];
 
   const handleFinish = () => {
+    localStorage.removeItem('active_exam');
     localStorage.removeItem(storageKey);
     onFinish(questions, answers);
   };
@@ -1758,6 +1866,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
         <div className="flex items-center gap-4">
           <button 
             onClick={() => {
+              localStorage.removeItem('active_exam');
               localStorage.removeItem(storageKey);
               onBack();
             }}
@@ -2055,7 +2164,7 @@ function CommandBarItem({ icon: Icon, label }: { icon: LucideIcon, label: string
 function NavItem({ icon: Icon, label, active = false, expanded = false, onClick }: { icon: LucideIcon, label: string, active?: boolean, expanded: boolean, onClick?: () => void }) {
   return (
     <button 
-      onClick={onClick}
+      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
       className={cn(
         "w-full flex items-center h-10 px-2 rounded-lg transition-colors group overflow-hidden relative",
         active ? "bg-accent-muted text-accent-text border-l-2 border-accent" : "text-text-tertiary hover:text-text-primary hover:bg-bg-raised"

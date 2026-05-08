@@ -5,7 +5,8 @@ import { useAuth } from './lib/AuthContext';
 import { Loader2, ArrowRight } from 'lucide-react';
 
 export function ProfileSetupScreen() {
-  const { currentUser, refreshProfile } = useAuth();
+  const { currentUser, updateProfileLocal } = useAuth();
+  const [preferredName, setPreferredName] = useState('');
   const [department, setDepartment] = useState('');
   const [year, setYear] = useState('');
   const [semester, setSemester] = useState('');
@@ -27,6 +28,7 @@ export function ProfileSetupScreen() {
         await setDoc(userRef, {
           email: currentUser.email,
           createdAt: serverTimestamp(),
+          preferredName,
           department,
           year,
           semester,
@@ -34,6 +36,7 @@ export function ProfileSetupScreen() {
         });
       } else {
         await setDoc(userRef, {
+          preferredName,
           department,
           year,
           semester,
@@ -41,7 +44,12 @@ export function ProfileSetupScreen() {
         }, { merge: true });
       }
       
-      await refreshProfile();
+      updateProfileLocal({
+        department,
+        year,
+        semester,
+        preferredName
+      });
     } catch (err) {
       console.error(err);
       setError('Failed to save profile. Please try again.');
@@ -74,6 +82,18 @@ export function ProfileSetupScreen() {
                 {error}
               </div>
             )}
+
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest pl-1">Preferred Name</label>
+              <input
+                required
+                type="text"
+                placeholder="What should we call you?"
+                value={preferredName}
+                onChange={(e) => setPreferredName(e.target.value)}
+                className="w-full px-4 py-3 bg-bg-surface border border-border-subtle rounded-xl focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary text-text-primary text-sm font-medium transition-colors"
+              />
+            </div>
 
             <div className="space-y-1.5">
               <label className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest pl-1">Department</label>

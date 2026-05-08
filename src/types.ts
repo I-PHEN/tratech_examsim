@@ -51,6 +51,7 @@ export interface AppState {
   year: 'Year 1' | 'Year 2' | 'Year 3' | 'Year 4';
   semester: 'Sem 1' | 'Sem 2';
   practiceTimeLimit: number;
+  resumeData?: any;
 }
 
 export const COURSES: Course[] = [

@@ -1,13 +1,62 @@
-import React, { useState } from 'react';
-import { ChevronLeft, User, Bell, Shield, Paintbrush, LogOut, ChevronRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, User, Bell, Paintbrush, LogOut, Check } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../lib/AuthContext';
 import { signOut } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { auth, db } from '../lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+
+const THEME_COLORS = [
+  { id: 'blue', value: '#5B6CF9', name: 'Blue' },
+  { id: 'green', value: '#10B981', name: 'Green' },
+  { id: 'purple', value: '#8B5CF6', name: 'Purple' },
+  { id: 'rose', value: '#F43F5E', name: 'Rose' },
+];
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
-  const { currentUser, userProfile } = useAuth();
+  const { currentUser, userProfile, updateProfileLocal } = useAuth();
   const [activeTab, setActiveTab] = useState<'account' | 'preferences' | 'notifications'>('account');
+  
+  const [preferredName, setPreferredName] = useState(userProfile?.preferredName || '');
+  const [isSavingName, setIsSavingName] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
+
+  useEffect(() => {
+    if (userProfile?.preferredName) {
+      setPreferredName(userProfile.preferredName);
+    }
+  }, [userProfile]);
+
+  const handleSaveName = async () => {
+    if (!currentUser) return;
+    setIsSavingName(true);
+    setSaveMessage('');
+    try {
+      updateProfileLocal({ preferredName }); // Optimistic update
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        preferredName
+      });
+      setSaveMessage('Saved successfully');
+      setTimeout(() => setSaveMessage(''), 3000);
+    } catch (e) {
+      console.error(e);
+      setSaveMessage('Failed to save');
+    } finally {
+      setIsSavingName(false);
+    }
+  };
+
+  const handleSelectAccent = async (colorId: string) => {
+    if (!currentUser) return;
+    try {
+      updateProfileLocal({ themeAccent: colorId }); // Optimistic update
+      await updateDoc(doc(db, 'users', currentUser.uid), {
+        themeAccent: colorId
+      });
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   return (
     <div className="flex-1 w-full flex flex-col items-center py-6 md:py-12 px-4 h-full overflow-y-auto">
@@ -75,10 +124,10 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                 <div className="flex items-center justify-between p-4 bg-surface-container rounded-2xl border border-outline-variant/10">
                   <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                      <span className="text-primary font-bold text-lg uppercase">{currentUser?.email?.charAt(0) || 'U'}</span>
+                      <span className="text-primary font-bold text-lg uppercase">{preferredName?.charAt(0) || currentUser?.email?.charAt(0) || 'U'}</span>
                     </div>
                     <div>
-                      <p className="font-semibold text-text-primary">{currentUser?.displayName || 'Student'}</p>
+                      <p className="font-semibold text-text-primary">{preferredName || currentUser?.displayName || 'Student'}</p>
                       <p className="text-sm text-text-secondary">{currentUser?.email}</p>
                     </div>
                   </div>
@@ -86,19 +135,31 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
 
                 <div className="p-4 bg-surface-container rounded-2xl border border-outline-variant/10 space-y-4">
                   <h3 className="font-semibold text-text-primary text-sm uppercase tracking-wider">Profile Info</h3>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-medium text-text-tertiary uppercase tracking-widest mb-1.5">Registered Year</label>
-                      <div className="bg-bg-sunken px-3 py-2 rounded-lg border border-border-subtle text-text-primary font-medium">
-                        {userProfile?.year ? (userProfile.year.startsWith("Year") ? userProfile.year : `Year ${userProfile.year}`) : 'Year 3'}
-                      </div>
+                  
+                  <div className="space-y-3">
+                    <label className="block text-xs font-medium text-text-tertiary uppercase tracking-widest">Preferred Name</label>
+                    <p className="text-xs text-text-secondary">What should we (and the AI) call you?</p>
+                    <div className="flex gap-3">
+                      <input 
+                        type="text" 
+                        value={preferredName}
+                        onChange={(e) => setPreferredName(e.target.value)}
+                        placeholder="e.g. Alex"
+                        className="flex-1 bg-bg-sunken px-4 py-2 rounded-xl border border-border-medium focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-text-primary placeholder:text-text-tertiary"
+                      />
+                      <button 
+                        onClick={handleSaveName}
+                        disabled={isSavingName || preferredName === (userProfile?.preferredName || '')}
+                        className="px-4 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 hover:bg-primary-container transition-colors whitespace-nowrap"
+                      >
+                        {isSavingName ? 'Saving...' : 'Save'}
+                      </button>
                     </div>
-                    <div>
-                      <label className="block text-xs font-medium text-text-tertiary uppercase tracking-widest mb-1.5">Current Semester</label>
-                      <div className="bg-bg-sunken px-3 py-2 rounded-lg border border-border-subtle text-text-primary font-medium">
-                        {userProfile?.semester ? (userProfile.semester.startsWith("Sem") ? userProfile.semester : `Sem ${userProfile.semester}`) : 'Sem 1'}
-                      </div>
-                    </div>
+                    {saveMessage && (
+                      <p className={cn("text-xs", saveMessage.includes('Failed') ? "text-danger-text" : "text-success-text")}>
+                        {saveMessage}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -124,13 +185,35 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
               </div>
               
               <div className="space-y-4">
-                <div className="p-4 bg-surface-container rounded-2xl border border-outline-variant/10 flex items-center justify-between cursor-pointer hover:bg-surface-container-highest transition-colors">
+                <div className="p-4 bg-surface-container rounded-2xl border border-outline-variant/10 space-y-4">
                   <div>
-                    <h3 className="font-semibold text-text-primary">Dark Mode</h3>
-                    <p className="text-sm text-text-secondary">Toggle between light and dark theme.</p>
-                  </div>
-                  <div className="w-12 h-6 bg-primary rounded-full relative">
-                    <div className="absolute right-1 top-1 w-4 h-4 bg-white rounded-full"></div>
+                    <h3 className="font-semibold text-text-primary">Theme Accent Color</h3>
+                    <p className="text-sm text-text-secondary mb-4">Choose your preferred primary color.</p>
+                    <div className="flex flex-wrap gap-4">
+                      {THEME_COLORS.map(color => {
+                        const isSelected = (userProfile?.themeAccent || 'blue') === color.id;
+                        return (
+                          <button
+                            key={color.id}
+                            onClick={() => handleSelectAccent(color.id)}
+                            className="flex flex-col items-center gap-2 group"
+                          >
+                            <div 
+                              className={cn(
+                                "w-10 h-10 rounded-full flex items-center justify-center transition-transform",
+                                isSelected ? "ring-2 ring-offset-2 ring-offset-surface-container ring-primary" : "hover:scale-110"
+                              )}
+                              style={{ backgroundColor: color.value }}
+                            >
+                              {isSelected && <Check className="w-5 h-5 text-white" />}
+                            </div>
+                            <span className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors">
+                              {color.name}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>

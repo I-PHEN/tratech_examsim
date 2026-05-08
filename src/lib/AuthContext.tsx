@@ -7,6 +7,8 @@ interface UserProfile {
   department?: string;
   year?: string;
   semester?: string;
+  preferredName?: string;
+  themeAccent?: string;
   [key: string]: any;
 }
 
@@ -16,6 +18,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
   refreshProfile: () => Promise<void>;
+  updateProfileLocal: (updates: Partial<UserProfile>) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -24,6 +27,7 @@ const AuthContext = createContext<AuthContextType>({
   isAdmin: false,
   isLoading: true,
   refreshProfile: async () => {},
+  updateProfileLocal: () => {},
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -80,8 +84,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const updateProfileLocal = (updates: Partial<UserProfile>) => {
+    setUserProfile((prev) => prev ? { ...prev, ...updates } : updates as UserProfile);
+  };
+
   return (
-    <AuthContext.Provider value={{ currentUser, userProfile, isAdmin, isLoading, refreshProfile }}>
+    <AuthContext.Provider value={{ currentUser, userProfile, isAdmin, isLoading, refreshProfile, updateProfileLocal }}>
       {children}
     </AuthContext.Provider>
   );

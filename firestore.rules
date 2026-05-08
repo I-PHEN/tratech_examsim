@@ -32,6 +32,8 @@ service cloud.firestore {
              (!('department' in data.keys()) || (data.department is string && data.department.size() <= 100)) &&
              (!('year' in data.keys()) || (data.year is string && data.year.size() <= 10)) &&
              (!('semester' in data.keys()) || (data.semester is string && data.semester.size() <= 10)) &&
+             (!('preferredName' in data.keys()) || (data.preferredName is string && data.preferredName.size() <= 100)) &&
+             (!('themeAccent' in data.keys()) || (data.themeAccent is string && data.themeAccent.size() <= 50)) &&
              (!('updatedAt' in data.keys()) || data.updatedAt is timestamp);
     }
 
@@ -63,7 +65,7 @@ service cloud.firestore {
                        isValidUser(incoming()) &&
                        incoming().email == existing().email &&
                        incoming().createdAt == existing().createdAt &&
-                       incoming().diff(existing()).affectedKeys().hasOnly(['department', 'year', 'semester', 'updatedAt']) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['department', 'year', 'semester', 'preferredName', 'themeAccent', 'updatedAt']) &&
                        (!('updatedAt' in incoming().diff(existing()).affectedKeys()) || incoming().updatedAt == request.time);
       
       allow delete: if isAdmin() && isValidId(userId);
