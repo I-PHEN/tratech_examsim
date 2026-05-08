@@ -162,20 +162,28 @@ export default function App() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+    const handleClickOutside = (event: MouseEvent | TouchEvent) => {
+      if (
+        profileMenuRef.current && 
+        !profileMenuRef.current.contains(event.target as Node) &&
+        profileButtonRef.current &&
+        !profileButtonRef.current.contains(event.target as Node)
+      ) {
         setIsProfileMenuOpen(false);
       }
     };
 
     if (isProfileMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('touchstart', handleClickOutside);
     }
     
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
     };
   }, [isProfileMenuOpen]);
 
@@ -385,6 +393,7 @@ export default function App() {
                 
                 <div className="pt-4 border-t border-border-subtle flex flex-col gap-3 mt-2">
                   <button 
+                    ref={profileButtonRef}
                     onClick={(e) => { e.stopPropagation(); setIsProfileMenuOpen(!isProfileMenuOpen); }}
                     className="flex items-center gap-3 w-full hover:bg-surface-container-high p-1 rounded-xl transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-primary/20 overflow-hidden"
                   >
