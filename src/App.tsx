@@ -261,7 +261,7 @@ export default function App() {
     if (state.step === 'EXAM' || state.step === 'REVIEW') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, results: undefined }));
     }
-    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY') {
+    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, results: undefined }));
     }
   };
@@ -370,11 +370,11 @@ export default function App() {
                      <div className="px-3 py-2 border-b border-border-subtle mb-1">
                         <span className="text-sm font-semibold text-text-primary truncate block">{currentUser?.email || 'User'}</span>
                      </div>
-                     <button onClick={() => { setIsProfileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'SETTINGS' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left">
+                     <button onClick={() => { setIsProfileMenuOpen(false); setIsMobileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'SETTINGS' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left">
                         <Settings className="w-4 h-4" />
                         Settings
                      </button>
-                     <button onClick={() => { setIsProfileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'HELP' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left mb-1">
+                     <button onClick={() => { setIsProfileMenuOpen(false); setIsMobileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'HELP' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left mb-1">
                         <HelpCircle className="w-4 h-4" />
                         Get help
                      </button>

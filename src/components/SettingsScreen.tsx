@@ -74,11 +74,11 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <h1 className="text-2xl font-bold text-text-primary italic font-['Times_New_Roman']">Settings</h1>
           </div>
 
-          <nav className="flex flex-col gap-1">
+          <nav className="flex flex-row md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide shrink-0 items-center md:items-stretch w-[calc(100vw-2rem)] md:w-auto -mx-4 px-4 md:mx-0 md:px-0">
             <button 
               onClick={() => setActiveTab('account')}
               className={cn(
-                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left",
+                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left whitespace-nowrap shrink-0",
                 activeTab === 'account' ? "bg-surface-container-highest text-text-primary" : "text-text-secondary hover:bg-surface-container hover:text-text-primary"
               )}
             >
@@ -89,7 +89,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <button 
               onClick={() => setActiveTab('preferences')}
               className={cn(
-                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left",
+                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left whitespace-nowrap shrink-0",
                 activeTab === 'preferences' ? "bg-surface-container-highest text-text-primary" : "text-text-secondary hover:bg-surface-container hover:text-text-primary"
               )}
             >
@@ -100,7 +100,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <button 
               onClick={() => setActiveTab('notifications')}
               className={cn(
-                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left",
+                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left whitespace-nowrap shrink-0",
                 activeTab === 'notifications' ? "bg-surface-container-highest text-text-primary" : "text-text-secondary hover:bg-surface-container hover:text-text-primary"
               )}
             >

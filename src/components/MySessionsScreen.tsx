@@ -167,7 +167,7 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void, onR
                >
                  Previous
                </button>
-               <div className="flex items-center gap-1 px-4">
+               <div className="hidden md:flex items-center gap-1 px-4">
                  {Array.from({ length: totalPages }).map((_, i) => (
                    <button
                      key={i}
@@ -182,6 +182,9 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void, onR
                      {i + 1}
                    </button>
                  ))}
+               </div>
+               <div className="md:hidden px-4 text-xs font-bold text-text-secondary">
+                 Page {currentPage} of {totalPages}
                </div>
                <button
                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
