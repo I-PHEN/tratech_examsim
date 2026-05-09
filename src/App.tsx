@@ -76,6 +76,14 @@ const ACCENT_COLORS: Record<string, { light: any, dark: any }> = {
   rose: {
     light: { accent: '#F43F5E', hover: '#E11D48', muted: '#F43F5E14', text: '#BE123C' },
     dark: { accent: '#FB7185', hover: '#FDA4AF', muted: '#FB718518', text: '#FECDD3' }
+  },
+  orange: {
+    light: { accent: '#F97316', hover: '#EA580C', muted: '#F9731614', text: '#C2410C' },
+    dark: { accent: '#FB923C', hover: '#FDBA74', muted: '#FB923C18', text: '#FED7AA' }
+  },
+  yellow: {
+    light: { accent: '#EAB308', hover: '#CA8A04', muted: '#EAB30814', text: '#A16207' },
+    dark: { accent: '#FDE047', hover: '#FEF08A', muted: '#FDE04718', text: '#FEF9C3' }
   }
 };
 
@@ -351,10 +359,10 @@ export default function App() {
             </div>
 
             <div className="flex-1 px-3 space-y-2">
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'MODE_SELECT' })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP'} expanded={isSidebarExpanded || isMobileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen} />
-              <NavItem onClick={() => { setState(p => ({ ...p, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, returnStep: undefined, step: 'MODE_SELECT' })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
             </div>
 
             <div className="mt-auto relative">

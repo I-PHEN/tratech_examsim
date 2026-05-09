@@ -11,6 +11,8 @@ const THEME_COLORS = [
   { id: 'green', value: '#10B981', name: 'Green' },
   { id: 'purple', value: '#8B5CF6', name: 'Purple' },
   { id: 'rose', value: '#F43F5E', name: 'Rose' },
+  { id: 'orange', value: '#F97316', name: 'Orange' },
+  { id: 'yellow', value: '#EAB308', name: 'Yellow' },
 ];
 
 export function SettingsScreen({ onBack }: { onBack: () => void }) {
@@ -74,39 +76,36 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             <h1 className="text-2xl font-bold text-text-primary italic font-['Times_New_Roman']">Settings</h1>
           </div>
 
-          <nav className="flex flex-row md:flex-col gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide shrink-0 items-center md:items-stretch w-[calc(100vw-2rem)] md:w-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <nav className="grid grid-cols-3 md:flex md:flex-col gap-2 shrink-0 w-full md:w-64">
             <button 
               onClick={() => setActiveTab('account')}
               className={cn(
-                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left whitespace-nowrap shrink-0",
+                "flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 p-2 md:p-3 rounded-xl transition-colors font-medium text-[10px] md:text-sm text-center md:text-left",
                 activeTab === 'account' ? "bg-surface-container-highest text-text-primary" : "text-text-secondary hover:bg-surface-container hover:text-text-primary"
               )}
             >
-              <div className="flex items-center gap-3">
-                <User className="w-4 h-4" /> Account
-              </div>
+              <User className="w-5 h-5 md:w-4 md:h-4" />
+              <span className="truncate">Account</span>
             </button>
             <button 
               onClick={() => setActiveTab('preferences')}
               className={cn(
-                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left whitespace-nowrap shrink-0",
+                "flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 p-2 md:p-3 rounded-xl transition-colors font-medium text-[10px] md:text-sm text-center md:text-left",
                 activeTab === 'preferences' ? "bg-surface-container-highest text-text-primary" : "text-text-secondary hover:bg-surface-container hover:text-text-primary"
               )}
             >
-              <div className="flex items-center gap-3">
-                <Paintbrush className="w-4 h-4" /> Preferences
-              </div>
+              <Paintbrush className="w-5 h-5 md:w-4 md:h-4" />
+              <span className="truncate">Preferences</span>
             </button>
             <button 
               onClick={() => setActiveTab('notifications')}
               className={cn(
-                "flex items-center justify-between p-3 rounded-xl transition-colors font-medium text-sm text-left whitespace-nowrap shrink-0",
+                "flex flex-col md:flex-row items-center justify-center md:justify-start gap-1 p-2 md:p-3 rounded-xl transition-colors font-medium text-[10px] md:text-sm text-center md:text-left",
                 activeTab === 'notifications' ? "bg-surface-container-highest text-text-primary" : "text-text-secondary hover:bg-surface-container hover:text-text-primary"
               )}
             >
-              <div className="flex items-center gap-3">
-                <Bell className="w-4 h-4" /> Notifications
-              </div>
+              <Bell className="w-5 h-5 md:w-4 md:h-4" />
+              <span className="truncate">Notifications</span>
             </button>
           </nav>
         </div>
@@ -139,18 +138,18 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
                   <div className="space-y-3">
                     <label className="block text-xs font-medium text-text-tertiary uppercase tracking-widest">Preferred Name</label>
                     <p className="text-xs text-text-secondary">What should we (and the AI) call you?</p>
-                    <div className="flex gap-3">
+                    <div className="flex flex-col md:flex-row gap-3 w-full">
                       <input 
                         type="text" 
                         value={preferredName}
                         onChange={(e) => setPreferredName(e.target.value)}
                         placeholder="e.g. Alex"
-                        className="flex-1 bg-bg-sunken px-4 py-2 rounded-xl border border-border-medium focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-text-primary placeholder:text-text-tertiary"
+                        className="flex-1 min-w-0 w-full bg-bg-sunken px-4 py-2 rounded-xl border border-border-medium focus:border-primary focus:ring-1 focus:ring-primary outline-none transition-all text-text-primary placeholder:text-text-tertiary"
                       />
                       <button 
                         onClick={handleSaveName}
                         disabled={isSavingName || preferredName === (userProfile?.preferredName || '')}
-                        className="px-4 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 hover:bg-primary-container transition-colors whitespace-nowrap"
+                        className="px-4 py-2 bg-primary text-white rounded-xl font-medium disabled:opacity-50 hover:bg-primary-container transition-colors whitespace-nowrap w-full md:w-auto"
                       >
                         {isSavingName ? 'Saving...' : 'Save'}
                       </button>

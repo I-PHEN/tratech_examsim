@@ -132,16 +132,16 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void, onR
                     </div>
                  </div>
 
-                 <div className="flex items-center gap-6 border-t md:border-t-0 md:border-l border-border-subtle pt-4 md:pt-0 md:pl-6">
-                    <div className="flex flex-col gap-1 items-start md:items-end w-24">
+                 <div className="flex items-center justify-between gap-2 md:gap-6 border-t md:border-t-0 md:border-l border-border-subtle pt-4 md:pt-0 md:pl-6 w-full md:w-auto">
+                    <div className="flex flex-col gap-1 items-start md:items-end md:w-24">
                         <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest flex items-center gap-1"><Clock className="w-3 h-3" /> Time</span>
                         <span className="text-sm font-bold text-text-primary">{session.timeTaken}</span>
                     </div>
-                    <div className="flex flex-col gap-1 items-start md:items-end w-24">
+                    <div className="flex flex-col gap-1 items-start md:items-end md:w-24">
                         <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest flex items-center gap-1"><CheckCircle2 className="w-3 h-3" /> Score</span>
                         <span className="text-sm font-bold text-text-primary">{session.score} / {session.total}</span>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-bg-sunken flex items-center justify-center border border-border-subtle group-hover:bg-primary group-hover:border-primary transition-colors shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-bg-sunken flex items-center justify-center border border-border-subtle group-hover:bg-primary group-hover:border-primary transition-colors shrink-0 md:ml-2">
                        <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-bg-page transition-colors" />
                     </div>
                  </div>
