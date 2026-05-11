@@ -114,9 +114,14 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void, onR
                     <div className="w-16 h-16 rounded-2xl bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative transition-transform">
                         <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
                            <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
-                           <circle cx="32" cy="32" r="28" fill="transparent" stroke={session.accuracy >= 50 ? "var(--success-text)" : "var(--danger-text)"} strokeWidth="4" strokeDasharray={`${(session.accuracy / 100) * 175.9} 175.9`} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
+                           <circle cx="32" cy="32" r="28" fill="transparent" stroke={session.accuracy >= 70 ? "var(--accent)" : session.accuracy >= 50 ? "var(--warning-text)" : "var(--accent-danger)"} strokeWidth="4" strokeDasharray={`${(session.accuracy / 100) * 175.9} 175.9`} strokeLinecap="round" className="transition-all duration-1000 ease-out" />
                         </svg>
-                        <span className="text-sm font-black text-text-primary absolute tracking-tighter ml-0.5">{Math.round(session.accuracy)}%</span>
+                        <span className={cn(
+                           "text-sm font-black absolute tracking-tighter ml-0.5",
+                           session.accuracy >= 50 && session.accuracy < 70 ? "text-warning-text" : ""
+                        )} style={session.accuracy >= 70 ? { color: 'var(--accent)' } : session.accuracy < 50 ? { color: 'var(--accent-danger)' } : undefined}>
+                           {Math.round(session.accuracy)}%
+                        </span>
                     </div>
 
                     <div className="flex-1 space-y-1.5">

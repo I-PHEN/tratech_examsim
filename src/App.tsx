@@ -98,10 +98,26 @@ export default function App() {
       const selectedColor = ACCENT_COLORS[colorId] || ACCENT_COLORS['blue'];
       const themeColors = isDark ? selectedColor.dark : selectedColor.light;
       
+      const COMPLEMENTARY_MAP: Record<string, string> = {
+        blue: 'orange',
+        green: 'rose',
+        purple: 'yellow',
+        rose: 'green',
+        orange: 'blue',
+        yellow: 'purple'
+      };
+      
+      const compId = COMPLEMENTARY_MAP[colorId] || 'orange';
+      const compColor = ACCENT_COLORS[compId] || ACCENT_COLORS['orange'];
+      const compThemeColors = isDark ? compColor.dark : compColor.light;
+      
       document.documentElement.style.setProperty('--accent', themeColors.accent);
       document.documentElement.style.setProperty('--accent-hover', themeColors.hover);
       document.documentElement.style.setProperty('--accent-muted', themeColors.muted);
       document.documentElement.style.setProperty('--accent-text', themeColors.text);
+      
+      document.documentElement.style.setProperty('--accent-danger', compThemeColors.accent);
+      document.documentElement.style.setProperty('--accent-danger-text', compThemeColors.text);
     };
 
     handleThemeChange();
@@ -115,6 +131,8 @@ export default function App() {
       document.documentElement.style.removeProperty('--accent-hover');
       document.documentElement.style.removeProperty('--accent-muted');
       document.documentElement.style.removeProperty('--accent-text');
+      document.documentElement.style.removeProperty('--accent-danger');
+      document.documentElement.style.removeProperty('--accent-danger-text');
     };
   }, [userProfile?.themeAccent]);
 
@@ -674,7 +692,7 @@ export default function App() {
                     </header>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {MOCK_HISTORY.slice(0, 3).map(activity => (
+                      {MOCK_HISTORY.slice(0, 4).map(activity => (
                         <div 
                            key={activity.id} 
                            onClick={() => {
@@ -707,12 +725,12 @@ export default function App() {
                            <div className="w-16 h-16 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
                               <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
                                  <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
-                                 <circle cx="32" cy="32" r="28" fill="transparent" stroke={activity.accuracy >= 50 ? "var(--success-text)" : "var(--danger-text)"} strokeWidth="4" strokeDasharray={`${(activity.accuracy / 100) * 175.9} 175.9`} strokeLinecap="round" />
+                                 <circle cx="32" cy="32" r="28" fill="transparent" stroke={activity.accuracy >= 70 ? "var(--accent)" : activity.accuracy >= 50 ? "var(--warning-text)" : "var(--accent-danger)"} strokeWidth="4" strokeDasharray={`${(activity.accuracy / 100) * 175.9} 175.9`} strokeLinecap="round" />
                               </svg>
                               <span className={cn(
                                  "text-sm font-black",
-                                 activity.accuracy >= 50 ? "text-success-text" : "text-danger-text"
-                              )}>
+                                 activity.accuracy >= 50 && activity.accuracy < 70 && "text-warning-text"
+                               )} style={activity.accuracy >= 70 ? { color: 'var(--accent)' } : activity.accuracy < 50 ? { color: 'var(--accent-danger)'} : undefined}>
                                  {Math.round(activity.accuracy)}%
                               </span>
                            </div>
@@ -772,7 +790,7 @@ export default function App() {
                              <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative">
                                 <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 48 48">
                                    <circle cx="24" cy="24" r="21" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
-                                   <circle cx="24" cy="24" r="21" fill="transparent" stroke={weakness.accuracy < 50 ? "var(--danger-text)" : weakness.accuracy < 70 ? "var(--warning-text)" : "var(--success-text)"} strokeWidth="4" strokeDasharray={`${(weakness.accuracy / 100) * 131.9} 131.9`} strokeLinecap="round" />
+                                   <circle cx="24" cy="24" r="21" fill="transparent" stroke={weakness.accuracy < 50 ? "var(--accent-danger)" : weakness.accuracy < 70 ? "var(--warning-text)" : "var(--accent)"} strokeWidth="4" strokeDasharray={`${(weakness.accuracy / 100) * 131.9} 131.9`} strokeLinecap="round" />
                                 </svg>
                              </div>
                              
