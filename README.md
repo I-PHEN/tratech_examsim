@@ -1,20 +1,69 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+# tratech_examsim
 
-# Run and deploy your AI Studio app
+An exam simulation and study platform built for students who want to practice under real exam conditions. The goal was to build something that actually feels like sitting an exam — timed sessions, instant feedback, and a tutor that explains why you got something wrong instead of just telling you the answer.
 
-This contains everything you need to run your app locally.
+## Features
 
-View your app in AI Studio: https://ai.studio/apps/b992604f-d6ed-44d1-9ea6-6269f62d90b1
+- **Exam sessions** — timed practice with MCQ and short-answer questions
+- **Jude** — an AI tutor that gives post-answer explanations and answers follow-up questions
+- **Performance tracking** — session history and score trends over time
+- **Course & topic filtering** — practice specific subjects or go broad
+- **Dark/light mode** with customizable accent colors
 
-## Run Locally
+## Tech Stack
 
-**Prerequisites:**  Node.js
+- React 19 + TypeScript
+- Vite + Tailwind CSS v4
+- Express backend with Prisma + SQLite
+- Firebase Auth
+- OpenRouter for AI (model: `openai/gpt-4o-mini`)
+- Recharts for performance graphs
 
+## Getting Started
+
+**Prerequisites:** Node.js 18+
 
 1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
+
+2. Copy the example env file and fill in your keys:
+   ```bash
+   cp .env.example .env.local
+   ```
+   Set `OPENROUTER_API_KEY` to your key from [openrouter.ai/keys](https://openrouter.ai/keys).
+
+3. Run the dev server:
+   ```bash
+   npm run dev
+   ```
+   App runs at `http://localhost:3000`.
+
+## Project Structure
+
+```
+src/
+  App.tsx                  # Main app + AI tutor logic
+  Admin.tsx                # Admin panel
+  types.ts                 # Shared types and mock data
+  components/
+    MySessionsScreen.tsx
+    PerformanceScreen.tsx
+    SettingsScreen.tsx
+    HelpScreen.tsx
+  lib/
+    firebase.ts
+    AuthContext.tsx
+backend/
+  server.ts                # Express API + Vite middleware
+prisma/
+  schema.prisma            # DB schema (SQLite)
+```
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `OPENROUTER_API_KEY` | Required for AI tutor features |
+| `APP_URL` | Base URL of the app (defaults to localhost:3000) |

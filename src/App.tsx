@@ -5,7 +5,6 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { GoogleGenAI, GenerateContentResponse } from "@google/genai";
 import { signOut } from 'firebase/auth';
 import { auth } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
@@ -57,8 +56,42 @@ import { PerformanceScreen } from './components/PerformanceScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HelpScreen } from './components/HelpScreen';
 
-// Initialize GenAI
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+async function* streamOpenRouter(
+  messages: { role: 'user' | 'assistant' | 'system'; content: string }[]
+) {
+  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'openai/gpt-4o-mini',
+      messages,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok || !response.body) throw new Error(`OpenRouter error: ${response.status}`);
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    const lines = decoder.decode(value).split('\n');
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const data = line.slice(6).trim();
+      if (data === '[DONE]') return;
+      try {
+        const text = JSON.parse(data).choices?.[0]?.delta?.content || '';
+        if (text) yield text;
+      } catch {}
+    }
+  }
+}
 
 const ACCENT_COLORS: Record<string, { light: any, dark: any }> = {
   blue: {
@@ -1359,25 +1392,20 @@ specifically why their answer was wrong. End with one sentence connecting this t
 broader concept or common exam trap.`;
 
       try {
-        const stream = await ai.models.generateContentStream({
-          model: "gemini-3-flash-preview",
-          contents: prompt
-        });
+        const stream = streamOpenRouter([{ role: 'user', content: prompt }]);
 
         let fullText = "";
-        for await (const chunk of stream) {
+        for await (const text of stream) {
           if (!isMounted) break;
-          const text = chunk.text || "";
           fullText += text;
-          
-          // Typewriter simulation
+
           for (let i = 0; i < text.length; i++) {
             await new Promise(r => setTimeout(r, 15));
             if (!isMounted) return;
             setStreamedText(prev => prev + text[i]);
           }
         }
-        
+
         setIsStreaming(false);
         setMessages([{ role: 'jude', content: fullText }]);
       } catch (err) {
@@ -1408,24 +1436,20 @@ broader concept or common exam trap.`;
     setStreamedText("");
 
     try {
-      const chat = ai.chats.create({
-         model: "gemini-3-flash-preview",
-         config: {
-           systemInstruction: `You are Jude, the AI tutor. Help the student (${userProfile?.preferredName || currentUser?.displayName || 'Student'}) with this specific question only. Be concise.`
-         },
-         history: [
-           { role: 'user', parts: [{ text: `I'm asking about this question: ${question.prompt}` }] },
-           ...messages.map(m => ({ 
-             role: m.role === 'jude' ? ('model' as const) : ('user' as const), 
-             parts: [{ text: m.content }] 
-           }))
-         ]
-      });
+      const systemPrompt = `You are Jude, the AI tutor. Help the student (${userProfile?.preferredName || currentUser?.displayName || 'Student'}) with this specific question only. Be concise.`;
+      const chatMessages: { role: 'user' | 'assistant' | 'system'; content: string }[] = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `I'm asking about this question: ${question.prompt}` },
+        ...messages.map((m: { role: string; content: string }) => ({
+          role: m.role === 'jude' ? ('assistant' as const) : ('user' as const),
+          content: m.content,
+        })),
+        { role: 'user', content: userMsg },
+      ];
 
-      const result = await chat.sendMessageStream({ message: userMsg });
+      const stream = streamOpenRouter(chatMessages);
       let fullText = "";
-      for await (const chunk of result) {
-        const text = chunk.text || "";
+      for await (const text of stream) {
         fullText += text;
         for (let i = 0; i < text.length; i++) {
           await new Promise(r => setTimeout(r, 10));
