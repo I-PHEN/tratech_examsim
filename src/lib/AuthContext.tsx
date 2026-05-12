@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 
 interface UserProfile {
@@ -52,12 +52,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let unsubscribeProfile: (() => void) | undefined;
+
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
       
       if (user) {
-        // Fetch user profile
-        await fetchProfile(user.uid);
+        // Fetch user profile continuously
+        unsubscribeProfile = onSnapshot(doc(db, 'users', user.uid), (docSnap) => {
+          if (docSnap.exists()) {
+            setUserProfile(docSnap.data() as UserProfile);
+          } else {
+            setUserProfile({});
+          }
+        }, (error) => {
+          console.error("Error fetching user profile stream", error);
+          setUserProfile({});
+        });
 
         // Check if admin
         try {
@@ -68,6 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsAdmin(user.email === 'iphhennom@gmail.com');
         }
       } else {
+        if (unsubscribeProfile) {
+          unsubscribeProfile();
+        }
         setUserProfile(null);
         setIsAdmin(false);
       }
@@ -75,10 +89,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     });
 
-    return unsubscribe;
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeProfile) {
+        unsubscribeProfile();
+      }
+    };
   }, []);
 
   const refreshProfile = async () => {
+    // If we're using onSnapshot, manual refresh might not be strictly necessary
+    // but we can leave it to fetch forcefully if needed
     if (currentUser) {
       await fetchProfile(currentUser.uid);
     }
