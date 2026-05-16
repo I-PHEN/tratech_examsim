@@ -73,7 +73,7 @@ export function SettingsScreen({ onBack }: { onBack: () => void }) {
             >
               <ChevronLeft className="w-5 h-5" />
             </button>
-            <h1 className="text-2xl font-bold text-text-primary italic font-['Times_New_Roman']">Settings</h1>
+            <h1 className="text-2xl font-bold text-text-primary italic font-display">Settings</h1>
           </div>
 
           <nav className="grid grid-cols-3 md:flex md:flex-col gap-2 shrink-0 w-full md:w-64">

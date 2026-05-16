@@ -134,7 +134,7 @@ export function OnboardingScreen() {
             <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
           </div>
           
-          <h1 className="text-3xl md:text-5xl lg:text-6xl font-['Times_New_Roman'] italic font-bold text-text-primary leading-[1.1]">
+          <h1 className="text-3xl md:text-5xl lg:text-6xl font-display italic font-bold text-text-primary leading-[1.1]">
             Master your exams. <br className="hidden md:block"/>
             Command your results.
           </h1>

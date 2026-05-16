@@ -6,7 +6,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
-import { auth } from './lib/firebase';
+import { doc, updateDoc } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
 import { 
   Home, 
@@ -47,32 +48,134 @@ import {
   Circle,
   Database,
   LogOut,
-  Globe
+  Globe,
+  Plus,
+  Minus,
+  AlertTriangle
 } from 'lucide-react';
-import { AppState, StudyMode, Course, Topic, COURSES, Question, QuestionType, TimerSession } from './types';
+import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
 import { cn } from './lib/utils';
-import { MySessionsScreen, MOCK_HISTORY } from './components/MySessionsScreen';
+import { MySessionsScreen } from './components/MySessionsScreen';
 import { PerformanceScreen } from './components/PerformanceScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HelpScreen } from './components/HelpScreen';
+import { Button } from './components/ui/Button';
+import { Card } from './components/ui/Card';
+import { EmptyState } from './components/ui/EmptyState';
+import { Spinner } from './components/ui/Spinner';
+import { SectionHeader } from './components/ui/SectionHeader';
+import { Pill } from './components/ui/Pill';
+import { NavItem } from './components/ui/NavItem';
+import { ModeCard } from './components/ui/ModeCard';
+import { TopicCard } from './components/ui/TopicCard';
+import { NotificationsBell } from './components/NotificationsBell';
+import { ApiError, apiGet, apiPost } from './lib/apiClient';
+import { Loader2 } from 'lucide-react';
+
+interface ApiProgramCourse {
+  id: string;
+  year_level: number;
+  semester: number;
+  courses: { name: string; code: string };
+  programs: { name: string; code: string };
+}
+
+interface ApiTopic {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+interface ApiAsset {
+  id: string;
+  url: string;
+  mime_type: string;
+  position: number;
+}
+
+interface ApiOption {
+  id: string;
+  text: string;
+  is_correct: boolean;
+}
+
+interface ApiContent {
+  prompt: string;
+  explanation?: string | null;
+  correct_answer?: string | null;
+  answer_tolerance?: number | null;
+  unit?: string | null;
+}
+
+interface ApiQuestion {
+  id: string;
+  type: 'mcq' | 'calc';
+  difficulty: 'easy' | 'medium' | 'hard';
+  exam_scope: 'midsem' | 'final' | 'both';
+  topic_id: string;
+  answer_type: 'exact' | 'range' | null;
+  content: ApiContent;
+  options?: ApiOption[];
+  assets: ApiAsset[];
+}
+
+interface ApiSessionCreated {
+  session_id: string;
+  picked: ApiQuestion[];
+}
+
+function yearStringToNumber(y: string): number {
+  return parseInt(y.replace(/\D/g, ''), 10) || 1;
+}
+function semStringToNumber(s: string): number {
+  return parseInt(s.replace(/\D/g, ''), 10) || 1;
+}
+function modeToApi(m: StudyMode): 'practice' | 'diagnostic' | 'midsem' | 'full_exam' {
+  if (m === 'PRACTICE') return 'practice';
+  if (m === 'DIAGNOSTIC') return 'diagnostic';
+  if (m === 'MIDSEM') return 'midsem';
+  return 'full_exam';
+}
+
+function apiQuestionToFrontend(q: ApiQuestion, idx: number): Question {
+  if (q.type === 'mcq') {
+    return {
+      id: q.id,
+      type: 'MCQ',
+      prompt: q.content.prompt,
+      options: (q.options ?? []).map((o) => o.text),
+      optionIds: (q.options ?? []).map((o) => o.id),
+      correctOptionId: (q.options ?? []).find((o) => o.is_correct)?.id,
+      marks: 1,
+      assets: q.assets,
+    };
+  }
+  return {
+    id: q.id,
+    type: 'INPUT',
+    prompt: q.content.prompt,
+    correctAnswer: q.content.correct_answer ?? undefined,
+    marks: 1,
+    assets: q.assets,
+  };
+}
 
 async function* streamOpenRouter(
   messages: { role: 'user' | 'assistant' | 'system'; content: string }[]
 ) {
-  const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+  const token = await auth.currentUser?.getIdToken();
+  if (!token) throw new Error('Not authenticated');
+
+  const response = await fetch('/api/ai/chat', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model: 'openai/gpt-4o-mini',
-      messages,
-      stream: true,
-    }),
+    body: JSON.stringify({ messages }),
   });
 
-  if (!response.ok || !response.body) throw new Error(`OpenRouter error: ${response.status}`);
+  if (!response.ok || !response.body) throw new Error(`AI proxy error: ${response.status}`);
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -122,7 +225,7 @@ const ACCENT_COLORS: Record<string, { light: any, dark: any }> = {
 
 export default function App() {
   const navigate = useNavigate();
-  const { currentUser, isAdmin, userProfile } = useAuth();
+  const { currentUser, isAdmin, userProfile, updateProfileLocal } = useAuth();
   
   useEffect(() => {
     const handleThemeChange = () => {
@@ -180,9 +283,7 @@ export default function App() {
     }
   };
 
-  const [state, setState] = useState<AppState & { 
-    results?: { questions: Question[], answers: Record<number, string> } 
-  }>({
+  const [state, setState] = useState<AppState>({
     step: 'MODE_SELECT',
     mode: null,
     selectedCourse: null,
@@ -194,16 +295,117 @@ export default function App() {
     semester: initialSem as any
   });
 
-  const [activeExam, setActiveExam] = useState<any>(null);
+  const [availableCourses, setAvailableCourses] = useState<Course[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [availableTopics, setAvailableTopics] = useState<Topic[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(false);
+  const [recentSessions, setRecentSessions] = useState<Array<{
+    id: string;
+    course_name: string | null;
+    topic_name: string | null;
+    mode: 'practice' | 'diagnostic' | 'midsem' | 'full_exam';
+    accuracy: number | null;
+    score: number | null;
+    total_questions: number;
+    started_at: string;
+  }>>([]);
+  const [weaknesses, setWeaknesses] = useState<Array<{
+    topic_id: string;
+    topic_name: string | null;
+    attempts: number;
+    correct: number;
+    accuracy: number;
+  }>>([]);
+
+  // Practice ready-screen ephemeral state
+  const [practiceTimeRaw, setPracticeTimeRaw] = useState<string>('20');
+  const [practiceTimeUserSet, setPracticeTimeUserSet] = useState(false);
+  const [startingExam, setStartingExam] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[] } | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+    const yl = yearStringToNumber(state.year);
+    const sm = semStringToNumber(state.semester);
+    setCoursesLoading(true);
+    apiGet<ApiProgramCourse[]>(
+      `/api/program-courses?year_level=${yl}&semester=${sm}`
+    )
+      .then((rows) => {
+        if (cancelled) return;
+        setAvailableCourses(
+          rows.map((r) => ({
+            id: r.id,
+            name: r.courses?.name ?? 'Unknown course',
+            description: r.programs?.name ?? '',
+            year: state.year,
+            semester: state.semester,
+          }))
+        );
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error('Failed to load courses', e);
+        setAvailableCourses([]);
+      })
+      .finally(() => {
+        if (!cancelled) setCoursesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.year, state.semester]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!state.selectedCourse?.id) {
+      setAvailableTopics([]);
+      setTopicsLoading(false);
+      return;
+    }
+    setTopicsLoading(true);
+    apiGet<ApiTopic[]>(`/api/topics?program_course_id=${state.selectedCourse.id}`)
+      .then((rows) => {
+        if (!cancelled) setAvailableTopics(rows.map((r) => ({ id: r.id, name: r.name })));
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        console.error('Failed to load topics', e);
+        setAvailableTopics([]);
+      })
+      .finally(() => {
+        if (!cancelled) setTopicsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [state.selectedCourse?.id]);
+
+  useEffect(() => {
+    if (state.step !== 'MODE_SELECT') return;
+    apiGet<typeof recentSessions>('/api/sessions?limit=4')
+      .then(setRecentSessions)
+      .catch(() => setRecentSessions([]));
+  }, [state.step]);
+
+  useEffect(() => {
+    if (state.step !== 'TARGETED_PRACTICE') return;
+    apiGet<typeof weaknesses>('/api/analytics/by-topic')
+      .then((rows) => {
+        const sorted = rows
+          .filter((r) => r.attempts > 0)
+          .sort((a, b) => a.accuracy - b.accuracy)
+          .slice(0, 5);
+        setWeaknesses(sorted);
+      })
+      .catch(() => setWeaknesses([]));
+  }, [state.step]);
+
+  // Purge any legacy resume blob from previous app versions
+  useEffect(() => {
     if (state.step === 'MODE_SELECT') {
-      const saved = localStorage.getItem('active_exam');
-      if (saved) {
-        try { setActiveExam(JSON.parse(saved)); } catch(e){}
-      } else {
-        setActiveExam(null);
-      }
+      localStorage.removeItem('active_exam');
     }
   }, [state.step]);
 
@@ -280,34 +482,97 @@ export default function App() {
     setState(prev => ({ ...prev, mode, step: 'COURSE_SELECT' }));
   };
 
+  const setQuestionCount = (n: number) => {
+    const clamped = Math.max(1, Math.min(50, Math.floor(n)));
+    setState(prev => {
+      const next: AppState = { ...prev, questionCount: clamped };
+      if (!practiceTimeUserSet) {
+        next.practiceTimeLimit = Math.max(1, clamped * 2);
+      }
+      return next;
+    });
+    if (!practiceTimeUserSet) {
+      setPracticeTimeRaw(String(Math.max(1, clamped * 2)));
+    }
+  };
+
   const handleCourseSelect = (course: Course) => {
+    setStartError(null);
+    setActiveSession(null);
     if (state.mode === 'PRACTICE') {
+      setAvailableTopics([]);
+      setTopicsLoading(true);
       setState(prev => ({ ...prev, selectedCourse: course, step: 'TOPIC_SELECT' }));
     } else {
       setState(prev => ({ ...prev, selectedCourse: course, step: 'READY' }));
     }
   };
 
+  const persistYearSemester = (next: { year?: string; semester?: string }) => {
+    setState(prev => ({
+      ...prev,
+      ...(next.year ? { year: next.year as any } : {}),
+      ...(next.semester ? { semester: next.semester as any } : {}),
+    }));
+    updateProfileLocal(next);
+    if (currentUser) {
+      updateDoc(doc(db, 'users', currentUser.uid), next).catch((e) => {
+        console.error('Failed to persist year/semester to Firestore', e);
+      });
+    }
+  };
+
   const handleTopicSelect = (topic: Topic) => {
+    setStartError(null);
+    setActiveSession(null);
     setState(prev => ({ ...prev, selectedTopic: topic, step: 'READY' }));
   };
 
-  const startExam = () => {
-    setState(prev => ({ ...prev, step: 'EXAM' }));
+  const startExam = async () => {
+    if (!state.selectedCourse?.id || !state.mode) return;
+    setStartError(null);
+    setStartingExam(true);
+    try {
+      const res = await apiPost<ApiSessionCreated>('/api/sessions', {
+        program_course_id: state.selectedCourse.id,
+        mode: modeToApi(state.mode),
+        ...(state.selectedTopic?.id ? { topic_id: state.selectedTopic.id } : {}),
+        ...(state.mode === 'PRACTICE' ? { count: state.questionCount } : {}),
+      });
+      const questions = res.picked.map((q, i) => apiQuestionToFrontend(q, i));
+      setActiveSession({ sessionId: res.session_id, questions });
+      setState(prev => ({ ...prev, step: 'EXAM' }));
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'NO_QUESTIONS') {
+        setStartError(
+          'No questions yet for this course' +
+            (state.selectedTopic ? ` / topic (${state.selectedTopic.name})` : '') +
+            '. Ask an admin to add some via Manual Entry, or try a different topic.'
+        );
+      } else if (e instanceof ApiError) {
+        setStartError(e.message);
+      } else {
+        setStartError(e instanceof Error ? e.message : 'Something went wrong, try again.');
+      }
+    } finally {
+      setStartingExam(false);
+    }
   };
 
-  const finishExam = (questions: Question[], answers: Record<number, string>) => {
-    setState(prev => ({ 
-      ...prev, 
-      step: 'REVIEW', 
-      results: { questions, answers } 
+  const finishExam = (sessionId: string) => {
+    setActiveSession(null);
+    setState(prev => ({
+      ...prev,
+      step: 'REVIEW',
+      reviewSessionId: sessionId,
     }));
   };
 
   const goBack = () => {
+    setStartError(null);
     if (state.returnStep) {
       const step = state.returnStep;
-      setState(prev => ({ ...prev, step, returnStep: undefined, results: undefined }));
+      setState(prev => ({ ...prev, step, returnStep: undefined, reviewSessionId: undefined }));
       return;
     }
 
@@ -318,10 +583,11 @@ export default function App() {
       else setState(prev => ({ ...prev, step: 'COURSE_SELECT', selectedCourse: null }));
     }
     if (state.step === 'EXAM' || state.step === 'REVIEW') {
-      setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, results: undefined }));
+      setActiveSession(null);
+      setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
     if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
-      setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, results: undefined }));
+      setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
   };
 
@@ -342,32 +608,32 @@ export default function App() {
             className="fixed inset-0 bg-transparent z-[60] md:hidden"
           />
           <div
-            className="fixed bottom-0 left-0 right-0 bg-surface-container-low border-t border-border-subtle rounded-t-[2rem] z-[70] p-4 pb-8 md:hidden flex flex-col shadow-[0_-10px_40px_rgba(0,0,0,0.3)]"
+            className="fixed bottom-0 left-0 right-0 bg-bg-surface border-t border-border-subtle rounded-t-3xl z-[70] p-4 pb-8 md:hidden flex flex-col shadow-2xl"
           >
             <div className="flex justify-center mb-4">
-              <div className="w-10 h-1.5 bg-outline-variant/30 rounded-full" />
+              <div className="w-10 h-1.5 bg-border-medium rounded-full" />
             </div>
             
             <div className="w-full space-y-1">
               {(openSelect === 'year' ? ['Year 1', 'Year 2', 'Year 3', 'Year 4'] : ['Sem 1', 'Sem 2']).map((item) => (
                 <button
                   key={item}
-                  onClick={() => { 
-                    setState(p => ({ ...p, [openSelect!]: item as any }));
+                  onClick={() => {
+                    persistYearSemester(openSelect === 'year' ? { year: item } : { semester: item });
                     if (openSelect === 'year') {
                       setTimeout(() => setOpenSelect('semester'), 50);
                     } else {
                       setTimeout(() => setOpenSelect(null), 50);
                     }
                   }}
-                  className="w-full flex items-center justify-between gap-4 p-3 hover:bg-bg-raised/50 rounded-xl transition-colors active:scale-95"
+                  className="w-full flex items-center justify-between gap-4 p-3 hover:bg-bg-raised rounded-xl transition-colors active:scale-95"
                 >
-                  <span className="font-bold text-sm text-text-primary">{item}</span>
+                  <span className="font-semibold text-sm text-text-primary">{item}</span>
                   <div className={cn(
                     "w-4 h-4 rounded-full border-[1.5px] flex items-center justify-center shrink-0 transition-colors",
-                    state[openSelect!] === item ? "border-primary bg-transparent" : "border-outline-variant"
+                    state[openSelect!] === item ? "border-accent bg-transparent" : "border-border-medium"
                   )}>
-                     {state[openSelect!] === item && <div className="w-2 h-2 rounded-full bg-primary" />}
+                     {state[openSelect!] === item && <div className="w-2 h-2 rounded-full bg-accent" />}
                   </div>
                 </button>
               ))}
@@ -404,8 +670,8 @@ export default function App() {
                 "flex flex-col whitespace-nowrap transition-opacity duration-100",
                 isSidebarExpanded || isMobileMenuOpen ? "opacity-100 " : "opacity-0"
               )}>
-                <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
-                <span className="text-[10px] text-text-tertiary uppercase tracking-widest leading-none">Stoic Performance</span>
+                <span className="text-base font-display italic text-text-primary leading-tight">The Engine</span>
+                <span className="text-[10px] text-text-tertiary uppercase tracking-[0.18em] leading-none">Stoic Performance</span>
               </div>
             </div>
 
@@ -476,57 +742,32 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 relative h-full">
         {state.step === 'EXAM' ? (
-          <ExamSimulation 
-            onBack={goBack} 
-            onFinish={finishExam}
-            courseName={state.selectedCourse?.name || 'Session'} 
-            mode={state.mode!} 
-            totalQuestions={state.mode === 'PRACTICE' ? state.questionCount : state.mode === 'DIAGNOSTIC' ? 20 : state.mode === 'MIDSEM' ? 30 : 60}
-            practiceTimeLimit={state.practiceTimeLimit}
-            appStateToSave={state}
-            resumeData={state.resumeData}
-          />
-        ) : state.step === 'REVIEW' ? (
-          <ReviewScreen 
-            questions={state.results!.questions}
-            answers={state.results!.answers}
+          activeSession ? (
+            <ExamSimulation
+              onBack={goBack}
+              onFinish={finishExam}
+              courseName={state.selectedCourse?.name || 'Session'}
+              mode={state.mode!}
+              sessionId={activeSession.sessionId}
+              questions={activeSession.questions}
+              practiceTimeLimit={state.practiceTimeLimit}
+            />
+          ) : null
+        ) : state.step === 'REVIEW' && state.reviewSessionId ? (
+          <ReviewScreen
+            sessionId={state.reviewSessionId}
             onBack={goBack}
             courseName={state.selectedCourse?.name || 'Session'}
           />
         ) : state.step === 'SESSIONS_HISTORY' ? (
-          <MySessionsScreen 
+          <MySessionsScreen
              onBack={goBack}
              onReview={(id) => {
-               const hist = MOCK_HISTORY.find(h => h.id === id);
-               if (!hist) return;
-               
-               const mockQuestionsList = MOCK_QUESTIONS;
-               
-               // Use up to hist.total questions from MOCK_QUESTIONS, looping if necessary
-               const questionsToReview = Array.from({ length: hist.total }).map((_, i) => ({
-                 ...mockQuestionsList[i % mockQuestionsList.length],
-                 id: `q_rev_${i}`
-               }));
-               
-               const answersToReview: Record<number, string> = {};
-               
-               questionsToReview.forEach((q, i) => {
-                 const isCorrect = Math.random() < hist.accuracy / 100;
-                 if (q.type === 'MCQ') {
-                   // options[0] is correct.
-                   answersToReview[i] = isCorrect ? q.options![0] : (q.options![1] || q.options![0]);
-                 } else {
-                   // for INPUT, any string is correct, empty is wrong
-                   answersToReview[i] = isCorrect ? '42' : ''; // empty string treated as unanswered thus incorrect
-                 }
-               });
-
                setState(prev => ({
                  ...prev,
                  step: 'REVIEW',
                  returnStep: 'SESSIONS_HISTORY',
-                 selectedCourse: { id: 'mc', name: hist.course, code: 'MC', credits: 3 },
-                 results: { questions: questionsToReview, answers: answersToReview }
+                 reviewSessionId: id,
                }));
              }}
           />
@@ -565,12 +806,12 @@ export default function App() {
             <div className="flex items-center gap-2 md:gap-6">
               <div className="flex items-center gap-1 md:gap-4">
                 <div className="flex flex-col relative w-[5.5rem] md:w-24">
-                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Year</span>
+                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-semibold uppercase tracking-[0.18em] pl-1 mb-1">Year</span>
                    {/* Desktop Select */}
-                   <select 
+                   <select
                      value={state.year}
-                     onChange={(e) => setState(p => ({ ...p, year: e.target.value as any }))}
-                     className="hidden md:block appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-[transform,opacity,box-shadow] pr-5 md:pr-8"
+                     onChange={(e) => persistYearSemester({ year: e.target.value })}
+                     className="hidden md:block appearance-none bg-bg-surface border border-border-subtle rounded-xl px-3 py-1.5 text-sm font-semibold text-text-primary cursor-pointer focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors pr-8 hover:border-border-medium"
                    >
                      <option value="Year 1" className="bg-bg-page text-text-primary">Year 1</option>
                      <option value="Year 2" className="bg-bg-page text-text-primary">Year 2</option>
@@ -583,8 +824,8 @@ export default function App() {
                    <button 
                      onClick={() => setOpenSelect('year')}
                      className={cn(
-                       "md:hidden flex items-center justify-between w-full bg-surface-container-low border rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors",
-                       openSelect === 'year' ? "border-primary text-primary" : "border-border-subtle text-text-primary"
+                       "md:hidden flex items-center justify-between w-full bg-bg-surface border rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
+                       openSelect === 'year' ? "border-accent text-accent-text" : "border-border-subtle text-text-primary"
                      )}
                    >
                      {state.year}
@@ -592,12 +833,12 @@ export default function App() {
                    </button>
                 </div>
                 <div className="flex flex-col relative w-[6rem] md:w-36">
-                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-bold uppercase tracking-widest pl-1 mb-1">Semester</span>
+                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-semibold uppercase tracking-[0.18em] pl-1 mb-1">Semester</span>
                    {/* Desktop Select */}
-                   <select 
+                   <select
                      value={state.semester}
-                     onChange={(e) => setState(p => ({ ...p, semester: e.target.value as any }))}
-                     className="hidden md:block appearance-none bg-surface-container-low border border-border-subtle rounded-lg px-2 md:px-3 py-1.5 md:py-1.5 text-[11px] md:text-sm font-bold text-text-primary cursor-pointer focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-[transform,opacity,box-shadow] pr-5 md:pr-8"
+                     onChange={(e) => persistYearSemester({ semester: e.target.value })}
+                     className="hidden md:block appearance-none bg-bg-surface border border-border-subtle rounded-xl px-3 py-1.5 text-sm font-semibold text-text-primary cursor-pointer focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors pr-8 hover:border-border-medium"
                    >
                      <option value="Sem 1" className="bg-bg-page text-text-primary">Sem 1</option>
                      <option value="Sem 2" className="bg-bg-page text-text-primary">Sem 2</option>
@@ -608,8 +849,8 @@ export default function App() {
                    <button 
                      onClick={() => setOpenSelect('semester')}
                      className={cn(
-                       "md:hidden flex items-center justify-between w-full bg-surface-container-low border rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors",
-                       openSelect === 'semester' ? "border-primary text-primary" : "border-border-subtle text-text-primary"
+                       "md:hidden flex items-center justify-between w-full bg-bg-surface border rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
+                       openSelect === 'semester' ? "border-accent text-accent-text" : "border-border-subtle text-text-primary"
                      )}
                    >
                      {state.semester}
@@ -622,73 +863,24 @@ export default function App() {
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1 md:gap-4">
-             <div className="flex items-center gap-1.5 md:gap-2 px-2.5 py-1.5 rounded-full bg-surface-container-low border border-border-subtle cursor-default">
-               <Zap className="w-4 h-4 text-tertiary fill-tertiary" />
-               <span className="text-xs md:text-sm font-bold text-text-primary">7</span>
-               <span className="hidden sm:inline-block text-[10px] font-black uppercase tracking-widest text-text-tertiary ml-1">Streak</span>
-             </div>
-            <div className="flex items-center gap-1 md:gap-2">
-              <ThemeToggle />
-              <button 
-                onClick={() => setState(p => ({ ...p, step: 'SESSIONS_HISTORY' }))}
-                className="relative p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-bg-raised/50 transition-[transform,opacity,box-shadow] active:scale-95"
-              >
-                <History className="w-5 h-5 md:w-5 md:h-5" />
-              </button>
-            </div>
+          <div className="flex items-center gap-1 md:gap-2">
+            <ThemeToggle />
+            <NotificationsBell />
           </div>
         </header>
 
         {/* Dynamic Content */}
-        <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-8 pb-32">
+        <main className="flex-1 overflow-y-auto no-scrollbar p-4 md:p-6 pb-8">
           <div className="max-w-5xl mx-auto">
               {state.step === 'MODE_SELECT' && (
-                <div
-                  className="space-y-8 md:space-y-12"
-                >
-                  <header>
-                    <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">
-                      {new Date().getHours() < 12 ? 'Good Morning' : new Date().getHours() < 18 ? 'Good Afternoon' : 'Good Evening'}, {userProfile?.preferredName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Engineer'}
-                    </p>
-                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">What do you want to tackle today?</h2>
-                  </header>
+                <div className="space-y-6">
+                  <SectionHeader
+                    size="lg"
+                    eyebrow={`${new Date().getHours() < 12 ? 'Good morning' : new Date().getHours() < 18 ? 'Good afternoon' : 'Good evening'}, ${userProfile?.preferredName || currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Engineer'}`}
+                    title="What do you want to tackle today?"
+                  />
 
-                  {/* Resume Section */}
-                  {activeExam && (
-                   <section className="pb-2 md:pb-4 -mt-2 md:-mt-4">
-                      <div className="bg-surface-container-high border border-outline-variant/30 rounded-2xl md:rounded-3xl p-5 border-l-4 border-l-accent flex flex-col md:flex-row shadow-sm hover:border-primary/30 hover:border-l-accent transition-[transform,opacity,box-shadow] group cursor-pointer" onClick={() => {
-                        setState({
-                          ...activeExam.appState,
-                          resumeData: activeExam.examState
-                        });
-                      }}>
-                         <div className="flex-1">
-                            <p className="text-[9px] md:text-[10px] text-accent-text font-black uppercase tracking-widest mb-1.5 flex items-center gap-2">
-                              <span className="relative flex h-2 w-2">
-                               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-accent opacity-75"></span>
-                               <span className="relative inline-flex rounded-full h-2 w-2 bg-accent"></span>
-                              </span>
-                              Resume Session
-                            </p>
-                            <h3 className="text-base md:text-lg font-bold text-text-primary mb-1">{activeExam.appState.selectedCourse?.name || 'Exam Session'}</h3>
-                            <p className="text-xs text-text-secondary">{activeExam.appState.mode === 'MIDSEM' ? 'Midsem Simulation' : activeExam.appState.mode === 'FULL_EXAM' ? 'Full Exam' : 'Practice'} • {activeExam.examState.currentIdx + 1} / {activeExam.appState.questionCount || 20} Questions</p>
-                         </div>
-                         <div className="mt-4 md:mt-0 flex items-center justify-between md:justify-end gap-4 md:gap-6 md:min-w-[180px]">
-                            <div className="flex items-center gap-1.5">
-                               <Timer className="w-3.5 h-3.5 md:w-4 md:h-4 text-text-secondary" />
-                               <span className="text-xs md:text-sm font-bold font-mono text-text-primary">Resume</span>
-                            </div>
-                            <button className="px-4 py-2 bg-primary group-hover:bg-primary-container group-hover:-translate-y-0.5 text-bg-base font-bold text-[10px] md:text-[11px] uppercase tracking-widest rounded-xl transition-[transform,opacity,box-shadow] flex items-center gap-2 shadow-[0_4px_20px_theme(colors.primary/0.2)]">
-                              Continue
-                              <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
-                         </div>
-                      </div>
-                   </section>
-                  )}
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                     <ModeCard 
                       title="Practice by Topic" 
                       description="Target specific weaknesses. Choose concepts and set your own pace without time pressure."
@@ -715,204 +907,219 @@ export default function App() {
                   </div>
 
                   {/* Recent Performance Section directly on dashboard */}
-                  <section className="pt-4 md:pt-8 space-y-4 md:space-y-6">
-                    <header className="flex items-end justify-between">
-                      <div>
-                         <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Analytics</p>
-                         <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Recent Performance</h2>
+                  <section className="space-y-4">
+                    <SectionHeader
+                      eyebrow="Analytics"
+                      title="Recent Performance"
+                      action={
+                        recentSessions.length > 0 ? (
+                          <Button variant="ghost" size="sm" onClick={() => setState(prev => ({ ...prev, step: 'SESSIONS_HISTORY' }))}>
+                            View all
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+
+                    {recentSessions.length === 0 ? (
+                      <EmptyState
+                        icon={Activity}
+                        title="No sessions yet"
+                        description="Take your first session and your recent performance will show up here."
+                      />
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                        {recentSessions.slice(0, 4).map(activity => {
+                          const accuracyPct = (activity.accuracy ?? 0) * 100;
+                          return (
+                            <Card
+                              key={activity.id}
+                              variant="interactive"
+                              padding="md"
+                              onClick={() => {
+                                setState(prev => ({
+                                  ...prev,
+                                  step: 'REVIEW',
+                                  returnStep: 'MODE_SELECT',
+                                  reviewSessionId: activity.id,
+                                }));
+                              }}
+                              className="flex gap-5 items-center group"
+                            >
+                              <div className="w-16 h-16 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
+                                <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
+                                  <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
+                                  <circle cx="32" cy="32" r="28" fill="transparent" stroke={accuracyPct >= 70 ? 'var(--accent)' : accuracyPct >= 50 ? 'var(--warning-text)' : 'var(--accent-danger)'} strokeWidth="4" strokeDasharray={`${(accuracyPct / 100) * 175.9} 175.9`} strokeLinecap="round" />
+                                </svg>
+                                <span
+                                  className={cn(
+                                    'text-sm font-bold',
+                                    accuracyPct >= 50 && accuracyPct < 70 && 'text-warning-text'
+                                  )}
+                                  style={
+                                    accuracyPct >= 70
+                                      ? { color: 'var(--accent)' }
+                                      : accuracyPct < 50
+                                      ? { color: 'var(--accent-danger)' }
+                                      : undefined
+                                  }
+                                >
+                                  {Math.round(accuracyPct)}%
+                                </span>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <h4 className="text-base font-semibold text-text-primary truncate">{activity.course_name ?? 'Unknown course'}</h4>
+                                <p className="text-sm text-text-secondary truncate mt-1">
+                                  {activity.topic_name ?? 'All topics'}{' '}
+                                  <span className="uppercase text-[10px] font-semibold tracking-wide bg-bg-raised px-1.5 py-0.5 rounded ml-2">{activity.mode.replace('_', ' ')}</span>
+                                </p>
+                                <div className="flex items-center gap-2 mt-3">
+                                  <Pill tone="neutral">{new Date(activity.started_at).toLocaleDateString()}</Pill>
+                                  <Pill tone="neutral">{accuracyPct.toFixed(0)}% accuracy</Pill>
+                                </div>
+                              </div>
+                              <div className="p-3 rounded-xl bg-bg-raised text-text-secondary group-hover:text-text-primary group-hover:bg-bg-sunken transition-colors">
+                                <ArrowRight className="w-5 h-5" />
+                              </div>
+                            </Card>
+                          );
+                        })}
                       </div>
-                      <button onClick={() => setState(prev => ({ ...prev, step: 'SESSIONS_HISTORY' }))} className="text-xs md:text-sm font-bold text-text-secondary hover:text-text-primary uppercase tracking-widest transition-colors">View All</button>
-                    </header>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {MOCK_HISTORY.slice(0, 4).map(activity => (
-                        <div 
-                           key={activity.id} 
-                           onClick={() => {
-                              const questionsToReview = Array.from({ length: activity.total }).map((_, i) => ({
-                                ...MOCK_QUESTIONS[i % MOCK_QUESTIONS.length],
-                                id: `q_rev_${i}`
-                              }));
-                              
-                              const answersToReview: Record<number, string> = {};
-                              
-                              questionsToReview.forEach((q, i) => {
-                                const isCorrect = Math.random() < activity.accuracy / 100;
-                                if (q.type === 'MCQ') {
-                                  answersToReview[i] = isCorrect ? q.options![0] : (q.options![1] || q.options![0]);
-                                } else {
-                                  answersToReview[i] = isCorrect ? '42' : ''; // empty string treated as unanswered thus incorrect
-                                }
-                              });
-              
-                              setState(prev => ({
-                                ...prev,
-                                step: 'REVIEW',
-                                returnStep: 'MODE_SELECT',
-                                selectedCourse: { id: 'mc', name: activity.course, code: 'MC', credits: 3 },
-                                results: { questions: questionsToReview, answers: answersToReview }
-                              }));
-                           }}
-                           className="p-6 rounded-3xl bg-surface-container-high border border-outline-variant/20 hover:border-outline-variant/40 transition-colors flex gap-6 items-center group cursor-pointer"
-                        >
-                           <div className="w-16 h-16 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
-                              <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
-                                 <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
-                                 <circle cx="32" cy="32" r="28" fill="transparent" stroke={activity.accuracy >= 70 ? "var(--accent)" : activity.accuracy >= 50 ? "var(--warning-text)" : "var(--accent-danger)"} strokeWidth="4" strokeDasharray={`${(activity.accuracy / 100) * 175.9} 175.9`} strokeLinecap="round" />
-                              </svg>
-                              <span className={cn(
-                                 "text-sm font-black",
-                                 activity.accuracy >= 50 && activity.accuracy < 70 && "text-warning-text"
-                               )} style={activity.accuracy >= 70 ? { color: 'var(--accent)' } : activity.accuracy < 50 ? { color: 'var(--accent-danger)'} : undefined}>
-                                 {Math.round(activity.accuracy)}%
-                              </span>
-                           </div>
-                           <div className="flex-1 min-w-0">
-                               <h4 className="text-base font-bold text-text-primary truncate">{activity.course}</h4>
-                               <p className="text-sm text-text-secondary truncate mt-1">{activity.topic} <span className="uppercase text-[10px] bg-bg-raised px-1 py-0.5 rounded ml-2">{activity.mode.replace('_', ' ')}</span></p>
-                               <div className="flex items-center gap-3 mt-3">
-                                  <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest bg-bg-sunken px-2 py-1 rounded-md">{activity.date}</span>
-                                  <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest">{activity.accuracy.toFixed(2)}% YIELD</span>
-                               </div>
-                           </div>
-                           <div className="p-3 rounded-xl bg-bg-raised text-text-secondary group-hover:text-text-primary group-hover:bg-bg-sunken transition-colors">
-                              <ArrowRight className="w-5 h-5" />
-                           </div>
-                        </div>
-                      ))}
-                    </div>
+                    )}
                   </section>
                 </div>
               )}
 
               {state.step === 'TARGETED_PRACTICE' && (
-                <div className="space-y-8 md:space-y-12">
-                  <header>
-                    <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">
-                      Targeted Practice
-                    </p>
-                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Diagnose & Destroy Weaknesses</h2>
-                    <p className="text-sm md:text-base text-text-secondary mt-2 max-w-2xl leading-relaxed">
-                      AI-generated problem sets designed to patch your specific knowledge gaps based on your session history.
-                    </p>
-                  </header>
+                <div className="space-y-6">
+                  <SectionHeader
+                    size="lg"
+                    eyebrow="Targeted Practice"
+                    title="Diagnose & destroy weaknesses"
+                    description="AI-generated problem sets designed to patch your specific knowledge gaps based on your session history."
+                  />
 
-                  <section className="space-y-4 md:space-y-6">
-                    <header className="flex items-end justify-between">
-                      <h3 className="text-lg md:text-xl font-bold text-text-primary flex items-center gap-2">
-                        <Sparkles className="w-5 h-5 text-accent" />
-                        Priority Targets
-                      </h3>
-                    </header>
+                  <section className="space-y-6">
+                    <h3 className="text-lg font-display italic text-text-primary flex items-center gap-2">
+                      <Sparkles className="w-5 h-5 text-accent" />
+                      Priority targets
+                    </h3>
 
-                    <div className="grid grid-cols-1 gap-4">
-                      {MOCK_WEAKNESSES.map((weakness, i) => (
-                        <div key={weakness.id} className="group relative overflow-hidden bg-surface-container-high border border-outline-variant/30 rounded-2xl md:rounded-3xl p-5 md:p-6 flex flex-col md:flex-row shadow-sm hover:border-primary/40 transition-[transform,opacity,box-shadow]">
-                          <div className="flex-1 mb-4 md:mb-0">
-                            <div className="flex items-center gap-3 mb-2">
-                               <span className={cn("text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md border", weakness.priority === 'High' ? 'text-danger-text bg-danger/10 border-danger/20' : weakness.priority === 'Medium' ? 'text-warning-text bg-warning/10 border-warning/20' : 'text-success-text bg-success/10 border-success/20') }>
-                                  {weakness.priority} Priority
-                               </span>
-                               <span className="text-xs text-text-tertiary">{weakness.course}</span>
-                            </div>
-                            <h4 className="text-base md:text-lg font-bold text-text-primary mb-1">{weakness.topic}</h4>
-                            <p className="text-xs text-text-secondary">Accuracy across {weakness.questionsAttempted} questions: <strong className="text-text-primary">{weakness.accuracy}%</strong></p>
-                          </div>
-                          
-                          <div className="flex items-center justify-between md:justify-end gap-6 md:min-w-[180px]">
-                             <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative">
-                                <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 48 48">
-                                   <circle cx="24" cy="24" r="21" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
-                                   <circle cx="24" cy="24" r="21" fill="transparent" stroke={weakness.accuracy < 50 ? "var(--accent-danger)" : weakness.accuracy < 70 ? "var(--warning-text)" : "var(--accent)"} strokeWidth="4" strokeDasharray={`${(weakness.accuracy / 100) * 131.9} 131.9`} strokeLinecap="round" />
-                                </svg>
-                             </div>
-                             
-                             <button className="px-4 py-2.5 bg-bg-raised text-text-primary border border-border-subtle group-hover:bg-primary group-hover:text-bg-base group-hover:border-primary font-bold text-[10px] uppercase tracking-widest rounded-xl transition-[transform,opacity,box-shadow] shadow-sm active:scale-95 flex items-center gap-2">
-                               Patch Gap
-                               <ArrowRight className="w-3.5 h-3.5" />
-                             </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
+                    {weaknesses.length === 0 ? (
+                      <EmptyState
+                        icon={Sparkles}
+                        title="Nothing to target yet"
+                        description="Take a few practice sessions and your weakest topics will surface here."
+                      />
+                    ) : (
+                      <div className="grid grid-cols-1 gap-4">
+                        {weaknesses.map((weakness) => {
+                          const accuracyPct = Math.round(weakness.accuracy * 100);
+                          const priority = accuracyPct < 50 ? 'High' : accuracyPct < 70 ? 'Medium' : 'Low';
+                          return (
+                            <Card key={weakness.topic_id} variant="raised" padding="md" className="flex flex-col md:flex-row">
+                              <div className="flex-1 mb-4 md:mb-0">
+                                <div className="flex items-center gap-3 mb-2">
+                                  <Pill tone={priority === 'High' ? 'danger' : priority === 'Medium' ? 'warning' : 'success'}>
+                                    {priority} priority
+                                  </Pill>
+                                </div>
+                                <h4 className="text-base md:text-lg font-semibold text-text-primary mb-1">{weakness.topic_name ?? 'Unknown topic'}</h4>
+                                <p className="text-xs text-text-secondary">Accuracy across {weakness.attempts} questions: <strong className="text-text-primary">{accuracyPct}%</strong></p>
+                              </div>
+
+                              <div className="flex items-center justify-between md:justify-end gap-6 md:min-w-[180px]">
+                                <div className="w-12 h-12 rounded-full flex items-center justify-center shrink-0 relative">
+                                  <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 48 48">
+                                    <circle cx="24" cy="24" r="21" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
+                                    <circle cx="24" cy="24" r="21" fill="transparent" stroke={accuracyPct < 50 ? "var(--accent-danger)" : accuracyPct < 70 ? "var(--warning-text)" : "var(--accent)"} strokeWidth="4" strokeDasharray={`${(accuracyPct / 100) * 131.9} 131.9`} strokeLinecap="round" />
+                                  </svg>
+                                </div>
+                              </div>
+                            </Card>
+                          );
+                        })}
+                      </div>
+                    )}
                   </section>
-                  
-                  <section className="bg-surface-container-high border border-outline-variant/20 rounded-2xl md:rounded-3xl p-6 md:p-8 flex flex-col items-center text-center">
-                     <Target className="w-10 h-10 text-text-tertiary mb-4" />
-                     <h3 className="text-lg font-bold text-text-primary mb-2">Diagnostic Test</h3>
+
+                  <Card variant="default" padding="lg" className="flex flex-col items-center text-center">
+                     <div className="w-12 h-12 rounded-2xl bg-bg-raised flex items-center justify-center mb-5">
+                       <Target className="w-6 h-6 text-text-tertiary" />
+                     </div>
+                     <h3 className="text-lg md:text-xl font-display italic text-text-primary mb-2">Diagnostic test</h3>
                      <p className="text-sm text-text-secondary max-w-md mx-auto mb-6">Need a fresh evaluation? Take a 20-question randomized test across your semester courses to find new weak spots.</p>
-                     <button onClick={() => setState(p => ({ ...p, mode: 'DIAGNOSTIC', step: 'COURSE_SELECT' }))} className="px-6 py-3 bg-text-primary text-bg-page hover:bg-text-secondary font-black text-[11px] uppercase tracking-widest rounded-xl transition-colors shadow-lg active:scale-95 flex items-center gap-2">
-                        Start Diagnostic
-                     </button>
-                  </section>
+                     <Button variant="primary" size="lg" onClick={() => setState(p => ({ ...p, mode: 'DIAGNOSTIC', step: 'COURSE_SELECT' }))}>
+                        Start diagnostic
+                     </Button>
+                  </Card>
                 </div>
               )}
 
               {state.step === 'COURSE_SELECT' && (
-                <div
-                  className="space-y-8 md:space-y-12"
-                >
-                  <header>
-                    <p className="text-xs md:text-sm font-bold text-accent-text tracking-[0.2em] uppercase mb-1">Step 2</p>
-                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight text-text-primary uppercase">Choose your course</h2>
-                  </header>
+                <div className="space-y-6">
+                  <SectionHeader
+                    eyebrow="Step 2"
+                    title="Choose your course"
+                    description={`Courses available for ${state.year}, ${state.semester}.`}
+                  />
 
-                  {COURSES.filter(c => c.year === state.year && c.semester === state.semester).length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {COURSES.filter(c => c.year === state.year && c.semester === state.semester).map(course => (
-                        <button
+                  {coursesLoading ? (
+                    <Spinner size="md" className="py-12" />
+                  ) : availableCourses.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                      {availableCourses.map(course => (
+                        <Card
                           key={course.id}
+                          variant="interactive"
+                          padding="md"
                           onClick={() => handleCourseSelect(course)}
-                          className="group flex flex-col text-left p-4 md:p-5 rounded-xl bg-surface-container-high border border-outline-variant/10 hover:border-primary/50 transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden h-auto min-h-36 md:min-h-40"
+                          className="group relative overflow-hidden min-h-[9rem] md:min-h-[10rem] flex flex-col text-left"
                         >
-                           <div className="absolute top-0 right-0 w-24 h-24 md:w-32 md:h-32 bg-primary/5 blur-3xl rounded-full" />
-                           <h3 className="text-lg md:text-xl font-bold mb-1.5 md:mb-2 group-hover:text-primary transition-colors">{course.name}</h3>
-                           <p className="text-on-surface-variant text-[10px] md:text-xs leading-relaxed max-w-xs mb-4 md:mb-0">{course.description}</p>
-                           <div className="mt-auto flex items-center text-[9px] md:text-[10px] font-bold text-primary opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-widest gap-2">
-                             Select Course <ArrowRight className="w-3 h-3" />
-                           </div>
-                        </button>
+                          <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 blur-3xl rounded-full pointer-events-none" />
+                          <h3 className="text-lg md:text-xl font-semibold text-text-primary mb-1.5 group-hover:text-accent-text transition-colors">
+                            {course.name}
+                          </h3>
+                          {course.description && (
+                            <p className="text-text-secondary text-xs leading-relaxed max-w-xs">
+                              {course.description}
+                            </p>
+                          )}
+                          <div className="mt-auto pt-4 flex items-center text-[11px] font-semibold text-accent-text opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-[0.18em] gap-1.5">
+                            Select course <ArrowRight className="w-3.5 h-3.5" />
+                          </div>
+                        </Card>
                       ))}
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center p-12 bg-surface-container/50 border border-border-subtle rounded-3xl text-center">
-                      <div className="w-16 h-16 bg-bg-sunken rounded-2xl flex items-center justify-center mb-6">
-                         <Target className="w-8 h-8 text-text-tertiary opacity-50" />
-                      </div>
-                      <h3 className="text-lg font-bold text-text-primary mb-2">No Courses Available</h3>
-                      <p className="text-text-secondary text-sm max-w-md mx-auto">
-                        There are no simulated mock exams available for {state.year}, {state.semester} yet. Check back later or select a different academic period.
-                      </p>
-                    </div>
+                    <EmptyState
+                      icon={Target}
+                      title="No courses available"
+                      description={`There are no courses linked to ${state.year}, ${state.semester} yet. An admin can add them in the Database tab.`}
+                    />
                   )}
                 </div>
               )}
 
               {state.step === 'TOPIC_SELECT' && state.selectedCourse && (
-                <div
-                  className="space-y-6 md:space-y-8"
-                >
-                  <header>
-                    <p className="text-xs md:text-sm font-bold text-outline uppercase tracking-[0.2em] mb-1">Step 2 of 2</p>
-                    <h2 className="text-xl md:text-[26px] italic no-underline text-justify font-['Times_New_Roman'] font-bold tracking-tight">Pick a topic and begin</h2>
-                    <nav className="flex flex-wrap items-center gap-2 text-[10px] md:text-xs text-on-surface-variant mt-2 uppercase tracking-widest font-bold">
-                       <span>Home</span> / <span>Practice by Topic</span> / <span className="text-primary">{state.selectedCourse.name}</span>
-                    </nav>
-                  </header>
+                <div className="space-y-6">
+                  <SectionHeader
+                    eyebrow={`Practice by Topic · ${state.selectedCourse.name}`}
+                    title="Pick a topic and begin"
+                  />
 
-                  <div className="pb-8 border-b border-white/5 flex flex-col md:flex-row gap-8">
-                    <div className="space-y-4">
-                      <span className="block text-[10px] font-bold text-outline uppercase tracking-widest">Difficulty</span>
-                      <div className="flex gap-2">
+                  <Card variant="default" padding="md" className="flex flex-col md:flex-row gap-8">
+                    <div className="space-y-3">
+                      <span className="block text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em]">Difficulty</span>
+                      <div className="flex flex-wrap gap-2">
                         {['Easy', 'Medium', 'Hard', 'All'].map(d => (
-                          <button 
+                          <button
                             key={d}
                             onClick={() => setState(s => ({ ...s, difficulty: d as any }))}
                             className={cn(
-                              "px-6 py-2 rounded-full text-xs font-bold transition-[transform,opacity,box-shadow] border",
-                              state.difficulty === d 
-                                ? "bg-primary border-primary text-slate-950" 
-                                : "border-outline-variant/30 text-on-surface-variant hover:text-white"
+                              "px-5 py-2 rounded-full text-xs font-semibold transition-colors border",
+                              state.difficulty === d
+                                ? "bg-accent border-accent text-slate-950"
+                                : "bg-bg-surface border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-medium"
                             )}
                           >
                             {d}
@@ -920,18 +1127,53 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                    <div className="space-y-4">
-                      <span className="block text-[10px] font-bold text-outline uppercase tracking-widest">Questions</span>
-                      <div className="flex gap-2">
+                    <div className="space-y-3">
+                      <span className="block text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em]">Questions</span>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-1 rounded-full border border-border-subtle px-1 py-1">
+                          <button
+                            type="button"
+                            onClick={() => setQuestionCount(state.questionCount - 1)}
+                            disabled={state.questionCount <= 1}
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-bg-raised disabled:opacity-30 disabled:cursor-not-allowed text-text-secondary"
+                            aria-label="Decrease question count"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={state.questionCount}
+                            onChange={(e) => {
+                              const v = e.target.value.replace(/\D/g, '');
+                              if (v === '') {
+                                setState(s => ({ ...s, questionCount: 1 }));
+                                return;
+                              }
+                              setQuestionCount(Number(v));
+                            }}
+                            className="w-12 bg-transparent text-center text-sm font-semibold text-text-primary outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setQuestionCount(state.questionCount + 1)}
+                            disabled={state.questionCount >= 50}
+                            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-bg-raised disabled:opacity-30 disabled:cursor-not-allowed text-text-secondary"
+                            aria-label="Increase question count"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em]">Quick</span>
                         {[5, 10, 20].map(q => (
-                          <button 
+                          <button
                              key={q}
-                             onClick={() => setState(s => ({ ...s, questionCount: q as any, practiceTimeLimit: q * 2 }))}
+                             onClick={() => setQuestionCount(q)}
                              className={cn(
-                               "px-6 py-2 rounded-full text-xs font-bold transition-[transform,opacity,box-shadow] border",
+                               "px-4 py-1.5 rounded-full text-xs font-semibold transition-colors border",
                                state.questionCount === q
-                                 ? "bg-primary border-primary text-slate-950"
-                                 : "border-outline-variant/30 text-on-surface-variant hover:text-white"
+                                 ? "bg-accent border-accent text-slate-950"
+                                 : "bg-bg-surface border-border-subtle text-text-secondary hover:text-text-primary hover:border-border-medium"
                              )}
                           >
                             {q}
@@ -939,34 +1181,44 @@ export default function App() {
                         ))}
                       </div>
                     </div>
-                  </div>
+                  </Card>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {state.selectedCourse.topics.map(topic => (
-                      <TopicCard 
-                        key={topic.id}
-                        topic={topic}
-                        active={state.selectedTopic?.id === topic.id}
-                        onClick={() => handleTopicSelect(topic)}
-                      />
-                    ))}
-                  </div>
+                  {topicsLoading ? (
+                    <Spinner size="md" className="py-12" />
+                  ) : availableTopics.length === 0 ? (
+                    <EmptyState
+                      icon={Target}
+                      title="No topics yet"
+                      description="This course has no topics yet. An admin can add them in the Database → Topics tab."
+                    />
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                      {availableTopics.map(topic => (
+                        <TopicCard
+                          key={topic.id}
+                          topic={topic}
+                          active={state.selectedTopic?.id === topic.id}
+                          onClick={() => handleTopicSelect(topic)}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
               {state.step === 'READY' && (
                 <div
-                  className="max-w-2xl mx-auto space-y-8 mt-8"
+                  className="max-w-2xl mx-auto space-y-5"
                 >
-                  <div className="text-center space-y-4 mb-12">
-                    <div className="w-20 h-20 bg-primary/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                      <Zap className="w-10 h-10 text-primary" />
+                  <div className="text-center space-y-2 mb-1">
+                    <div className="w-14 h-14 bg-accent-muted rounded-full flex items-center justify-center mx-auto mb-3">
+                      <Zap className="w-7 h-7 text-accent" />
                     </div>
-                    <h2 className="text-[24px] leading-[35px] italic font-['Times_New_Roman'] font-bold text-text-primary capitalize">
-                      {state.mode === 'PRACTICE' ? 'Targeted Practice Ready' : 
-                       state.mode === 'MIDSEM' ? 'Midsem Simulation Ready' : 
-                       state.mode === 'DIAGNOSTIC' ? 'Diagnostic Evaluation Ready' :
-                       'Full Exam Simulation Ready'}
+                    <h2 className="text-2xl md:text-3xl italic font-display text-text-primary">
+                      {state.mode === 'PRACTICE' ? 'Targeted practice ready' :
+                       state.mode === 'MIDSEM' ? 'Midsem simulation ready' :
+                       state.mode === 'DIAGNOSTIC' ? 'Diagnostic evaluation ready' :
+                       'Full exam simulation ready'}
                     </h2>
                     <p className="text-text-secondary text-sm">
                       {state.mode === 'PRACTICE' ? 'Focus mode engaged. Time to solidify those concepts.' :
@@ -975,13 +1227,13 @@ export default function App() {
                     </p>
                   </div>
 
-                  <div className="p-8 rounded-2xl bg-surface-container-high border border-border-medium shadow-xl space-y-6">
-                    <div className="flex items-center gap-4 pb-6 border-b border-border-subtle">
-                      <div className="w-12 h-12 bg-bg-sunken rounded-xl flex items-center justify-center shrink-0">
-                        {state.mode === 'PRACTICE' ? <Target className="w-6 h-6 text-primary" /> : state.mode === 'DIAGNOSTIC' ? <Sparkles className="w-6 h-6 text-accent" /> : <Timer className="w-6 h-6 text-tertiary" />}
+                  <Card variant="default" padding="md" className="space-y-4">
+                    <div className="flex items-center gap-4 pb-4 border-b border-border-subtle">
+                      <div className="w-11 h-11 bg-bg-raised rounded-xl flex items-center justify-center shrink-0">
+                        {state.mode === 'PRACTICE' ? <Target className="w-5 h-5 text-accent" /> : state.mode === 'DIAGNOSTIC' ? <Sparkles className="w-5 h-5 text-accent" /> : <Timer className="w-5 h-5 text-accent" />}
                       </div>
                       <div>
-                        <h3 className="text-lg font-bold text-text-primary">{state.selectedCourse?.name}</h3>
+                        <h3 className="text-lg font-semibold text-text-primary">{state.selectedCourse?.name}</h3>
                         <p className="text-sm text-text-secondary">
                           {state.mode === 'PRACTICE' && state.selectedTopic 
                             ? `Topic: ${state.selectedTopic.name}` 
@@ -994,28 +1246,37 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="p-4 rounded-xl bg-bg-sunken border border-border-subtle flex flex-col gap-1">
-                        <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Questions</span>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3.5 rounded-xl bg-bg-raised border border-border-subtle flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em]">Questions</span>
                         <span className="text-xl font-bold text-text-primary">
                           {state.mode === 'PRACTICE' ? state.questionCount :
                            state.mode === 'DIAGNOSTIC' ? 20 :
                            state.mode === 'MIDSEM' ? 30 : 60}
                         </span>
                       </div>
-                      
-                      <div className="p-4 rounded-xl bg-bg-sunken border border-border-subtle flex flex-col gap-1">
-                        <span className="text-[10px] font-bold text-text-tertiary uppercase tracking-widest">Time Limit</span>
+
+                      <div className="p-3.5 rounded-xl bg-bg-raised border border-border-subtle flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em]">Time Limit</span>
                         {state.mode === 'PRACTICE' ? (
                           <div className="flex items-center gap-2">
-                             <input 
-                               type="number" 
-                               min="1" 
-                               max="120"
-                               value={state.practiceTimeLimit} 
-                               onChange={(e) => setState(s => ({ ...s, practiceTimeLimit: parseInt(e.target.value) || 1 }))}
-                               onBlur={() => window.scrollTo(0, 0)}
-                               className="bg-transparent border-b border-primary/50 text-xl font-bold text-text-primary w-16 outline-none focus:border-primary transition-colors text-center"
+                             <input
+                               type="text"
+                               inputMode="numeric"
+                               pattern="[0-9]*"
+                               value={practiceTimeRaw}
+                               onChange={(e) => {
+                                 const v = e.target.value.replace(/\D/g, '');
+                                 setPracticeTimeRaw(v);
+                                 setPracticeTimeUserSet(true);
+                                 if (v) setState(s => ({ ...s, practiceTimeLimit: Number(v) }));
+                               }}
+                               onBlur={() => {
+                                 const n = Math.max(1, Math.min(300, Number(practiceTimeRaw) || 1));
+                                 setPracticeTimeRaw(String(n));
+                                 setState(s => ({ ...s, practiceTimeLimit: n }));
+                               }}
+                               className="bg-transparent border-b border-accent/50 text-xl font-bold text-text-primary w-16 outline-none focus:border-accent transition-colors text-center"
                              />
                              <span className="text-sm font-medium text-text-secondary">mins</span>
                           </div>
@@ -1028,27 +1289,43 @@ export default function App() {
                     </div>
 
                     {state.mode !== 'PRACTICE' && (
-                      <div className="mt-6 p-4 rounded-xl bg-red-900/10 border border-red-500/20">
-                        <h4 className="flex items-center gap-2 text-sm font-bold text-red-400 mb-2">
-                          <AlertCircle className="w-4 h-4" /> Strict Conditions
+                      <div className="p-3.5 rounded-xl border bg-[color:var(--danger-bg)] border-[color:var(--danger-border)]">
+                        <h4 className="flex items-center gap-2 text-sm font-semibold text-[color:var(--danger-text)] mb-1.5">
+                          <AlertCircle className="w-4 h-4" /> Strict conditions
                         </h4>
-                        <ul className="text-xs text-text-secondary space-y-1 list-disc pl-5">
+                        <ul className="text-xs text-text-secondary space-y-0.5 list-disc pl-5">
                           <li>Timer cannot be paused once started.</li>
                           <li>Ensure stable connection before proceeding.</li>
                           <li>Results will impact your overall performance metrics.</li>
                         </ul>
                       </div>
                     )}
-                  </div>
+                  </Card>
 
-                  <div className="flex justify-center pt-8">
-                    <button 
+                  {startError && (
+                    <div className="rounded-2xl border p-5 flex gap-3 bg-[color:var(--warning-bg)] border-[color:var(--warning-border)]">
+                      <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5 text-[color:var(--warning-text)]" />
+                      <div className="text-sm text-text-primary leading-relaxed">
+                        {startError}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex justify-center pt-1">
+                    <Button
+                      variant="primary"
+                      size="lg"
                       onClick={startExam}
-                      className="px-10 py-4 w-full md:w-auto rounded-2xl font-bold flex items-center justify-center gap-3 transition-[transform,opacity,box-shadow] duration-100 transform bg-primary text-slate-950 hover:scale-105 hover:shadow-[0_0_30px_theme(colors.primary)] cursor-pointer"
+                      loading={startingExam}
+                      className="w-full md:w-auto px-10"
                     >
-                      <span>Start Solving</span>
-                      <ArrowRight className="w-5 h-5" />
-                    </button>
+                      {startingExam ? 'Starting…' : (
+                        <>
+                          Start solving
+                          <ArrowRight className="w-5 h-5" />
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
               )}
@@ -1063,52 +1340,169 @@ export default function App() {
   );
 }
 
-const MOCK_WEAKNESSES = [
-  { id: 'w1', topic: 'Reaction Kinetics', course: 'Chemical Engineering Thermodynamics', accuracy: 38, priority: 'High', questionsAttempted: 42 },
-  { id: 'w2', topic: 'Heat Transfer', course: 'Process Dynamics and Control', accuracy: 52, priority: 'Medium', questionsAttempted: 115 },
-  { id: 'w3', topic: 'Fluid Mechanics', course: 'Basic Mechanics', accuracy: 61, priority: 'Low', questionsAttempted: 89 },
-];
+interface ReviewSessionData {
+  session: {
+    id: string;
+    mode: string;
+    total_questions: number;
+    score: number | null;
+    duration_ms: number | null;
+    accuracy: number | null;
+    course_name: string | null;
+    topic_name: string | null;
+  };
+  answers: Array<{
+    id: string;
+    question_id: string;
+    position: number;
+    picked_option_id: string | null;
+    picked_text: string | null;
+    is_correct: boolean | null;
+    time_ms: number | null;
+  }>;
+  questions: Array<{
+    id: string;
+    type: 'mcq' | 'calc';
+    answer_type: 'exact' | 'range' | null;
+    content: { prompt: string; explanation?: string | null; correct_answer?: string | null; unit?: string | null };
+    options: Array<{ id: string; text: string; is_correct: boolean }>;
+    assets: Array<{ id: string; url: string }>;
+  }>;
+}
 
-function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Question[], answers: Record<number, string>, onBack: () => void, courseName: string }) {
+interface ReviewItem {
+  id: string;
+  position: number;
+  prompt: string;
+  type: 'mcq' | 'calc';
+  options: Array<{ id: string; text: string; is_correct: boolean }>;
+  assets: Array<{ id: string; url: string }>;
+  correctAnswer: string | null;
+  unit: string | null;
+  explanation: string | null;
+  pickedOptionId: string | null;
+  pickedText: string | null;
+  isCorrect: boolean | null;
+  isUnanswered: boolean;
+}
+
+function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; onBack: () => void; courseName: string }) {
   const [filter, setFilter] = useState<'All' | 'Correct' | 'Incorrect' | 'Unanswered'>('All');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
   const [judeIdx, setJudeIdx] = useState<number | null>(null);
+  const [data, setData] = useState<ReviewSessionData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    apiGet<ReviewSessionData>(`/api/sessions/${sessionId}`)
+      .then((d) => {
+        if (!cancelled) setData(d);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
+
+  const items: ReviewItem[] = useMemo(() => {
+    if (!data) return [];
+    const qById = new Map<string, ReviewSessionData['questions'][number]>(
+      data.questions.map((q) => [q.id, q])
+    );
+    return data.answers.map((a) => {
+      const q = qById.get(a.question_id);
+      const isUnanswered = a.picked_option_id == null && (a.picked_text == null || a.picked_text === '');
+      return {
+        id: q?.id ?? a.question_id,
+        position: a.position,
+        prompt: q?.content.prompt ?? '(question removed)',
+        type: q?.type ?? 'mcq',
+        options: q?.options ?? [],
+        assets: q?.assets ?? [],
+        correctAnswer: q?.content.correct_answer ?? null,
+        unit: q?.content.unit ?? null,
+        explanation: q?.content.explanation ?? null,
+        pickedOptionId: a.picked_option_id,
+        pickedText: a.picked_text,
+        isCorrect: isUnanswered ? null : a.is_correct,
+        isUnanswered,
+      };
+    });
+  }, [data]);
 
   const stats = useMemo(() => {
-    // For demo, we assume first option is always correct for MCQs
-    // For INPUT, we check if answer exists
     let correct = 0;
     let incorrect = 0;
     let unanswered = 0;
-    
-    questions.forEach((q, i) => {
-      const ans = answers[i];
-      if (!ans) unanswered++;
-      else if (q.type === 'MCQ') {
-        if (ans === q.options![0]) correct++;
-        else incorrect++;
-      } else {
-        // Assume all non-empty input is correct for demo
-        correct++;
-      }
+    items.forEach((it) => {
+      if (it.isUnanswered) unanswered++;
+      else if (it.isCorrect) correct++;
+      else incorrect++;
     });
-
-    return { correct, incorrect, unanswered, total: questions.length, score: correct, percent: Math.round((correct / questions.length) * 100) };
-  }, [questions, answers]);
+    const total = items.length;
+    return {
+      correct,
+      incorrect,
+      unanswered,
+      total,
+      score: correct,
+      percent: total > 0 ? Math.round((correct / total) * 100) : 0,
+    };
+  }, [items]);
 
   const filteredQuestions = useMemo(() => {
-    return questions.map((q, i) => ({ ...q, originalIdx: i })).filter(q => {
-      const ans = answers[q.originalIdx];
+    return items.filter((it) => {
       if (filter === 'All') return true;
-      if (filter === 'Unanswered') return !ans;
-      const isCorrect = q.type === 'MCQ' ? ans === q.options![0] : !!ans;
-      if (filter === 'Correct') return isCorrect;
-      if (filter === 'Incorrect') return ans && !isCorrect;
+      if (filter === 'Unanswered') return it.isUnanswered;
+      if (filter === 'Correct') return it.isCorrect === true;
+      if (filter === 'Incorrect') return it.isCorrect === false;
       return true;
     });
-  }, [questions, answers, filter]);
+  }, [items, filter]);
 
   const isPassed = stats.percent >= 50;
+
+  const formatDuration = (ms: number | null) => {
+    if (!ms || ms <= 0) return '—';
+    const totalSec = Math.round(ms / 1000);
+    const m = Math.floor(totalSec / 60);
+    const s = totalSec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 h-full text-text-secondary gap-4">
+        <Loader2 className="w-8 h-8 animate-spin" />
+        <p className="text-sm">Loading session…</p>
+      </div>
+    );
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center flex-1 h-full px-4 gap-4 text-center">
+        <div className="max-w-md">
+          <h2 className="text-xl font-bold text-text-primary mb-2">Couldn't load session</h2>
+          <p className="text-sm text-text-secondary">{error ?? 'Session not found.'}</p>
+        </div>
+        <button onClick={onBack} className="px-6 py-2.5 bg-bg-raised border border-border-subtle rounded-xl text-sm font-bold text-text-primary hover:bg-bg-surface">
+          Back
+        </button>
+      </div>
+    );
+  }
+
+  const headerCourseName = data.session.course_name ?? courseName;
 
   return (
     <div 
@@ -1121,8 +1515,8 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
             <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary" />
           </button>
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-accent-text uppercase tracking-widest leading-none">Diagnostic Review</span>
-            <h1 className="text-sm font-black text-text-primary uppercase tracking-widest mt-1">{courseName}</h1>
+            <span className="text-[10px] font-black text-accent-text uppercase tracking-widest leading-none">Session Review</span>
+            <h1 className="text-sm font-black text-text-primary uppercase tracking-widest mt-1">{headerCourseName}</h1>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -1159,7 +1553,7 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                 <StatPill label="Correct" value={stats.correct} color="text-success-text" />
                 <StatPill label="Incorrect" value={stats.incorrect} color="text-danger-text" />
                 <StatPill label="Unanswered" value={stats.unanswered} color="text-text-tertiary" />
-                <StatPill label="Time Taken" value="42:15" color="text-accent" />
+                <StatPill label="Time Taken" value={formatDuration(data.session.duration_ms)} color="text-accent" />
               </div>
 
               <button 
@@ -1191,79 +1585,97 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
 
           {/* Layer 2: Question Review List */}
           <div className="space-y-4 pb-20">
-            {filteredQuestions.map((q, i) => {
-              const ans = answers[q.originalIdx];
-              const isCorrect = q.type === 'MCQ' ? ans === q.options![0] : !!ans;
-              const isUnanswered = !ans;
-              const isExpanded = expandedIdx === q.originalIdx;
+            {filteredQuestions.length === 0 ? (
+              <div className="p-12 rounded-3xl bg-surface-container-low border border-dashed border-border-medium text-center text-sm text-text-secondary">
+                Nothing matches that filter.
+              </div>
+            ) : (
+              filteredQuestions.map((it) => {
+              const isExpanded = expandedIdx === it.position;
+              const studentAnswerText =
+                it.type === 'mcq'
+                  ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
+                  : it.pickedText;
 
               return (
-                <div 
-                  key={q.id}
+                <div
+                  key={it.id}
                   className={cn(
                     "bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden transition-colors",
                     isExpanded ? "ring-2 ring-accent/30 shadow-2xl" : "hover:border-border-medium"
                   )}
                 >
                   {/* Collapsed Item */}
-                  <div 
-                    onClick={() => setExpandedIdx(isExpanded ? null : q.originalIdx)}
+                  <div
+                    onClick={() => setExpandedIdx(isExpanded ? null : it.position)}
                     className="p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-6 cursor-pointer select-none group"
                   >
                     <div className="flex items-start md:items-center gap-3 md:gap-4 flex-1 min-w-0">
-                      <span className="text-xs font-black text-text-tertiary shrink-0 w-6 md:w-8 mt-0.5 md:mt-0">Q{q.originalIdx + 1}</span>
-                      <p className="text-sm font-medium text-text-primary line-clamp-2 md:truncate">{q.prompt}</p>
+                      <span className="text-xs font-black text-text-tertiary shrink-0 w-6 md:w-8 mt-0.5 md:mt-0">Q{it.position + 1}</span>
+                      <p className="text-sm font-medium text-text-primary line-clamp-2 md:truncate">{it.prompt}</p>
                     </div>
-                    
+
                     <div className="flex items-center justify-between md:justify-end gap-3 md:gap-4 shrink-0 pl-9 md:pl-0 w-full md:w-auto mt-2 md:mt-0">
                       <div className="flex items-center gap-2 md:gap-4">
                         <div className={cn(
                           "px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
-                          isUnanswered ? "bg-bg-raised text-text-tertiary" : isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
+                          it.isUnanswered ? "bg-bg-raised text-text-tertiary" : it.isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
                         )}>
-                          {isUnanswered ? "Unanswered" : isCorrect ? "Correct" : "Incorrect"}
+                          {it.isUnanswered ? "Unanswered" : it.isCorrect ? "Correct" : "Incorrect"}
                         </div>
-                        
+
                         {!isExpanded && (
-                          <button 
-                            onClick={(e) => { e.stopPropagation(); setJudeIdx(q.originalIdx); }}
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setJudeIdx(it.position); }}
                             className={cn(
                               "flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border",
-                              isCorrect ? "text-text-tertiary border-border-subtle" : "text-accent border-accent/20 bg-accent/5 hover:bg-accent/10"
+                              it.isCorrect ? "text-text-tertiary border-border-subtle" : "text-accent border-accent/20 bg-accent/5 hover:bg-accent/10"
                             )}
                           >
-                            Ask Jude {isCorrect && "✦"}
+                            Ask Jude {it.isCorrect && "✦"}
                           </button>
                         )}
                       </div>
-                      
+
                       <ChevronRight className={cn("w-4 h-4 text-text-tertiary transition-transform", isExpanded && "rotate-90")} />
                     </div>
                   </div>
 
                   {/* Expanded Content */}
                   {isExpanded && (
-                    <div 
-                      className="border-t border-border-subtle bg-bg-sunken/30"
-                    >
+                    <div className="border-t border-border-subtle bg-bg-sunken/30">
                       <div className="p-4 md:p-8 space-y-6 md:space-y-8">
-                          <p className="text-lg text-text-primary leading-relaxed font-medium">{q.prompt}</p>
-                          
-                          {q.type === 'MCQ' ? (
+                          <p className="text-lg text-text-primary leading-relaxed font-medium">{it.prompt}</p>
+
+                          {it.assets.length > 0 && (
+                            <div className="flex flex-col gap-3">
+                              {it.assets.map((a) => (
+                                <img
+                                  key={a.id}
+                                  src={a.url}
+                                  alt="diagram"
+                                  loading="lazy"
+                                  className="rounded-xl border border-border-subtle max-h-80 mx-auto"
+                                />
+                              ))}
+                            </div>
+                          )}
+
+                          {it.type === 'mcq' ? (
                             <div className="grid grid-cols-1 gap-3">
-                              {q.options?.map((opt, optIdx) => {
-                                const isCorrectOpt = optIdx === 0; // Assume first is correct
-                                const isStudentAns = ans === opt;
+                              {it.options.map((opt, optIdx) => {
+                                const isCorrectOpt = opt.is_correct;
+                                const isStudentAns = it.pickedOptionId === opt.id;
                                 const label = String.fromCharCode(65 + optIdx) + '.';
 
                                 return (
-                                  <div 
-                                    key={optIdx}
+                                  <div
+                                    key={opt.id}
                                     className={cn(
                                       "flex items-center gap-4 p-5 rounded-2xl border transition-[transform,opacity,box-shadow]",
-                                      isCorrectOpt 
-                                        ? "bg-success-bg border-success-border text-success-text shadow-[0_4px_12px_rgba(34,197,94,0.1)]" 
-                                        : isStudentAns && !isCorrectOpt
+                                      isCorrectOpt
+                                        ? "bg-success-bg border-success-border text-success-text shadow-[0_4px_12px_rgba(34,197,94,0.1)]"
+                                        : isStudentAns
                                           ? "bg-danger-bg border-danger-border text-danger-text"
                                           : "bg-bg-surface border-border-subtle text-text-tertiary opacity-60"
                                     )}
@@ -1276,7 +1688,7 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                                     </div>
                                     <div className="flex gap-3 text-sm">
                                       <span className="font-black tracking-widest uppercase">{label}</span>
-                                      <span className="font-medium">{opt}</span>
+                                      <span className="font-medium">{opt.text}</span>
                                     </div>
                                   </div>
                                 );
@@ -1287,53 +1699,52 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                               <div className="space-y-2">
                                 <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Response</span>
                                 <div className="p-4 bg-bg-surface border border-border-subtle rounded-xl font-mono text-sm">
-                                   {ans || "No response provided"}
+                                   {studentAnswerText || "No response provided"}
                                 </div>
                               </div>
                               <div className="space-y-2">
                                 <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
                                 <div className="p-4 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
-                                   [Correct Numerical/Conceptual Key]
+                                   {it.correctAnswer ?? '—'}{it.unit ? ` ${it.unit}` : ''}
                                 </div>
                               </div>
                             </div>
                           )}
 
-                          <div className="bg-bg-sunken border border-border-subtle rounded-2xl p-6 space-y-4">
-                            <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
-                               <Sigma className="w-3.5 h-3.5" /> Worked Solution
-                            </span>
-                            <div className="text-sm text-text-secondary leading-relaxed font-mono whitespace-pre-line opacity-80">
-                               1. Identify independent parameters: T₁=100C, T₂=20C
-                               2. Apply Fourier's Law: Q = -kA(dT/dx)
-                               3. Solve for thermal resistance: R = L/(kA)
-                               4. Result verified at node limit.
+                          {it.explanation && (
+                            <div className="bg-bg-sunken border border-border-subtle rounded-2xl p-6 space-y-4">
+                              <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
+                                 <Sigma className="w-3.5 h-3.5" /> Worked Solution
+                              </span>
+                              <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line opacity-90">
+                                 {it.explanation}
+                              </div>
                             </div>
-                          </div>
+                          )}
 
                           <div className="flex flex-col-reverse md:flex-row md:items-center justify-between gap-4 pt-6 border-t border-border-subtle">
                              <div className="flex justify-between w-full md:w-auto gap-2">
-                               <button 
-                                 disabled={q.originalIdx === 0}
-                                 onClick={() => setExpandedIdx(questions[q.originalIdx - 1]?.id ? q.originalIdx - 1 : null)}
+                               <button
+                                 disabled={it.position === 0}
+                                 onClick={() => setExpandedIdx(it.position - 1 >= 0 ? it.position - 1 : null)}
                                  className="flex-1 md:flex-none p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-30 flex justify-center items-center"
                                >
                                  <ChevronLeft className="w-4 h-4" />
                                </button>
-                               <button 
-                                 disabled={q.originalIdx === questions.length - 1}
-                                 onClick={() => setExpandedIdx(questions[q.originalIdx + 1]?.id ? q.originalIdx + 1 : null)}
+                               <button
+                                 disabled={it.position === items.length - 1}
+                                 onClick={() => setExpandedIdx(it.position + 1 < items.length ? it.position + 1 : null)}
                                  className="flex-1 md:flex-none p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-30 flex justify-center items-center"
                                >
                                  <ChevronRight className="w-4 h-4" />
                                </button>
                              </div>
-                             
-                             <button 
-                                onClick={() => setJudeIdx(q.originalIdx)}
+
+                             <button
+                                onClick={() => setJudeIdx(it.position)}
                                 className="w-full md:w-auto px-6 md:px-10 py-3 md:py-4 bg-accent text-bg-page text-[10px] md:text-xs font-black uppercase tracking-widest rounded-xl md:rounded-2xl shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow] flex items-center justify-center gap-3"
                               >
-                                Ask Jude {isCorrect && "✦"}
+                                Ask Jude {it.isCorrect && "✦"}
                               </button>
                           </div>
                         </div>
@@ -1341,19 +1752,29 @@ function ReviewScreen({ questions, answers, onBack, courseName }: { questions: Q
                     )}
                 </div>
               );
-            })}
+              })
+            )}
           </div>
         </div>
       </div>
 
-      {/* Jude Integration Panel */}
-         {judeIdx !== null && (
-           <JudePanel 
-             question={questions[judeIdx]} 
-             answer={answers[judeIdx]} 
-             onClose={() => setJudeIdx(null)}
-           />
-         )}
+      {judeIdx !== null && items[judeIdx] && (
+        <JudePanel
+          question={{
+            id: items[judeIdx].id,
+            type: items[judeIdx].type === 'mcq' ? 'MCQ' : 'INPUT',
+            prompt: items[judeIdx].prompt,
+            options: items[judeIdx].options.map((o) => o.text),
+            marks: 1,
+          }}
+          answer={
+            items[judeIdx].type === 'mcq'
+              ? items[judeIdx].options.find((o) => o.id === items[judeIdx].pickedOptionId)?.text ?? ''
+              : items[judeIdx].pickedText ?? ''
+          }
+          onClose={() => setJudeIdx(null)}
+        />
+      )}
     </div>
   );
 }
@@ -1605,78 +2026,38 @@ function StatPill({ label, value, color }: { label: string, value: string | numb
   );
 }
 
-const MOCK_QUESTIONS: Question[] = ([
-  {
-    id: 'q1',
-    type: 'MCQ' as QuestionType,
-    prompt: 'A composite wall is made up of two layers of different materials with thermal conductivities k₁ and k₂. If the thickness of both layers is the same, which material will have a higher temperature gradient for the same heat flux?',
-    options: [
-      'The material with higher thermal conductivity',
-      'The material with lower thermal conductivity',
-      'Both will have the same gradient',
-      'It depends on the surface area'
-    ],
-    marks: 1.0
-  },
-  {
-    id: 'q2',
-    type: 'INPUT' as QuestionType,
-    prompt: 'Calculate the convective heat transfer coefficient (h) in W/m²K if the heat flux is 5000 W/m², the surface temperature is 100°C, and the fluid temperature is 20°C.',
-    marks: 2.0
-  },
-  {
-    id: 'q3',
-    type: 'MCQ' as QuestionType,
-    prompt: 'In the context of fluid dynamics, what does a Reynolds number of 1500 typically indicate for flow in a circular pipe?',
-    options: [
-      'Laminar flow',
-      'Turbulent flow',
-      'Transitional flow',
-      'Supersonic flow'
-    ],
-    marks: 1.5
-  },
-  {
-    id: 'q4',
-    type: 'INPUT' as QuestionType,
-    prompt: 'A gas occupies 2.0 m³ at 300 K. If the pressure is held constant, what will be its volume (m³) at 450 K?',
-    marks: 2.0
-  },
-  {
-    id: 'q5',
-    type: 'MCQ' as QuestionType,
-    prompt: 'Which thermodynamic cycle is used as the ideal model for spark-ignition internal combustion engines?',
-    options: ['Diesel cycle', 'Brayton cycle', 'Otto cycle', 'Rankine cycle'],
-    marks: 1.0
-  },
-  {
-    id: 'q6',
-    type: 'INPUT' as QuestionType,
-    prompt: 'Determine the work done (kJ) during an isothermal expansion of 1 kg of an ideal gas from 2 bar to 1 bar at 300 K. (R = 0.287 kJ/kgK)',
-    marks: 3.0
-  }
-] as Question[]).concat(Array.from({ length: 19 }, (_, i) => ({
-  id: `q${i + 7}`,
-  type: (i % 2 === 0 ? 'MCQ' : 'INPUT') as QuestionType,
-  prompt: `Advanced technical evaluation node #${i + 7}. Analyze the system parameters provided in the diagrams and determine the ${i % 2 === 0 ? 'optimal configuration' : 'resultant vector magnitude'}. High precision required.`,
-  options: i % 2 === 0 ? ['Configuration Alpha-7', 'Configuration Beta-2', 'Configuration Gamma-9', 'Configuration Sigma-0'] : undefined,
-  marks: 1.0 + (i % 3) * 0.5
-})));
-
-function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, practiceTimeLimit, appStateToSave, resumeData }: { onBack: () => void, onFinish: (qs: Question[], ans: Record<number, string>) => void, courseName: string, mode: StudyMode, totalQuestions: number, practiceTimeLimit: number, appStateToSave?: any, resumeData?: any }) {
-  const [currentIdx, setCurrentIdx] = useState(resumeData ? resumeData.currentIdx : 0);
-  const [answers, setAnswers] = useState<Record<number, string>>(resumeData ? resumeData.answers : {});
-  const [flagged, setFlagged] = useState<Set<number>>(new Set(resumeData ? resumeData.flagged : []));
+function ExamSimulation({
+  onBack,
+  onFinish,
+  courseName,
+  mode,
+  sessionId,
+  questions,
+  practiceTimeLimit,
+}: {
+  onBack: () => void;
+  onFinish: (sessionId: string) => void;
+  courseName: string;
+  mode: StudyMode;
+  sessionId: string;
+  questions: Question[];
+  practiceTimeLimit: number;
+}) {
+  const [currentIdx, setCurrentIdx] = useState(0);
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
+
+  const totalQuestions = questions.length;
 
   // Persistent Timer Logic
   const storageKey = `engine_session_${courseName}_${mode}`;
   const [session, setSession] = useState<TimerSession>(() => {
-    if (resumeData && resumeData.session) return resumeData.session;
     const saved = localStorage.getItem(storageKey);
     if (saved) return JSON.parse(saved);
-    
+
     // 1h for midsem, 2.5h for full exam, practiceTimeLimit (mins) for practice, 30m for diagnostic
     const duration = mode === 'MIDSEM' ? 3600000 : mode === 'FULL_EXAM' ? 9000000 : mode === 'DIAGNOSTIC' ? 1800000 : practiceTimeLimit * 60000;
     return {
@@ -1697,18 +2078,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
 
   useEffect(() => {
     localStorage.setItem(storageKey, JSON.stringify(session));
-    if (appStateToSave) {
-      localStorage.setItem('active_exam', JSON.stringify({
-        appState: appStateToSave,
-        examState: {
-          answers,
-          flagged: Array.from(flagged),
-          currentIdx,
-          session
-        }
-      }));
-    }
-  }, [session, appStateToSave, answers, flagged, currentIdx]);
+  }, [session, storageKey]);
 
   const togglePause = () => {
     if (mode !== 'PRACTICE') return;
@@ -1750,24 +2120,46 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   const isUrgent = timeLeftSeconds <= 600; // 10 minutes warning
   const timerText = formatTime(timeLeftSeconds);
 
-  const questions = useMemo(() => MOCK_QUESTIONS.slice(0, totalQuestions), [totalQuestions]);
   const currentQuestion = questions[currentIdx];
 
-  const handleFinish = () => {
-    localStorage.removeItem('active_exam');
+  const handleFinish = async () => {
     localStorage.removeItem(storageKey);
-    onFinish(questions, answers);
+    try {
+      await apiPost(`/api/sessions/${sessionId}/finish`, {});
+    } catch (e) {
+      console.error('finish session failed', e);
+    }
+    onFinish(sessionId);
   };
 
   // Auto-submit handle
   useEffect(() => {
-    if (timeLeftMs <= 0) {
+    if (questions.length > 0 && timeLeftMs <= 0) {
       handleFinish();
     }
-  }, [timeLeftMs]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeLeftMs, questions.length]);
 
   const handleAnswer = (answer: string) => {
     setAnswers(prev => ({ ...prev, [currentIdx]: answer }));
+    if (!currentQuestion) return;
+    const timeMs = Date.now() - questionStartTime;
+    const payload: Record<string, unknown> = {
+      question_id: currentQuestion.id,
+      position: currentIdx,
+      time_ms: timeMs,
+    };
+    if (currentQuestion.type === 'MCQ') {
+      const optIdx = (currentQuestion.options ?? []).indexOf(answer);
+      const optId = currentQuestion.optionIds?.[optIdx];
+      if (optId) payload.picked_option_id = optId;
+      else payload.picked_text = answer;
+    } else {
+      payload.picked_text = answer;
+    }
+    void apiPost(`/api/sessions/${sessionId}/answer`, payload).catch((e) =>
+      console.error('answer submit failed', e)
+    );
   };
 
   const toggleFlag = () => {
@@ -1780,12 +2172,19 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   };
 
   const nextQuestion = () => {
-    if (currentIdx < questions.length - 1) setCurrentIdx(currentIdx + 1);
-    else handleFinish();
+    if (currentIdx < questions.length - 1) {
+      setCurrentIdx(currentIdx + 1);
+      setQuestionStartTime(Date.now());
+    } else {
+      handleFinish();
+    }
   };
 
   const prevQuestion = () => {
-    if (currentIdx > 0) setCurrentIdx(currentIdx - 1);
+    if (currentIdx > 0) {
+      setCurrentIdx(currentIdx - 1);
+      setQuestionStartTime(Date.now());
+    }
   };
 
   const navigatorJSX = (
@@ -1874,7 +2273,7 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
   );
 
   return (
-    <div 
+    <div
       className="flex flex-col h-full flex-1 bg-bg-page text-text-primary font-sans overflow-hidden"
     >
         {isMobileNavOpen && (
@@ -1923,9 +2322,8 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
       {/* HUD Header */}
       <header className="relative h-12 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-4 md:px-6 shrink-0 z-50">
         <div className="flex items-center gap-4">
-          <button 
+          <button
             onClick={() => {
-              localStorage.removeItem('active_exam');
               localStorage.removeItem(storageKey);
               onBack();
             }}
@@ -2066,6 +2464,20 @@ function ExamSimulation({ onBack, onFinish, courseName, mode, totalQuestions, pr
                       <p className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
                         {currentQuestion.prompt}
                       </p>
+
+                      {currentQuestion.assets && currentQuestion.assets.length > 0 && (
+                        <div className="flex flex-col gap-3">
+                          {currentQuestion.assets.map((a) => (
+                            <img
+                              key={a.id}
+                              src={a.url}
+                              alt="diagram"
+                              loading="lazy"
+                              className="rounded-xl border border-border-subtle max-h-80 mx-auto"
+                            />
+                          ))}
+                        </div>
+                      )}
 
                       {currentQuestion.type === 'MCQ' ? (
                         <div className="grid grid-cols-1 gap-2.5">
@@ -2216,112 +2628,6 @@ function CommandBarItem({ icon: Icon, label }: { icon: LucideIcon, label: string
     <button className="flex flex-col items-center gap-1 group px-4 py-2 hover:bg-white/5 rounded-xl transition-[transform,opacity,box-shadow]">
        <Icon className="w-5 h-5 text-on-surface-variant group-hover:text-primary group-hover:scale-110 transition-[transform,opacity,box-shadow]" />
        <span className="text-[9px] font-black uppercase tracking-widest text-outline group-hover:text-primary transition-colors">{label}</span>
-    </button>
-  );
-}
-
-function NavItem({ icon: Icon, label, active = false, expanded = false, onClick }: { icon: LucideIcon, label: string, active?: boolean, expanded: boolean, onClick?: () => void }) {
-  return (
-    <button 
-      onClick={(e) => { e.stopPropagation(); onClick?.(); }}
-      className={cn(
-        "w-full flex items-center h-10 px-2 rounded-lg transition-colors group overflow-hidden relative",
-        active ? "bg-accent-muted text-accent-text border-l-2 border-accent" : "text-text-tertiary hover:text-text-primary hover:bg-bg-raised"
-      )}
-    >
-      <Icon className={cn("w-5 h-5 shrink-0 ml-0.5", active && "fill-accent/20")} />
-      <span className={cn(
-        "ml-4 text-xs font-bold uppercase tracking-widest whitespace-nowrap transition-opacity duration-100",
-        expanded ? "opacity-100" : "opacity-0"
-      )}>
-        {label}
-      </span>
-    </button>
-  );
-}
-
-function ModeCard({ title, description, tag, icon: Icon, color = 'primary', onClick }: { title: string, description: string, tag: string, icon: LucideIcon, color?: 'primary' | 'secondary' | 'tertiary', onClick: () => void }) {
-  return (
-    <button 
-      onClick={onClick}
-      className="flex flex-col text-left group bg-bg-surface rounded-2xl md:rounded-3xl p-4 md:p-5 border border-border-subtle hover:border-accent/40 hover:bg-bg-raised transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden h-auto min-h-40 md:min-h-44"
-    >
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-accent to-accent-hover opacity-0 group-hover:opacity-100 transition-[transform,opacity,box-shadow]" />
-      <div className="flex justify-between items-start mb-3 md:mb-5">
-        <div className={cn(
-          "w-9 h-9 md:w-11 md:h-11 rounded-lg md:rounded-xl bg-bg-page flex items-center justify-center transition-transform duration-150 group-hover:scale-110 group-hover:rotate-6",
-          color === 'primary' ? 'text-accent' : color === 'secondary' ? 'text-accent-text' : 'text-accent'
-        )}>
-          <Icon className="w-4 h-4 md:w-5 md:h-5" />
-        </div>
-        <span className="px-2 md:px-3 py-0.5 md:py-1 rounded-full bg-bg-page text-[8px] md:text-[9px] font-black uppercase tracking-widest text-text-secondary border border-border-subtle">
-          {tag}
-        </span>
-      </div>
-      <h3 className="text-base md:text-lg font-bold mb-1.5 md:mb-2 text-text-primary group-hover:translate-x-1 transition-transform">{title}</h3>
-      <p className="text-[10px] md:text-[11px] text-text-secondary leading-relaxed mb-3 md:mb-4 opacity-70 group-hover:opacity-100 transition-opacity line-clamp-3">
-        {description}
-      </p>
-      <div className="mt-auto flex items-center text-[9px] md:text-[10px] font-black uppercase tracking-widest opacity-0 group-hover:opacity-100 transition-opacity  text-text-tertiary">
-        <span className="mr-2">&mdash;</span> Enter Mode
-      </div>
-    </button>
-  );
-}
-
-function TopicCard({ topic, active, onClick }: { topic: Topic, active: boolean, onClick: () => void, key?: string | number }) {
-  // Map hardcoded icons for demo
-  const getIcon = (name: string) => {
-    if (name.includes('Rate')) return Sigma;
-    if (name.includes('Arrhenius')) return Thermometer;
-    if (name.includes('Reactor')) return FlaskConical;
-    if (name.includes('Enzyme')) return Microscope;
-    return Activity;
-  };
-
-  const Icon = getIcon(topic.name);
-
-  return (
-    <button 
-      onClick={onClick}
-      className={cn(
-        "group flex flex-col p-4 md:p-5 rounded-2xl transition-[transform,opacity,box-shadow] duration-100 relative overflow-hidden h-auto min-h-36 md:min-h-40 text-left",
-        active 
-          ? "bg-accent-muted border-2 border-accent" 
-          : "bg-surface-container-high border border-border-subtle hover:border-accent/30"
-      )}
-    >
-      {active && <div className="absolute top-0 right-0 w-20 md:w-24 h-20 md:h-24 bg-accent/10 blur-3xl rounded-full" />}
-      <div className="flex justify-between items-start mb-auto">
-        <div className={cn(
-          "w-8 h-8 md:w-10 md:h-10 rounded-lg md:rounded-xl flex items-center justify-center transition-colors",
-          active ? "bg-accent text-bg-page" : "bg-bg-page text-text-tertiary group-hover:text-accent-text"
-        )}>
-          <Icon className="w-4 h-4 md:w-5 md:h-5" />
-        </div>
-        <div className="flex gap-1.5">
-           <span className={cn(
-             "w-1.5 h-1.5 rounded-full shadow-[0_0_8px_currentColor]",
-             topic.difficulty === 'Easy' ? 'bg-success-text text-success-text' : topic.difficulty === 'Medium' ? 'bg-warning-text text-warning-text' : 'bg-danger-text text-danger-text'
-           )} />
-        </div>
-      </div>
-
-      <div className="mt-3 md:mt-0">
-        <h3 className="text-sm md:text-base font-bold mb-3 md:mb-4 tracking-tight leading-tight text-text-primary">{topic.name}</h3>
-        <div className="pt-3 md:pt-4 border-t border-border-subtle space-y-1.5 md:space-y-2">
-          <div className="flex justify-between items-center text-[9px] md:text-[10px] font-black tracking-widest uppercase">
-            <span className={active ? "text-accent-text" : "text-text-tertiary"}>{topic.questionsCount} Questions</span>
-            <span className={active ? "text-accent-text" : "text-text-tertiary"}>{topic.mastery}% Mastery</span>
-          </div>
-          <div className="w-full h-1 bg-bg-sunken rounded-full overflow-hidden">
-            <div 
-              style={{ width: `${topic.mastery}%` }}
-              className={cn("h-full rounded-full transition-colors", active ? "bg-accent" : "bg-text-tertiary/40")}
-            />
-          </div>
-        </div>
-      </div>
     </button>
   );
 }

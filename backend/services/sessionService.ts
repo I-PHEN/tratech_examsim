@@ -1,0 +1,357 @@
+import { supabase } from '../lib/supabase';
+import { ApiError } from '../lib/errors';
+import { pickSessionQuestions } from './routingService';
+import { mapAssets, type QuestionAsset, type QuestionContent, type McqOption } from './questionService';
+import { shuffle } from '../lib/shuffle';
+import type {
+  SessionAnswerSubmitInput,
+  SessionCreateInput,
+  SessionFinishInput,
+} from '../schemas/session';
+
+export interface SessionRow {
+  id: string;
+  user_uid: string;
+  program_course_id: string;
+  mode: 'practice' | 'diagnostic' | 'midsem' | 'full_exam';
+  topic_id: string | null;
+  total_questions: number;
+  started_at: string;
+  finished_at: string | null;
+  score: number | null;
+  duration_ms: number | null;
+}
+
+export interface SessionListItem extends SessionRow {
+  course_name: string | null;
+  topic_name: string | null;
+  accuracy: number | null;
+}
+
+export interface SessionAnswerRow {
+  id: string;
+  session_id: string;
+  question_id: string;
+  position: number;
+  picked_option_id: string | null;
+  picked_text: string | null;
+  is_correct: boolean | null;
+  time_ms: number | null;
+  answered_at: string;
+}
+
+interface ReviewQuestion {
+  id: string;
+  type: 'mcq' | 'calc';
+  difficulty: 'easy' | 'medium' | 'hard';
+  exam_scope: 'midsem' | 'final' | 'both';
+  topic_id: string;
+  answer_type: 'exact' | 'range' | null;
+  content: QuestionContent;
+  options: McqOption[];
+  assets: QuestionAsset[];
+}
+
+export async function createSession(uid: string, input: SessionCreateInput) {
+  const picked = await pickSessionQuestions({
+    program_course_id: input.program_course_id,
+    mode: input.mode,
+    count: input.count,
+    topic_id: input.topic_id,
+    difficulty: input.difficulty,
+  });
+
+  if (picked.picked.length === 0) {
+    throw new ApiError(
+      404,
+      'NO_QUESTIONS',
+      'No questions found for that course / mode / filters. Add some via Admin → Manual Entry.'
+    );
+  }
+
+  const { data: row, error } = await supabase
+    .from('sessions')
+    .insert({
+      user_uid: uid,
+      program_course_id: input.program_course_id,
+      mode: input.mode,
+      topic_id: input.topic_id ?? null,
+      total_questions: picked.picked.length,
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+
+  return { session_id: row.id, picked: picked.picked };
+}
+
+async function evaluateAnswer(
+  questionId: string,
+  pickedOptionId: string | undefined,
+  pickedText: string | undefined
+): Promise<boolean | null> {
+  const { data: question, error: qErr } = await supabase
+    .from('questions')
+    .select('id, type, answer_type')
+    .eq('id', questionId)
+    .maybeSingle();
+  if (qErr) throw qErr;
+  if (!question) throw new ApiError(404, 'NOT_FOUND', 'Question not found');
+
+  if (question.type === 'mcq') {
+    if (!pickedOptionId) return null;
+    const { data: opt, error: oErr } = await supabase
+      .from('mcq_options')
+      .select('id, is_correct, question_id')
+      .eq('id', pickedOptionId)
+      .maybeSingle();
+    if (oErr) throw oErr;
+    if (!opt) return null;
+    if (opt.question_id !== questionId) return false;
+    return opt.is_correct;
+  }
+
+  if (!pickedText || pickedText.trim().length === 0) return null;
+  const { data: content, error: cErr } = await supabase
+    .from('question_content')
+    .select('correct_answer, answer_tolerance')
+    .eq('question_id', questionId)
+    .maybeSingle();
+  if (cErr) throw cErr;
+  if (!content) return null;
+
+  const expected = content.correct_answer ?? '';
+  const got = pickedText.trim();
+
+  if (question.answer_type === 'range') {
+    const expectedNum = Number(expected);
+    const gotNum = Number(got);
+    const tol = Number(content.answer_tolerance ?? 0);
+    if (Number.isFinite(expectedNum) && Number.isFinite(gotNum)) {
+      return Math.abs(expectedNum - gotNum) <= tol;
+    }
+  }
+
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return norm(expected) === norm(got);
+}
+
+export async function submitAnswer(
+  uid: string,
+  sessionId: string,
+  input: SessionAnswerSubmitInput
+): Promise<{ is_correct: boolean | null }> {
+  const { data: session, error: sErr } = await supabase
+    .from('sessions')
+    .select('id, user_uid, finished_at')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (sErr) throw sErr;
+  if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  if (session.user_uid !== uid) throw new ApiError(403, 'FORBIDDEN', 'Not your session');
+  if (session.finished_at) throw new ApiError(400, 'SESSION_FINISHED', 'Session already finished');
+
+  const isCorrect = await evaluateAnswer(input.question_id, input.picked_option_id, input.picked_text);
+
+  const { error: upsertErr } = await supabase
+    .from('session_answers')
+    .upsert(
+      {
+        session_id: sessionId,
+        question_id: input.question_id,
+        position: input.position,
+        picked_option_id: input.picked_option_id ?? null,
+        picked_text: input.picked_text ?? null,
+        is_correct: isCorrect,
+        time_ms: input.time_ms ?? null,
+        answered_at: new Date().toISOString(),
+      },
+      { onConflict: 'session_id,question_id' }
+    );
+  if (upsertErr) throw upsertErr;
+
+  return { is_correct: isCorrect };
+}
+
+export async function finishSession(uid: string, sessionId: string, input: SessionFinishInput) {
+  const { data: session, error: sErr } = await supabase
+    .from('sessions')
+    .select('id, user_uid, started_at, finished_at, score, total_questions, duration_ms')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (sErr) throw sErr;
+  if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  if (session.user_uid !== uid) throw new ApiError(403, 'FORBIDDEN', 'Not your session');
+
+  if (session.finished_at) {
+    return {
+      score: session.score ?? 0,
+      total: session.total_questions,
+      accuracy: session.total_questions > 0 ? (session.score ?? 0) / session.total_questions : 0,
+      finished_at: session.finished_at,
+      duration_ms: session.duration_ms ?? 0,
+    };
+  }
+
+  const { data: answers, error: aErr } = await supabase
+    .from('session_answers')
+    .select('is_correct')
+    .eq('session_id', sessionId);
+  if (aErr) throw aErr;
+
+  const score = (answers ?? []).filter((a) => a.is_correct === true).length;
+  const finishedAt = new Date();
+  const durationMs =
+    input.duration_ms ?? finishedAt.getTime() - new Date(session.started_at).getTime();
+
+  const { error: updErr } = await supabase
+    .from('sessions')
+    .update({
+      finished_at: finishedAt.toISOString(),
+      score,
+      duration_ms: durationMs,
+    })
+    .eq('id', sessionId);
+  if (updErr) throw updErr;
+
+  return {
+    score,
+    total: session.total_questions,
+    accuracy: session.total_questions > 0 ? score / session.total_questions : 0,
+    finished_at: finishedAt.toISOString(),
+    duration_ms: durationMs,
+  };
+}
+
+export async function listSessions(uid: string, limit = 20, offset = 0): Promise<SessionListItem[]> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select(
+      'id, user_uid, program_course_id, mode, topic_id, total_questions, started_at, finished_at, score, duration_ms, ' +
+        'program_courses!inner(courses(name)), topics(name)'
+    )
+    .eq('user_uid', uid)
+    .order('started_at', { ascending: false })
+    .range(offset, offset + limit - 1);
+  if (error) throw error;
+
+  return (data ?? []).map((row) => {
+    const r = row as unknown as SessionRow & {
+      program_courses: { courses: { name: string } | null } | null;
+      topics: { name: string } | null;
+    };
+    const courseName = r.program_courses?.courses?.name ?? null;
+    const topicName = r.topics?.name ?? null;
+    const accuracy =
+      r.score != null && r.total_questions > 0 ? r.score / r.total_questions : null;
+    return {
+      id: r.id,
+      user_uid: r.user_uid,
+      program_course_id: r.program_course_id,
+      mode: r.mode,
+      topic_id: r.topic_id,
+      total_questions: r.total_questions,
+      started_at: r.started_at,
+      finished_at: r.finished_at,
+      score: r.score,
+      duration_ms: r.duration_ms,
+      course_name: courseName,
+      topic_name: topicName,
+      accuracy,
+    };
+  });
+}
+
+export async function getSessionById(uid: string, sessionId: string) {
+  const { data: session, error: sErr } = await supabase
+    .from('sessions')
+    .select(
+      'id, user_uid, program_course_id, mode, topic_id, total_questions, started_at, finished_at, score, duration_ms, ' +
+        'program_courses!inner(courses(name)), topics(name)'
+    )
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (sErr) throw sErr;
+  if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  const s = session as unknown as SessionRow & {
+    program_courses: { courses: { name: string } | null } | null;
+    topics: { name: string } | null;
+  };
+  if (s.user_uid !== uid) throw new ApiError(403, 'FORBIDDEN', 'Not your session');
+
+  const { data: answers, error: aErr } = await supabase
+    .from('session_answers')
+    .select('id, session_id, question_id, position, picked_option_id, picked_text, is_correct, time_ms, answered_at')
+    .eq('session_id', sessionId)
+    .order('position', { ascending: true });
+  if (aErr) throw aErr;
+
+  const questionIds = Array.from(new Set((answers ?? []).map((a) => a.question_id)));
+
+  let questions: ReviewQuestion[] = [];
+  if (questionIds.length > 0) {
+    const { data: full, error: qErr } = await supabase
+      .from('questions')
+      .select(
+        'id, type, difficulty, exam_scope, topic_id, answer_type, ' +
+          'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
+          'mcq_options(id, text, is_correct), ' +
+          'question_assets(id, storage_path, mime_type, position)'
+      )
+      .in('id', questionIds);
+    if (qErr) throw qErr;
+
+    questions = (full ?? []).map((row) => {
+      const r = row as unknown as {
+        id: string;
+        type: 'mcq' | 'calc';
+        difficulty: 'easy' | 'medium' | 'hard';
+        exam_scope: 'midsem' | 'final' | 'both';
+        topic_id: string;
+        answer_type: 'exact' | 'range' | null;
+        question_content: QuestionContent | QuestionContent[] | null;
+        mcq_options: McqOption[] | null;
+        question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
+      };
+      const contentArr = Array.isArray(r.question_content)
+        ? r.question_content
+        : r.question_content
+        ? [r.question_content]
+        : [];
+      const mcqOptions = r.type === 'mcq' ? shuffle(r.mcq_options ?? []) : [];
+      return {
+        id: r.id,
+        type: r.type,
+        difficulty: r.difficulty,
+        exam_scope: r.exam_scope,
+        topic_id: r.topic_id,
+        answer_type: r.answer_type,
+        content: contentArr[0],
+        options: mcqOptions,
+        assets: mapAssets(r.question_assets),
+      };
+    });
+  }
+
+  const accuracy =
+    s.score != null && s.total_questions > 0 ? s.score / s.total_questions : null;
+
+  return {
+    session: {
+      id: s.id,
+      program_course_id: s.program_course_id,
+      mode: s.mode,
+      topic_id: s.topic_id,
+      total_questions: s.total_questions,
+      started_at: s.started_at,
+      finished_at: s.finished_at,
+      score: s.score,
+      duration_ms: s.duration_ms,
+      course_name: s.program_courses?.courses?.name ?? null,
+      topic_name: s.topics?.name ?? null,
+      accuracy,
+    },
+    answers: (answers ?? []) as SessionAnswerRow[],
+    questions,
+  };
+}

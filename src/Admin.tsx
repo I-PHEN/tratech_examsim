@@ -1,9 +1,14 @@
 import React, { useState } from 'react';
-import { ShieldAlert, ArrowLeft, Upload, FileText, Settings, Database, Activity, ChevronRight, Plus, Users, Search, Loader2 } from 'lucide-react';
+import { ShieldAlert, ArrowLeft, Upload, FileText, Database, Users, Loader2, Search, Plus, Pencil } from 'lucide-react';
 import { cn } from './lib/utils';
 import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, OperationType, handleFirestoreError } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
+import { IngestionUpload } from './components/admin/IngestionUpload';
+import { IngestionJobList } from './components/admin/IngestionJobList';
+import { DraftReviewTable } from './components/admin/DraftReviewTable';
+import { ManualQuestionEntry } from './components/admin/ManualQuestionEntry';
+import { TopicManager } from './components/admin/topics/TopicManager';
 
 export function AdminLoginScreen({ onSuccess, onBack }: { onSuccess: () => void, onBack: () => void }) {
   const [passcode, setPasscode] = useState('');
@@ -155,8 +160,32 @@ function AdminManager() {
   );
 }
 
+function IngestionTab() {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
+
+  if (selectedJobId) {
+    return (
+      <DraftReviewTable
+        jobId={selectedJobId}
+        onBack={() => {
+          setSelectedJobId(null);
+          setRefreshKey((k) => k + 1);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-200">
+      <IngestionUpload onCreated={() => setRefreshKey((k) => k + 1)} />
+      <IngestionJobList refreshKey={refreshKey} onSelect={setSelectedJobId} />
+    </div>
+  );
+}
+
 export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'upload' | 'manage' | 'admins'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'manual' | 'manage' | 'admins'>('upload');
   
   return (
     <div className="absolute inset-0 flex flex-col bg-surface-dim z-50 overflow-hidden">
@@ -175,124 +204,60 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto p-8 flex flex-col items-center">
-        <div className="w-full max-w-5xl">
-          
-          <div className="flex flex-wrap gap-4 mb-8">
-            <button 
-              onClick={() => setActiveTab('upload')}
-              className={cn(
-                "flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
-                activeTab === 'upload' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
-              )}
-            >
-              <Upload className="w-5 h-5" />
-              Ingestion
-            </button>
-            <button 
-              onClick={() => setActiveTab('manage')}
-              className={cn(
-                "flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
-                activeTab === 'manage' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
-              )}
-            >
-              <FileText className="w-5 h-5" />
-              Database
-            </button>
-            <button 
-              onClick={() => setActiveTab('admins')}
-              className={cn(
-                "flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-bold transition-all",
-                activeTab === 'admins' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
-              )}
-            >
-              <Users className="w-5 h-5" />
-              Manage Admins
-            </button>
+      <main className="flex-1 overflow-y-auto flex flex-col items-center">
+        <div className="w-full max-w-5xl px-8 pb-8">
+
+          <div className="sticky top-0 z-30 -mx-8 px-8 pt-6 pb-4 bg-surface-dim/95 backdrop-blur-sm">
+            <div className="flex flex-wrap gap-3">
+              <button
+                onClick={() => setActiveTab('upload')}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all",
+                  activeTab === 'upload' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
+                )}
+              >
+                <Upload className="w-4 h-4" />
+                Ingestion
+              </button>
+              <button
+                onClick={() => setActiveTab('manual')}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all",
+                  activeTab === 'manual' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
+                )}
+              >
+                <Pencil className="w-4 h-4" />
+                Manual Entry
+              </button>
+              <button
+                onClick={() => setActiveTab('manage')}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all",
+                  activeTab === 'manage' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
+                )}
+              >
+                <FileText className="w-4 h-4" />
+                Database
+              </button>
+              <button
+                onClick={() => setActiveTab('admins')}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm transition-all",
+                  activeTab === 'admins' ? "bg-bg-raised text-primary shadow-[0_0_20px_theme(colors.primary/0.1)] border border-primary/20" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised"
+                )}
+              >
+                <Users className="w-4 h-4" />
+                Manage Admins
+              </button>
+            </div>
           </div>
 
-          {activeTab === 'admins' && <AdminManager />}
-
-          {activeTab === 'upload' && (
-              <div
-                className="animate-in fade-in duration-200"
-              >
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Uploader Card */}
-                  <div className="lg:col-span-2 bg-surface-container-low border border-border-subtle rounded-3xl p-8 flex flex-col items-center justify-center min-h-[400px] border-dashed">
-                    <div className="w-20 h-20 bg-primary/10 text-primary rounded-full flex items-center justify-center mb-6">
-                      <Upload className="w-10 h-10" />
-                    </div>
-                    <h3 className="text-xl font-bold text-text-primary mb-2">Upload Source Material</h3>
-                    <p className="text-text-secondary text-center max-w-sm mb-8">
-                      Upload past exam PDFs, presentation slides, or reference material. The AI agent will extract, tag, and structure the questions automatically.
-                    </p>
-                    <button className="bg-primary text-on-primary px-8 py-3 rounded-xl font-bold tracking-wide hover:bg-primary/90 transition-colors shadow-[0_0_30px_theme(colors.primary/0.2)]">
-                      Select Files
-                    </button>
-                  </div>
-
-                  {/* Settings / Config */}
-                  <div className="space-y-6">
-                    <div className="bg-surface-container-low border border-border-subtle rounded-3xl p-6">
-                      <div className="flex items-center gap-3 mb-4 text-text-primary">
-                        <Settings className="w-5 h-5 text-primary" />
-                        <h4 className="font-bold uppercase tracking-widest text-sm">Target Course</h4>
-                      </div>
-                      
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-xs text-text-secondary font-bold mb-1.5 block uppercase tracking-wider">Department</label>
-                          <select className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none">
-                            <option>Chemical Engineering</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="text-xs text-text-secondary font-bold mb-1.5 block uppercase tracking-wider">Year & Sem</label>
-                          <div className="grid grid-cols-2 gap-2">
-                            <select className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none">
-                              <option>Year 3</option>
-                            </select>
-                            <select className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none">
-                              <option>Sem 1</option>
-                            </select>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-text-secondary font-bold mb-1.5 block uppercase tracking-wider">Course</label>
-                          <select className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none">
-                            <option>Chemical Reaction Kinetics</option>
-                            <option>Heat Transfer</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-surface-container-low border border-border-subtle rounded-3xl p-6">
-                       <div className="flex items-center gap-3 mb-4 text-text-primary">
-                        <Activity className="w-5 h-5 text-tertiary" />
-                        <h4 className="font-bold uppercase tracking-widest text-sm">Agent Status</h4>
-                      </div>
-                      <div className="flex items-center gap-3 text-sm text-text-secondary">
-                        <div className="w-2 h-2 rounded-full bg-tertiary animate-pulse" />
-                        <span>Ready for ingestion</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeTab === 'manage' && (
-              <div
-                className="bg-surface-container-low border border-border-subtle rounded-3xl p-8 animate-in fade-in duration-200"
-              >
-                 <div className="flex items-center justify-center min-h-[300px] text-text-secondary flex-col gap-4">
-                    <Database className="w-12 h-12 opacity-20" />
-                    <p>Database management coming soon.</p>
-                 </div>
-              </div>
-            )}
+          <div className="pt-2">
+            {activeTab === 'admins' && <AdminManager />}
+            {activeTab === 'upload' && <IngestionTab />}
+            {activeTab === 'manual' && <ManualQuestionEntry />}
+            {activeTab === 'manage' && <TopicManager />}
+          </div>
         </div>
       </main>
     </div>

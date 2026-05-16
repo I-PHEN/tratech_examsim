@@ -6,6 +6,8 @@ import { AdminLoginScreen, AdminDashboardScreen } from './Admin.tsx';
 import { AuthProvider, useAuth } from './lib/AuthContext.tsx';
 import { OnboardingScreen } from './OnboardingScreen.tsx';
 import { ProfileSetupScreen } from './ProfileSetupScreen.tsx';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/fraunces';
 import './index.css';
 
 function AdminRoute() {

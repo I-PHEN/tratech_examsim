@@ -13,7 +13,7 @@ export function HelpScreen({ onBack }: { onBack: () => void }) {
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div>
-             <h1 className="text-3xl font-bold text-text-primary italic font-['Times_New_Roman']">Help & Support</h1>
+             <h1 className="text-3xl font-bold text-text-primary italic font-display">Help & Support</h1>
              <p className="text-sm text-text-secondary">Find answers or reach out to us</p>
           </div>
         </div>
