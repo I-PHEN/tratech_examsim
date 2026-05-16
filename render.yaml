@@ -1,0 +1,35 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+# Auto-deploys on every push to `main` once this repo is connected as a Blueprint.
+# Secret values are NOT stored here (sync: false) — set them in the Render dashboard.
+services:
+  - type: web
+    name: tratech-examsim
+    runtime: node
+    plan: free            # free tier sleeps after ~15 min idle; bump to "starter" (~$7/mo) to keep it warm
+    region: oregon        # change to frankfurt/singapore/etc. if closer to your users
+    branch: main
+    autoDeploy: true
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: FIREBASE_PROJECT_ID
+        sync: false
+      - key: FIREBASE_CLIENT_EMAIL
+        sync: false
+      - key: FIREBASE_PRIVATE_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_DEFAULT_MODEL
+        sync: false
+      - key: OPENROUTER_MAX_TOKENS
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
