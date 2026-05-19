@@ -6,19 +6,23 @@ import { cn } from '../../lib/utils';
 export interface IngestionJob {
   id: string;
   source_type: 'pdf' | 'image' | 'text';
-  status: 'pending' | 'extracting' | 'ready_for_review' | 'published' | 'failed';
+  status: string;
   total_drafts: number;
   error_message: string | null;
   created_at: string;
 }
 
-const STATUS_STYLES: Record<IngestionJob['status'], string> = {
+const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-text-secondary/10 text-text-secondary border-text-secondary/20',
+  uploaded: 'bg-text-secondary/10 text-text-secondary border-text-secondary/20',
   extracting: 'bg-primary/10 text-primary border-primary/20',
+  text_review: 'bg-tertiary/10 text-tertiary border-tertiary/30',
   ready_for_review: 'bg-tertiary/10 text-tertiary border-tertiary/30',
   published: 'bg-green-500/10 text-green-500 border-green-500/30',
   failed: 'bg-red-500/10 text-red-500 border-red-500/30',
 };
+const STATUS_FALLBACK = 'bg-text-secondary/10 text-text-secondary border-text-secondary/20';
+const ACTIVE_STATUSES = new Set(['pending', 'uploaded', 'extracting']);
 
 export function IngestionJobList({
   refreshKey,
@@ -47,7 +51,7 @@ export function IngestionJobList({
   }, [fetchJobs, refreshKey]);
 
   useEffect(() => {
-    const hasActive = jobs.some((j) => j.status === 'extracting' || j.status === 'pending');
+    const hasActive = jobs.some((j) => ACTIVE_STATUSES.has(j.status));
     if (pollTimer.current) {
       clearInterval(pollTimer.current);
       pollTimer.current = null;
@@ -105,10 +109,10 @@ export function IngestionJobList({
                 <span
                   className={cn(
                     'text-xs font-bold px-2 py-0.5 rounded-md border',
-                    STATUS_STYLES[j.status]
+                    STATUS_STYLES[j.status] ?? STATUS_FALLBACK
                   )}
                 >
-                  {j.status.replace('_', ' ')}
+                  {j.status.replace(/_/g, ' ')}
                 </span>
                 {j.total_drafts > 0 && (
                   <span className="text-xs text-text-secondary">

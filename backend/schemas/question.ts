@@ -15,6 +15,7 @@ const McqCreate = z.object({
   content: z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
+    source_reference: z.string().max(500).optional(),
   }),
   options: z.array(McqOption).min(2).max(6),
 });
@@ -32,6 +33,7 @@ const CalcCreate = z.object({
     correct_answer: z.string().min(1),
     answer_tolerance: z.number().positive().optional(),
     unit: z.string().optional(),
+    source_reference: z.string().max(500).optional(),
   }),
 });
 
@@ -48,6 +50,7 @@ export const QuestionUpdate = z.object({
       correct_answer: z.string().min(1).optional(),
       answer_tolerance: z.number().positive().optional(),
       unit: z.string().optional(),
+      source_reference: z.string().max(500).optional(),
     })
     .optional(),
 });

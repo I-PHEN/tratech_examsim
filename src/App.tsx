@@ -9,7 +9,9 @@ import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
-import { 
+import { RichText } from './components/ui/RichText';
+import 'katex/dist/katex.min.css';
+import {
   Home, 
   Library, 
   History, 
@@ -661,7 +663,7 @@ export default function App() {
             <div className="px-3 mb-8 flex items-center gap-2 h-10 shrink-0 overflow-hidden cursor-default" onClick={(e) => e.stopPropagation()}>
               <button 
                 onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-                className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors"
+                className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors cursor-pointer"
                 title="Toggle Sidebar"
               >
                 <Menu className="w-5 h-5" />
@@ -1645,7 +1647,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                   {isExpanded && (
                     <div className="border-t border-border-subtle bg-bg-sunken/30">
                       <div className="p-4 md:p-8 space-y-6 md:space-y-8">
-                          <p className="text-lg text-text-primary leading-relaxed font-medium">{it.prompt}</p>
+                          <RichText className="text-lg text-text-primary leading-relaxed font-medium">{it.prompt}</RichText>
 
                           {it.assets.length > 0 && (
                             <div className="flex flex-col gap-3">
@@ -1688,7 +1690,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                                     </div>
                                     <div className="flex gap-3 text-sm">
                                       <span className="font-black tracking-widest uppercase">{label}</span>
-                                      <span className="font-medium">{opt.text}</span>
+                                      <RichText inline className="font-medium">{opt.text}</RichText>
                                     </div>
                                   </div>
                                 );
@@ -1699,13 +1701,13 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                               <div className="space-y-2">
                                 <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Response</span>
                                 <div className="p-4 bg-bg-surface border border-border-subtle rounded-xl font-mono text-sm">
-                                   {studentAnswerText || "No response provided"}
+                                   {studentAnswerText ? <RichText inline>{studentAnswerText}</RichText> : "No response provided"}
                                 </div>
                               </div>
                               <div className="space-y-2">
                                 <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
                                 <div className="p-4 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
-                                   {it.correctAnswer ?? '—'}{it.unit ? ` ${it.unit}` : ''}
+                                   {it.correctAnswer ? <RichText inline>{`${it.correctAnswer}${it.unit ? ` ${it.unit}` : ''}`}</RichText> : '—'}
                                 </div>
                               </div>
                             </div>
@@ -1716,9 +1718,9 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                               <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
                                  <Sigma className="w-3.5 h-3.5" /> Worked Solution
                               </span>
-                              <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-line opacity-90">
+                              <RichText className="text-sm text-text-secondary leading-relaxed opacity-90">
                                  {it.explanation}
-                              </div>
+                              </RichText>
                             </div>
                           )}
 
@@ -1922,8 +1924,8 @@ broader concept or common exam trap.`;
                  <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
                  <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Thought Stream Active</span>
                </div>
-               <div className="text-sm text-text-primary leading-relaxed font-medium whitespace-pre-wrap">
-                  {streamedText}
+               <div className="text-sm text-text-primary leading-relaxed font-medium">
+                  <RichText>{streamedText}</RichText>
                   {isStreaming && <span className="inline-block w-1.5 h-4 bg-accent ml-1 animate-pulse" />}
                </div>
             </div>
@@ -1934,17 +1936,17 @@ broader concept or common exam trap.`;
                    <div className={cn(
                      "max-w-[90%] p-4 rounded-2xl text-sm leading-relaxed",
                      m.role === 'user' 
-                      ? "bg-accent text-bg-page font-medium rounded-tr-none" 
+                      ? "bg-accent text-bg-page font-medium rounded-tr-none"
                       : "bg-bg-raised border border-border-subtle text-text-primary rounded-tl-none"
                    )}>
-                      {m.content}
+                      {m.role === 'user' ? m.content : <RichText>{m.content}</RichText>}
                    </div>
                 </div>
               ))}
               {isStreaming && (
                 <div className="flex flex-col items-start">
-                   <div className="max-w-[90%] p-4 bg-bg-raised border border-border-subtle text-text-primary rounded-2xl rounded-tl-none text-sm leading-relaxed whitespace-pre-wrap">
-                      {streamedText}
+                   <div className="max-w-[90%] p-4 bg-bg-raised border border-border-subtle text-text-primary rounded-2xl rounded-tl-none text-sm leading-relaxed">
+                      <RichText>{streamedText}</RichText>
                       <span className="inline-block w-1.5 h-4 bg-accent ml-1 animate-pulse" />
                    </div>
                 </div>
@@ -2461,9 +2463,9 @@ function ExamSimulation({
                     </div>
 
                     <div className="py-4 space-y-4">
-                      <p className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
+                      <RichText className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
                         {currentQuestion.prompt}
-                      </p>
+                      </RichText>
 
                       {currentQuestion.assets && currentQuestion.assets.length > 0 && (
                         <div className="flex flex-col gap-3">
@@ -2575,7 +2577,7 @@ function QuizOption({ id, label, text, selected, onSelect }: { id: string, label
       </div>
       <div className="flex gap-2.5 text-[13px] relative z-10">
         <span className={cn("font-black tracking-widest uppercase shrink-0 transition-colors", selected ? "text-accent-text" : "text-text-tertiary")}>{label}</span>
-        <span className={cn("font-medium transition-colors", selected ? "text-text-primary" : "text-text-secondary group-hover:text-text-primary")}>{text}</span>
+        <RichText inline className={cn("font-medium transition-colors", selected ? "text-text-primary" : "text-text-secondary group-hover:text-text-primary")}>{text}</RichText>
       </div>
     </button>
   );

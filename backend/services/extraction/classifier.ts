@@ -34,14 +34,14 @@ Output:
     "questions": [
       {
         "type": "calc",
-        "prompt": "Q3(a). A first-order reaction A → B is carried out isothermally in a batch reactor. Initial concentration is 2.0 mol/L. After 30 minutes, the concentration of A is 0.5 mol/L. Determine the rate constant k.",
+        "prompt": "Q3(a). A first-order reaction $A \\rightarrow B$ is carried out isothermally in a batch reactor. Initial concentration is $2.0\\ \\mathrm{mol/L}$. After 30 minutes, the concentration of $A$ is $0.5\\ \\mathrm{mol/L}$. Determine the rate constant $k$.",
         "difficulty": "medium",
         "confidence": 0.95,
         "source_page": 1
       },
       {
         "type": "calc",
-        "prompt": "Q3(b). A first-order reaction A → B is carried out isothermally in a batch reactor. Initial concentration is 2.0 mol/L. After 30 minutes, the concentration of A is 0.5 mol/L. Calculate the time required for 90% conversion of A.",
+        "prompt": "Q3(b). A first-order reaction $A \\rightarrow B$ is carried out isothermally in a batch reactor. Initial concentration is $2.0\\ \\mathrm{mol/L}$. After 30 minutes, the concentration of $A$ is $0.5\\ \\mathrm{mol/L}$. Calculate the time required for 90% conversion of $A$.",
         "difficulty": "medium",
         "confidence": 0.95,
         "source_page": 1
@@ -86,6 +86,12 @@ RULES — these are absolute:
 1. COMPLETENESS. The "prompt" field MUST be VERBATIM from the source — every number, unit, condition, equation, given datum, and clause the student needs to solve it. Do NOT summarise, paraphrase, abbreviate, or omit anything. Treat each prompt as if the student has NO access to the source document.
 
 2. MULTI-PART SPLIT. When a question has sub-parts (a), (b), (c), (i), (ii), etc., emit ONE record per sub-part. Prepend the shared setup/given-data paragraph to each sub-part's prompt so it reads standalone. Label sub-parts: "Q4(b). ...".
+
+2b. FORMATTING. The "prompt", "options[].text" and "explanation" fields MUST be valid Markdown + LaTeX (rendered with KaTeX), WITHOUT changing any content:
+   - Inline math in single $...$, standalone equations in $$...$$ (e.g. x^2 → $x^{2}$, fractions, integrals, Greek letters).
+   - Chemistry with proper sub/superscripts: H2O → $H_{2}O$, CO2 → $CO_{2}$, Ca2+ → $Ca^{2+}$; reaction arrows → $\\rightarrow$ / $\\rightleftharpoons$.
+   - Units rendered clearly, e.g. mol/(L.s) → $\\mathrm{mol\\,L^{-1}\\,s^{-1}}$.
+   - Use Markdown lists for step-by-step working in "explanation". Keep numbers, variables, and wording EXACTLY as in the source — formatting only.
 
 3. MCQ. Requires "options" array with 2–6 entries, exactly ONE is_correct: true (only if the source states the answer). NEVER guess the correct option.
 

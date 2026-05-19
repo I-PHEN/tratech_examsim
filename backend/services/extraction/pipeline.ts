@@ -18,7 +18,7 @@ function classifyConcurrencyFor(model: string | null): number {
   return effective.endsWith(':free') ? CLASSIFY_CONCURRENCY_FREE : CLASSIFY_CONCURRENCY_PAID;
 }
 
-interface JobRow {
+export interface JobRow {
   id: string;
   source_type: 'pdf' | 'image' | 'text';
   source_path: string | null;
@@ -28,6 +28,8 @@ interface JobRow {
   status: string;
   model: string | null;
   doc_type: string | null;
+  reviewed_text: string | null;
+  transcripts: { page_number: number; text: string }[] | null;
 }
 
 async function updateJob(jobId: string, fields: Record<string, unknown>) {
@@ -64,7 +66,7 @@ async function loadStoragePages(prefix: string): Promise<{ name: string; buffer:
   return pages;
 }
 
-function toDraftData(
+export function toDraftData(
   d: ExtractedDraft,
   defaultScope: string | null,
   validTopicIds: Set<string>
@@ -89,7 +91,7 @@ function toDraftData(
   return draft;
 }
 
-export async function runPipeline(jobId: string): Promise<void> {
+export async function loadJob(jobId: string): Promise<JobRow> {
   const { data: rawJob, error: jobErr } = await supabase
     .from('ingestion_jobs')
     .select('*')
@@ -97,49 +99,151 @@ export async function runPipeline(jobId: string): Promise<void> {
     .maybeSingle();
   if (jobErr) throw jobErr;
   if (!rawJob) throw new ApiError(404, 'NOT_FOUND', 'Job not found');
-  const job = rawJob as JobRow;
+  return rawJob as JobRow;
+}
+
+export async function loadTopics(
+  programCourseId: string | null
+): Promise<{ topics: TopicHint[]; validTopicIds: Set<string> }> {
+  let topics: TopicHint[] = [];
+  if (programCourseId) {
+    const { data: tRows, error: tErr } = await supabase
+      .from('topics')
+      .select('id, name, description')
+      .eq('program_course_id', programCourseId);
+    if (tErr) throw tErr;
+    topics = tRows ?? [];
+  }
+  return { topics, validTopicIds: new Set(topics.map((t) => t.id)) };
+}
+
+/** STAGE 1 compute — OCR/transcription. No DB writes. */
+export async function performOcr(job: JobRow): Promise<OcrPage[]> {
+  if (job.source_type === 'text') {
+    if (!job.source_text) throw new Error('Text source has no content');
+    return [{ page_number: 1, text: job.source_text }];
+  }
+  if (!job.source_path) throw new Error('File source has no storage path');
+  const storageFiles = await loadStoragePages(job.source_path);
+
+  if (storageFiles.length === 1 && storageFiles[0].mime === 'application/pdf') {
+    return ocrPdf(storageFiles[0].buffer);
+  }
+  // Image(s) — send each to Mistral OCR and flatten
+  const pageResults = await Promise.all(
+    storageFiles.map(async (f, idx) => {
+      const base64 = f.buffer.toString('base64');
+      const pages = await ocrImage(base64, f.mime);
+      // Override page numbers to sequential
+      return pages.map((p) => ({ ...p, page_number: idx + 1 }));
+    })
+  );
+  return pageResults.flat();
+}
+
+export interface ClassifyResult {
+  allDrafts: ExtractedDraft[];
+  verificationWarnings: (string[] | null)[];
+}
+
+/**
+ * STAGES 2-4 compute — classify (per page) → topic-match → verify+retry.
+ * Writes only the interim `stage` progress markers (byte-identical to the
+ * original monolith); draft persistence stays with the caller.
+ */
+export async function performClassify(
+  job: JobRow,
+  transcripts: OcrPage[],
+  topics: TopicHint[],
+  docType: string,
+  skipVerify = false
+): Promise<ClassifyResult> {
+  // === STAGE 2: CLASSIFY (per page) ===
+  const classifyConcurrency = classifyConcurrencyFor(job.model);
+  const pageGroups = await parallelMap(transcripts, classifyConcurrency, (page) =>
+    classifyPage(page.text, page.page_number, docType, topics, job.model ?? undefined)
+  );
+  const allDrafts: ExtractedDraft[] = pageGroups.flat();
+
+  await updateJob(job.id, { stage: 'matching' });
+
+  // === STAGE 3: TOPIC MATCH ===
+  if (topics.length > 0 && allDrafts.length > 0) {
+    const matches = await matchTopics(allDrafts, topics, job.model ?? undefined);
+    for (const m of matches) {
+      const draft = allDrafts[m.question_index];
+      if (draft && m.topic_id && m.confidence >= TOPIC_CONFIDENCE_THRESHOLD) {
+        draft.topic_id = m.topic_id;
+        draft.confidence = m.confidence;
+      }
+    }
+  }
+
+  const verificationWarnings: (string[] | null)[] = new Array(allDrafts.length).fill(null);
+
+  // The human already corrected the text — verify exists to catch OCR misses,
+  // so skip it for human-edited (single-blob) jobs.
+  if (skipVerify) {
+    return { allDrafts, verificationWarnings };
+  }
+
+  await updateJob(job.id, { stage: 'verifying' });
+
+  // === STAGE 4: VERIFY + RETRY (per question, concurrency 5) ===
+  await parallelMap(allDrafts, VERIFY_CONCURRENCY, async (draft, i) => {
+    const sourcePage = transcripts.find((p) => p.page_number === draft.source_page);
+    if (!sourcePage) return;
+
+    const { complete, missing } = await verifyQuestion(
+      draft.prompt,
+      sourcePage.text,
+      job.model ?? undefined
+    );
+
+    if (!complete && missing.length > 0) {
+      // One retry
+      const retried = await classifyPageWithRetry(
+        sourcePage.text,
+        sourcePage.page_number,
+        docType,
+        topics,
+        missing,
+        job.model ?? undefined
+      );
+      const match = retried.find((r) => r.source_page === draft.source_page);
+      if (match) {
+        // Verify the retry
+        const { complete: retryComplete, missing: retryMissing } = await verifyQuestion(
+          match.prompt,
+          sourcePage.text,
+          job.model ?? undefined
+        );
+        if (retryComplete || retryMissing.length < missing.length) {
+          allDrafts[i] = { ...draft, prompt: match.prompt };
+          if (!retryComplete) verificationWarnings[i] = retryMissing;
+        } else {
+          verificationWarnings[i] = missing;
+        }
+      } else {
+        verificationWarnings[i] = missing;
+      }
+    }
+  });
+
+  return { allDrafts, verificationWarnings };
+}
+
+export async function runPipeline(jobId: string): Promise<void> {
+  const job = await loadJob(jobId);
 
   await updateJob(jobId, { status: 'extracting', stage: 'ocr', error_message: null });
 
   try {
-    // Load topics
-    let topics: TopicHint[] = [];
-    if (job.program_course_id) {
-      const { data: tRows, error: tErr } = await supabase
-        .from('topics')
-        .select('id, name, description')
-        .eq('program_course_id', job.program_course_id);
-      if (tErr) throw tErr;
-      topics = tRows ?? [];
-    }
-    const validTopicIds = new Set(topics.map((t) => t.id));
+    const { topics, validTopicIds } = await loadTopics(job.program_course_id);
     const docType = job.doc_type ?? 'past_paper';
 
     // === STAGE 1: OCR ===
-    let transcripts: OcrPage[];
-
-    if (job.source_type === 'text') {
-      if (!job.source_text) throw new Error('Text source has no content');
-      transcripts = [{ page_number: 1, text: job.source_text }];
-    } else {
-      if (!job.source_path) throw new Error('File source has no storage path');
-      const storageFiles = await loadStoragePages(job.source_path);
-
-      if (storageFiles.length === 1 && storageFiles[0].mime === 'application/pdf') {
-        transcripts = await ocrPdf(storageFiles[0].buffer);
-      } else {
-        // Image(s) — send each to Mistral OCR and flatten
-        const pageResults = await Promise.all(
-          storageFiles.map(async (f, idx) => {
-            const base64 = f.buffer.toString('base64');
-            const pages = await ocrImage(base64, f.mime);
-            // Override page numbers to sequential
-            return pages.map((p) => ({ ...p, page_number: idx + 1 }));
-          })
-        );
-        transcripts = pageResults.flat();
-      }
-    }
+    const transcripts = await performOcr(job);
 
     // Persist transcripts and advance stage
     await updateJob(jobId, {
@@ -147,71 +251,13 @@ export async function runPipeline(jobId: string): Promise<void> {
       stage: 'classifying',
     });
 
-    // === STAGE 2: CLASSIFY (per page) ===
-    const classifyConcurrency = classifyConcurrencyFor(job.model);
-    const pageGroups = await parallelMap(transcripts, classifyConcurrency, (page) =>
-      classifyPage(page.text, page.page_number, docType, topics, job.model ?? undefined)
+    // === STAGES 2-4: CLASSIFY → MATCH → VERIFY ===
+    const { allDrafts, verificationWarnings } = await performClassify(
+      job,
+      transcripts,
+      topics,
+      docType
     );
-    const allDrafts: ExtractedDraft[] = pageGroups.flat();
-
-    await updateJob(jobId, { stage: 'matching' });
-
-    // === STAGE 3: TOPIC MATCH ===
-    if (topics.length > 0 && allDrafts.length > 0) {
-      const matches = await matchTopics(allDrafts, topics, job.model ?? undefined);
-      for (const m of matches) {
-        const draft = allDrafts[m.question_index];
-        if (draft && m.topic_id && m.confidence >= TOPIC_CONFIDENCE_THRESHOLD) {
-          draft.topic_id = m.topic_id;
-          draft.confidence = m.confidence;
-        }
-      }
-    }
-
-    await updateJob(jobId, { stage: 'verifying' });
-
-    // === STAGE 4: VERIFY + RETRY (per question, concurrency 5) ===
-    const verificationWarnings: (string[] | null)[] = new Array(allDrafts.length).fill(null);
-
-    await parallelMap(allDrafts, VERIFY_CONCURRENCY, async (draft, i) => {
-      const sourcePage = transcripts.find((p) => p.page_number === draft.source_page);
-      if (!sourcePage) return;
-
-      const { complete, missing } = await verifyQuestion(
-        draft.prompt,
-        sourcePage.text,
-        job.model ?? undefined
-      );
-
-      if (!complete && missing.length > 0) {
-        // One retry
-        const retried = await classifyPageWithRetry(
-          sourcePage.text,
-          sourcePage.page_number,
-          docType,
-          topics,
-          missing,
-          job.model ?? undefined
-        );
-        const match = retried.find((r) => r.source_page === draft.source_page);
-        if (match) {
-          // Verify the retry
-          const { complete: retryComplete, missing: retryMissing } = await verifyQuestion(
-            match.prompt,
-            sourcePage.text,
-            job.model ?? undefined
-          );
-          if (retryComplete || retryMissing.length < missing.length) {
-            allDrafts[i] = { ...draft, prompt: match.prompt };
-            if (!retryComplete) verificationWarnings[i] = retryMissing;
-          } else {
-            verificationWarnings[i] = missing;
-          }
-        } else {
-          verificationWarnings[i] = missing;
-        }
-      }
-    });
 
     // === PERSIST ===
     const rows = allDrafts.map((d, i) => ({

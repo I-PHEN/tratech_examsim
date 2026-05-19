@@ -210,6 +210,7 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
             correct_answer: input.options.find((o) => o.is_correct)!.text,
             answer_tolerance: null,
             unit: null,
+            source_reference: input.content.source_reference ?? null,
           }
         : {
             question_id: questionId,
@@ -218,6 +219,7 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
             correct_answer: input.content.correct_answer,
             answer_tolerance: input.content.answer_tolerance ?? null,
             unit: input.content.unit ?? null,
+            source_reference: input.content.source_reference ?? null,
           };
 
     const { error: contentErr } = await supabase.from('question_content').insert(contentRow);
@@ -257,7 +259,8 @@ export async function deleteQuestion(id: string): Promise<void> {
 export async function addQuestionAsset(
   questionId: string,
   buffer: Buffer,
-  mimeType: string
+  mimeType: string,
+  kind: 'prompt' | 'solution' = 'prompt'
 ): Promise<QuestionAsset> {
   const { data: existing } = await supabase
     .from('question_assets')
@@ -280,6 +283,7 @@ export async function addQuestionAsset(
       storage_path: storagePath,
       mime_type: mimeType,
       position: nextPosition,
+      kind,
     })
     .select('id, storage_path, mime_type, position')
     .single();

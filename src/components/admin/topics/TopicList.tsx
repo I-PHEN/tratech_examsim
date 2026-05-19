@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Edit2, Trash2, Loader2, Save, X } from 'lucide-react';
-import { apiDelete, apiPatch } from '../../../lib/apiClient';
+import { apiDelete, apiPut } from '../../../lib/apiClient';
 
 export interface Topic {
   id: string;
@@ -34,7 +34,7 @@ export function TopicList({ topics, onChanged }: Props) {
   const save = async (id: string) => {
     setBusy(id);
     try {
-      await apiPatch(`/api/topics/${id}`, {
+      await apiPut(`/api/topics/${id}`, {
         name: name.trim(),
         description: description.trim() || undefined,
       });

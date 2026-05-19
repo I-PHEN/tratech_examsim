@@ -3,6 +3,8 @@ import { Difficulty, ExamScope, uuid } from './common';
 
 const DocType = z.enum(['past_paper', 'slides', 'handwritten']).default('past_paper');
 
+export const JobMode = z.enum(['autonomous', 'stepwise']);
+
 export const TextJobCreate = z.object({
   source_type: z.literal('text'),
   text: z.string().min(10),
@@ -10,6 +12,7 @@ export const TextJobCreate = z.object({
   default_exam_scope: ExamScope.optional(),
   model: z.string().min(1).max(200).optional(),
   doc_type: DocType.optional(),
+  mode: JobMode.optional(),
 });
 
 export const FileJobMeta = z.object({
@@ -18,11 +21,27 @@ export const FileJobMeta = z.object({
   default_exam_scope: ExamScope.optional(),
   model: z.string().min(1).max(200).optional(),
   doc_type: DocType.optional(),
+  mode: JobMode.optional(),
 });
 
 export const JobListQuery = z.object({
-  status: z.enum(['pending', 'extracting', 'ready_for_review', 'published', 'failed']).optional(),
+  status: z
+    .enum([
+      'pending',
+      'uploaded',
+      'extracting',
+      'text_review',
+      'structuring',
+      'ready_for_review',
+      'published',
+      'failed',
+    ])
+    .optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+});
+
+export const ReviewedTextUpdate = z.object({
+  reviewed_text: z.string(),
 });
 
 const McqOption = z.object({
@@ -43,6 +62,9 @@ export const DraftData = z.object({
   unit: z.string().optional(),
   explanation: z.string().optional(),
   raw_text: z.string().optional(),
+  source_reference: z.string().max(500).optional(),
+  solution_image_path: z.string().optional(),
+  solution_image_mime: z.string().optional(),
 });
 
 export const DraftUpdate = z.object({
@@ -51,3 +73,22 @@ export const DraftUpdate = z.object({
 });
 
 export type DraftDataInput = z.infer<typeof DraftData>;
+
+/** Global metadata applied to every manually-structured segment (per-question overridable). */
+export const SegmentGlobal = z.object({
+  topic_id: uuid.optional(),
+  exam_scope: ExamScope.optional(),
+  difficulty: Difficulty.optional(),
+  source_reference: z.string().max(500).optional(),
+});
+
+export const SegmentsCreate = z.object({
+  segments: z.array(z.string().min(1)).min(1),
+  global: SegmentGlobal.optional(),
+});
+
+export const FormatTextInput = z.object({
+  text: z.string().min(1).max(20000),
+});
+
+export type SegmentGlobalInput = z.infer<typeof SegmentGlobal>;

@@ -1,8 +1,8 @@
-import { StrictMode, useState } from 'react';
+import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-router-dom';
 import App from './App.tsx';
-import { AdminLoginScreen, AdminDashboardScreen } from './Admin.tsx';
+import { AdminDashboardScreen } from './Admin.tsx';
 import { AuthProvider, useAuth } from './lib/AuthContext.tsx';
 import { OnboardingScreen } from './OnboardingScreen.tsx';
 import { ProfileSetupScreen } from './ProfileSetupScreen.tsx';
@@ -11,21 +11,18 @@ import '@fontsource-variable/fraunces';
 import './index.css';
 
 function AdminRoute() {
-  const { currentUser, isAdmin, isLoading } = useAuth();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const { isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
 
   if (isLoading) return null;
 
-  if (isAuthenticated && isAdmin) {
-    return <AdminDashboardScreen onBack={() => navigate('/')} />;
-  }
-  
+  // Access is enforced server-side by `requireAdmin` (email allowlist) on every
+  // /api route. The old UI passcode was decorative, so it's gone.
   if (!isAdmin) {
     return <Navigate to="/" replace />;
   }
 
-  return <AdminLoginScreen onSuccess={() => setIsAuthenticated(true)} onBack={() => navigate('/')} />;
+  return <AdminDashboardScreen onBack={() => navigate('/')} />;
 }
 
 function ProtectedApp() {

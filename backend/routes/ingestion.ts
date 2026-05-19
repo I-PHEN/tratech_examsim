@@ -8,11 +8,25 @@ import { IdParam } from '../schemas/common';
 import {
   DraftUpdate,
   FileJobMeta,
+  FormatTextInput,
   JobListQuery,
+  ReviewedTextUpdate,
+  SegmentsCreate,
   TextJobCreate,
 } from '../schemas/ingestion';
 import { uploadFile } from '../services/storage';
-import { publishJob, runExtraction } from '../services/ingestionService';
+import {
+  publishJob,
+  extractJob,
+  classifyJob,
+  verifyJob,
+  ocrSolutionImage,
+  structureJob,
+  suggestBoundaries,
+  createSegmentDrafts,
+  classifySegmentsJob,
+  formatText,
+} from '../services/ingestionService';
 
 const router = Router();
 
@@ -84,12 +98,12 @@ router.post(
           default_exam_scope: body.default_exam_scope ?? null,
           model: body.model ?? null,
           doc_type: body.doc_type ?? 'past_paper',
-          status: 'pending',
+          mode: body.mode ?? 'autonomous',
+          status: 'uploaded',
         })
         .select()
         .single();
       if (error) throw error;
-      void runExtraction(data.id).catch((e) => console.error('extraction failed', e));
       res.status(201).json({ job_id: data.id, status: data.status });
       return;
     }
@@ -100,6 +114,7 @@ router.post(
       default_exam_scope: req.body.default_exam_scope,
       model: req.body.model,
       doc_type: req.body.doc_type,
+      mode: req.body.mode,
     });
 
     const files = (req.files as Express.Multer.File[] | undefined) ?? [];
@@ -122,7 +137,8 @@ router.post(
         default_exam_scope: meta.default_exam_scope ?? null,
         model: meta.model ?? null,
         doc_type: meta.doc_type ?? 'past_paper',
-        status: 'pending',
+        mode: meta.mode ?? 'autonomous',
+        status: 'uploaded',
       })
       .select()
       .single();
@@ -147,9 +163,7 @@ router.post(
       .update({ source_path: `${jobRow.id}/` })
       .eq('id', jobRow.id);
 
-    void runExtraction(jobRow.id).catch((e) => console.error('extraction failed', e));
-
-    res.status(201).json({ job_id: jobRow.id, status: 'pending' });
+    res.status(201).json({ job_id: jobRow.id, status: 'uploaded' });
   })
 );
 
@@ -185,6 +199,112 @@ router.delete(
       .eq('id', id);
     if (error) throw error;
     res.status(204).end();
+  })
+);
+
+router.post(
+  '/jobs/:id/extract',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    await extractJob(id);
+    res.json({ ok: true });
+  })
+);
+
+router.patch(
+  '/jobs/:id/text',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const body = parse(ReviewedTextUpdate, req.body);
+    const { data, error } = await supabase
+      .from('ingestion_jobs')
+      .update({ reviewed_text: body.reviewed_text, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ApiError(404, 'NOT_FOUND', 'Job not found');
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/jobs/:id/structure',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    await structureJob(id);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/jobs/:id/suggest-boundaries',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const result = await suggestBoundaries(id);
+    res.json(result);
+  })
+);
+
+router.post(
+  '/jobs/:id/segments',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const body = parse(SegmentsCreate, req.body);
+    const result = await createSegmentDrafts(id, body.segments, body.global);
+    res.json(result);
+  })
+);
+
+router.post(
+  '/jobs/:id/classify-segments',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const body = parse(SegmentsCreate, req.body);
+    const result = await classifySegmentsJob(id, body.segments, body.global);
+    res.json(result);
+  })
+);
+
+router.post(
+  '/format',
+  asyncHandler(async (req, res) => {
+    const body = parse(FormatTextInput, req.body);
+    const result = await formatText(body.text);
+    res.json(result);
+  })
+);
+
+router.post(
+  '/jobs/:id/classify',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    await classifyJob(id);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/jobs/:id/verify',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    await verifyJob(id);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/jobs/:id/ocr-image',
+  upload.single('file'),
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const file = req.file;
+    if (!file) throw new ApiError(400, 'NO_FILE', 'An image file is required');
+    if (!file.mimetype.startsWith('image/')) {
+      throw new ApiError(400, 'BAD_MIME', `Expected an image (got ${file.mimetype})`);
+    }
+    const result = await ocrSolutionImage(id, file.buffer, file.mimetype);
+    res.json(result);
   })
 );
 

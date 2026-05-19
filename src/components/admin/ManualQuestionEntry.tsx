@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, ImageUp, X, Sparkles, Eye, EyeOff } from 'lucide-react';
 import { apiGet, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
+import { RichText } from '../ui/RichText';
 import { CourseSelect } from './CourseSelect';
 
 type QType = 'mcq' | 'calc';
@@ -53,6 +54,38 @@ export function ManualQuestionEntry() {
 
   const [prompt, setPrompt] = useState('');
   const [explanation, setExplanation] = useState('');
+  const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | null>(null);
+  const [preview, setPreview] = useState<Set<'prompt' | 'explanation'>>(new Set());
+
+  const togglePreview = (k: 'prompt' | 'explanation') =>
+    setPreview((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      return next;
+    });
+
+  const formatField = async (
+    field: 'prompt' | 'explanation',
+    value: string,
+    setter: (v: string) => void
+  ) => {
+    if (!value.trim()) return;
+    setFmtBusy(field);
+    try {
+      const { formatted } = await apiPost<{ formatted: string }>('/api/ingestion/format', {
+        text: value,
+      });
+      setter(formatted);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFmtBusy(null);
+    }
+  };
+  const [sourceReference, setSourceReference] = useState('');
+  const [solutionImage, setSolutionImage] = useState<File | null>(null);
+  const [solutionOcrBusy, setSolutionOcrBusy] = useState(false);
 
   const [options, setOptions] = useState([emptyOption(), emptyOption()]);
 
@@ -119,6 +152,8 @@ export function ManualQuestionEntry() {
   const resetForm = () => {
     setPrompt('');
     setExplanation('');
+    setSourceReference('');
+    setSolutionImage(null);
     setOptions([emptyOption(), emptyOption()]);
     setCorrectAnswer('');
     setAnswerType('exact');
@@ -221,6 +256,7 @@ export function ManualQuestionEntry() {
               content: {
                 prompt: prompt.trim(),
                 explanation: explanation.trim() || undefined,
+                ...(sourceReference.trim() ? { source_reference: sourceReference.trim() } : {}),
               },
               options: options.map((o) => ({ text: o.text.trim(), is_correct: o.is_correct })),
             }
@@ -231,6 +267,7 @@ export function ManualQuestionEntry() {
               content: {
                 prompt: prompt.trim(),
                 explanation: explanation.trim() || undefined,
+                ...(sourceReference.trim() ? { source_reference: sourceReference.trim() } : {}),
                 correct_answer: correctAnswer.trim(),
                 ...(answerTolerance ? { answer_tolerance: Number(answerTolerance) } : {}),
                 ...(unit.trim() ? { unit: unit.trim() } : {}),
@@ -238,6 +275,19 @@ export function ManualQuestionEntry() {
             };
 
       const created = await apiPost<{ id: string }>('/api/questions', payload);
+
+      let solutionImageError: string | null = null;
+      if (solutionImage) {
+        setStatusText('Uploading solution image…');
+        try {
+          const sfd = new FormData();
+          sfd.append('file', solutionImage);
+          sfd.append('kind', 'solution');
+          await apiUpload<CreatedAsset>(`/api/questions/${created.id}/assets`, sfd);
+        } catch (e) {
+          solutionImageError = e instanceof Error ? e.message : String(e);
+        }
+      }
 
       const total = pendingImages.length;
       const uploadedRemoteIds: string[] = [];
@@ -280,6 +330,11 @@ export function ManualQuestionEntry() {
           text: `Question saved (${uploadedRemoteIds.length}/${total} diagrams uploaded). Last error: ${imageError}. Remove or retry the failing diagram.`,
           type: 'err',
         });
+      } else if (solutionImageError) {
+        setMsg({
+          text: `Question published, but the solution image failed to attach: ${solutionImageError}`,
+          type: 'err',
+        });
       } else {
         setMsg({
           text:
@@ -320,15 +375,52 @@ export function ManualQuestionEntry() {
         </div>
 
         <div>
-          <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
-            Question Prompt
-          </label>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            placeholder="Type the full question text here. For multi-part questions, create one entry per sub-part."
-            className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-y"
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
+              Question Prompt
+            </label>
+            <div className="flex items-center gap-3 text-text-secondary">
+              <button
+                type="button"
+                onClick={() => formatField('prompt', prompt, setPrompt)}
+                disabled={fmtBusy !== null || !prompt.trim()}
+                title="AI clean-up formatting (Markdown + LaTeX)"
+                className="flex items-center gap-1 text-[11px] hover:text-primary disabled:opacity-40"
+              >
+                {fmtBusy === 'prompt' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                Format
+              </button>
+              <button
+                type="button"
+                onClick={() => togglePreview('prompt')}
+                title="Toggle rendered preview"
+                className="flex items-center gap-1 text-[11px] hover:text-text-primary"
+              >
+                {preview.has('prompt') ? (
+                  <EyeOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" />
+                )}
+                Preview
+              </button>
+            </div>
+          </div>
+          {preview.has('prompt') ? (
+            <div className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary">
+              <RichText>{prompt}</RichText>
+            </div>
+          ) : (
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder="Type the full question text here. Paste raw text and hit Format to auto-typeset math/units. For multi-part questions, create one entry per sub-part."
+              className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-y"
+            />
+          )}
         </div>
 
         {type === 'mcq' ? (
@@ -440,15 +532,116 @@ export function ManualQuestionEntry() {
         )}
 
         <div>
-          <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
-            Explanation (optional)
-          </label>
-          <textarea
-            value={explanation}
-            onChange={(e) => setExplanation(e.target.value)}
-            placeholder="Worked solution or hint shown after the student answers."
-            className="w-full min-h-[70px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-y"
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
+              Explanation (optional)
+            </label>
+            <div className="flex items-center gap-3 text-text-secondary">
+              <button
+                type="button"
+                onClick={() => formatField('explanation', explanation, setExplanation)}
+                disabled={fmtBusy !== null || !explanation.trim()}
+                title="AI clean-up formatting (Markdown + LaTeX)"
+                className="flex items-center gap-1 text-[11px] hover:text-primary disabled:opacity-40"
+              >
+                {fmtBusy === 'explanation' ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Sparkles className="w-3.5 h-3.5" />
+                )}
+                Format
+              </button>
+              <button
+                type="button"
+                onClick={() => togglePreview('explanation')}
+                title="Toggle rendered preview"
+                className="flex items-center gap-1 text-[11px] hover:text-text-primary"
+              >
+                {preview.has('explanation') ? (
+                  <EyeOff className="w-3.5 h-3.5" />
+                ) : (
+                  <Eye className="w-3.5 h-3.5" />
+                )}
+                Preview
+              </button>
+            </div>
+          </div>
+          {preview.has('explanation') ? (
+            <div className="w-full min-h-[70px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary">
+              <RichText>{explanation}</RichText>
+            </div>
+          ) : (
+            <textarea
+              value={explanation}
+              onChange={(e) => setExplanation(e.target.value)}
+              placeholder="Worked solution or hint shown after the student answers. Paste raw text and hit Format to auto-typeset."
+              className="w-full min-h-[70px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-y"
+            />
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
+              Source / reference (optional)
+            </label>
+            <input
+              value={sourceReference}
+              onChange={(e) => setSourceReference(e.target.value)}
+              placeholder="e.g. 2021 Final Exam, Q3"
+              className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
+              Handwritten solution image (optional)
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-secondary hover:text-text-primary hover:border-primary/40">
+              {solutionOcrBusy ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <ImageUp className="w-4 h-4" />
+              )}
+              <span className="truncate">
+                {solutionImage
+                  ? `${solutionImage.name} — replace`
+                  : solutionOcrBusy
+                    ? 'Reading image…'
+                    : 'Upload & OCR into solution'}
+              </span>
+              <input
+                type="file"
+                hidden
+                accept="image/*"
+                disabled={solutionOcrBusy}
+                onChange={async (e) => {
+                  const f = e.target.files?.[0];
+                  if (!f) return;
+                  setSolutionImage(f);
+                  setSolutionOcrBusy(true);
+                  try {
+                    const fd = new FormData();
+                    fd.append('file', f);
+                    const r = await apiUpload<{ text: string }>(
+                      '/api/questions/ocr-solution',
+                      fd
+                    );
+                    if (!explanation.trim() && r.text) setExplanation(r.text);
+                  } catch (err) {
+                    setMsg({
+                      text: `OCR failed: ${err instanceof Error ? err.message : String(err)}`,
+                      type: 'err',
+                    });
+                  } finally {
+                    setSolutionOcrBusy(false);
+                  }
+                }}
+              />
+            </label>
+            <p className="text-[10px] text-text-secondary mt-1">
+              OCR fills the explanation above; the single answer stays the marking input.
+            </p>
+          </div>
         </div>
 
         <div>

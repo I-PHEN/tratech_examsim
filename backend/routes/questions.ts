@@ -13,6 +13,7 @@ import {
   listQuestions,
   removeQuestionAsset,
 } from '../services/questionService';
+import { ocrImage } from '../lib/mistralOcr';
 
 const router = Router();
 
@@ -49,6 +50,25 @@ router.post(
   })
 );
 
+router.post(
+  '/ocr-solution',
+  requireAdmin,
+  assetUpload.single('file'),
+  asyncHandler(async (req, res) => {
+    const file = req.file;
+    if (!file) throw new ApiError(400, 'NO_FILE', 'An image file is required');
+    if (!file.mimetype.startsWith('image/')) {
+      throw new ApiError(400, 'BAD_MIME', `Expected an image (got ${file.mimetype})`);
+    }
+    const pages = await ocrImage(file.buffer.toString('base64'), file.mimetype);
+    const text = pages
+      .map((p) => p.text)
+      .join('\n\n')
+      .trim();
+    res.json({ text });
+  })
+);
+
 router.delete(
   '/:id',
   requireAdmin,
@@ -71,7 +91,8 @@ router.post(
       throw new ApiError(400, 'BAD_MIME', `Expected an image (got ${file.mimetype})`);
     }
     await getQuestionById(id);
-    const asset = await addQuestionAsset(id, file.buffer, file.mimetype);
+    const kind = req.body?.kind === 'solution' ? 'solution' : 'prompt';
+    const asset = await addQuestionAsset(id, file.buffer, file.mimetype, kind);
     res.status(201).json(asset);
   })
 );

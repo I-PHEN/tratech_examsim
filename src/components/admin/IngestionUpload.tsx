@@ -17,6 +17,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
   const [programCourseId, setProgramCourseId] = useState<string>('');
 
   const [mode, setMode] = useState<Mode>('pdf');
+  const [runMode, setRunMode] = useState<'autonomous' | 'stepwise'>('autonomous');
   const [docType, setDocType] = useState<DocType>('past_paper');
   const [file, setFile] = useState<File | null>(null);
   const [text, setText] = useState('');
@@ -48,6 +49,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
           text,
           program_course_id: programCourseId,
           doc_type: docType,
+          mode: runMode,
           ...(model.trim() ? { model: model.trim() } : {}),
         });
       } else {
@@ -56,13 +58,20 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
         fd.append('source_type', mode);
         fd.append('program_course_id', programCourseId);
         fd.append('doc_type', docType);
+        fd.append('mode', runMode);
         if (model.trim()) fd.append('model', model.trim());
         fd.append('files', file);
 
         setSubmitStatus('Uploading…');
         await apiUpload('/api/ingestion/jobs', fd);
       }
-      setMsg({ text: 'Job created. OCR + extraction running in the background.', type: 'ok' });
+      setMsg({
+        text:
+          runMode === 'autonomous'
+            ? 'Job created. Open it to watch the AI run each stage.'
+            : 'Job created. Open it to run each stage yourself.',
+        type: 'ok',
+      });
       reset();
       onCreated();
     } catch (err) {
@@ -156,6 +165,39 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
             Target Course
           </h4>
           <CourseSelect value={programCourseId} onChange={setProgramCourseId} compact />
+        </div>
+
+        <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">
+          <h4 className="font-bold uppercase tracking-widest text-xs text-text-primary mb-3">
+            Pipeline Mode
+          </h4>
+          <div className="grid grid-cols-2 gap-1.5">
+            {(
+              [
+                { v: 'autonomous', label: 'Autonomous', hint: 'AI runs every stage, then you review & fix' },
+                { v: 'stepwise', label: 'Step-by-step', hint: 'Pause after each stage; you correct & decide' },
+              ] as const
+            ).map((o) => (
+              <button
+                key={o.v}
+                onClick={() => setRunMode(o.v)}
+                title={o.hint}
+                className={cn(
+                  'px-2 py-2 rounded-lg border text-xs font-bold transition-all text-center',
+                  runMode === o.v
+                    ? 'bg-bg-raised border-primary/30 text-primary'
+                    : 'bg-bg-sunken border-border-subtle text-text-secondary hover:bg-bg-raised'
+                )}
+              >
+                {o.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-[10px] text-text-secondary mt-2 leading-relaxed">
+            {runMode === 'autonomous'
+              ? 'The AI extracts, classifies and fills details automatically — you review the result.'
+              : 'After each stage you see the result, correct it, then choose to hand the next stage to the AI or do it yourself.'}
+          </p>
         </div>
 
         <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">

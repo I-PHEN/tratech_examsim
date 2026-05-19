@@ -15,6 +15,36 @@ function getKey(): string {
   return key;
 }
 
+/**
+ * Decode an OCR image. Mistral returns `image_base64` either as a bare base64
+ * string or a data URI. We recover the bytes and a best-effort MIME type
+ * (from the data URI, else the image id's extension, else JPEG).
+ */
+export function decodeOcrImage(
+  base64OrDataUrl: string,
+  id: string
+): { buffer: Buffer; mime: string } {
+  let data = base64OrDataUrl;
+  let mime = '';
+  const m = /^data:([^;]+);base64,(.*)$/s.exec(base64OrDataUrl);
+  if (m) {
+    mime = m[1];
+    data = m[2];
+  }
+  if (!mime) {
+    const ext = (id.split('.').pop() ?? '').toLowerCase();
+    mime =
+      ext === 'png'
+        ? 'image/png'
+        : ext === 'webp'
+          ? 'image/webp'
+          : ext === 'gif'
+            ? 'image/gif'
+            : 'image/jpeg';
+  }
+  return { buffer: Buffer.from(data, 'base64'), mime };
+}
+
 async function callOcr(document: Record<string, unknown>): Promise<OcrPage[]> {
   const key = getKey();
   const res = await fetch(`${MISTRAL_API}/ocr`, {
