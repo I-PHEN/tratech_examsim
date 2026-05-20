@@ -425,10 +425,22 @@ export default function App() {
       .catch(() => setWeaknesses([]));
   }, [state.step, state.year, state.semester]);
 
-  // Purge any legacy resume blob from previous app versions
+  // Purge any legacy resume blobs from previous app versions. The
+  // `engine_session_*` keys were keyed by course+mode and caused stale
+  // expired timer state to leak into freshly-created sessions, auto-
+  // finishing them at 0:01. The server is now the only source of truth.
   useEffect(() => {
-    if (state.step === 'MODE_SELECT') {
-      localStorage.removeItem('active_exam');
+    if (state.step !== 'MODE_SELECT') return;
+    localStorage.removeItem('active_exam');
+    try {
+      const stale: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('engine_session_')) stale.push(k);
+      }
+      stale.forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* localStorage may be disabled — safe to ignore */
     }
   }, [state.step]);
 
@@ -2237,24 +2249,25 @@ function ExamSimulation({
 
   const totalQuestions = questions.length;
 
-  // Persistent Timer Logic. The questions themselves no longer live here —
-  // server-side `question_ids` + GET /resume make cross-device resume work
-  // from any browser/device.
-  const storageKey = `engine_session_${courseName}_${mode}`;
-  const [session, setSession] = useState<TimerSession>(() => {
-    const saved = localStorage.getItem(storageKey);
-    if (saved) return JSON.parse(saved);
-
-    // 1h for midsem, 2.5h for full exam, practiceTimeLimit (mins) for practice, 30m for diagnostic
-    const duration = mode === 'MIDSEM' ? 3600000 : mode === 'FULL_EXAM' ? 9000000 : mode === 'DIAGNOSTIC' ? 1800000 : practiceTimeLimit * 60000;
-    return {
-      startedAt: Date.now(),
-      durationMs: duration,
-      totalPausedMs: 0,
-      pauseCount: 0,
-      pausedAt: null
-    };
+  // Timer state lives ONLY on the server. The session row's `started_at` and
+  // `total_paused_ms` are the single source of truth — the reconcile effect
+  // below hydrates this state from `/resume`, after which `hydrated` flips
+  // true and the timer starts ticking. There is no localStorage cache: it
+  // previously caused cross-session collisions (same course+mode key) that
+  // auto-finished freshly-created sessions with stale expired timer blobs.
+  const computedDuration =
+    mode === 'MIDSEM' ? 3600000 :
+    mode === 'FULL_EXAM' ? 9000000 :
+    mode === 'DIAGNOSTIC' ? 1800000 :
+    practiceTimeLimit * 60000;
+  const [session, setSession] = useState<TimerSession>({
+    startedAt: Date.now(),
+    durationMs: computedDuration,
+    totalPausedMs: 0,
+    pauseCount: 0,
+    pausedAt: null,
   });
+  const [hydrated, setHydrated] = useState(false);
 
   const [now, setNow] = useState(Date.now());
 
@@ -2262,10 +2275,6 @@ function ExamSimulation({
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(storageKey, JSON.stringify(session));
-  }, [session, storageKey]);
 
   const togglePause = () => {
     if (mode !== 'PRACTICE') return;
@@ -2309,37 +2318,35 @@ function ExamSimulation({
 
   const currentQuestion = questions[currentIdx];
 
-  // Reconcile with server on mount: resume any paused session and inherit the
-  // authoritative started_at / total_paused_ms (so a different browser or a
-  // cleared cache still restores the correct timer offset).
+  // Hydrate timer state from the server on mount. This is the ONLY place that
+  // sets startedAt / totalPausedMs from authoritative state — auto-finish is
+  // gated on `hydrated` so it cannot fire against the placeholder we used
+  // before /resume returned.
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      let serverStart = Date.now();
+      let serverPaused = 0;
       try {
         const row = await apiPost<{ started_at: string; total_paused_ms: number }>(
           `/api/sessions/${sessionId}/resume`,
           {}
         );
         if (cancelled) return;
-        const serverStart = new Date(row.started_at).getTime();
-        const serverPaused = row.total_paused_ms ?? 0;
-        setSession((prev) => {
-          const merged: TimerSession = {
-            ...prev,
-            totalPausedMs: Math.max(prev.totalPausedMs ?? 0, serverPaused),
-            pausedAt: null,
-          };
-          // Cross-device: localStorage was empty, so prev.startedAt got
-          // initialised to "now". If the server started much earlier, trust it.
-          if (serverStart < prev.startedAt - 30000) {
-            merged.startedAt = serverStart;
-          }
-          return merged;
-        });
+        serverStart = new Date(row.started_at).getTime();
+        serverPaused = row.total_paused_ms ?? 0;
       } catch (e) {
-        // Never block exam play on a resume hiccup.
+        // Network hiccup: fall back to client time so the user can still play.
         console.error('resume session failed', e);
       }
+      if (cancelled) return;
+      setSession((prev) => ({
+        ...prev,
+        startedAt: serverStart,
+        totalPausedMs: serverPaused,
+        pausedAt: null,
+      }));
+      setHydrated(true);
     })();
     return () => {
       cancelled = true;
@@ -2348,7 +2355,6 @@ function ExamSimulation({
   }, [sessionId]);
 
   const handleFinish = async () => {
-    localStorage.removeItem(storageKey);
     // Drain any pending /answer requests first — otherwise the server may
     // accept /finish before the last answer reaches the DB, which then 400s
     // with SESSION_FINISHED and leaves the review screen empty.
@@ -2363,10 +2369,8 @@ function ExamSimulation({
     onFinish(sessionId);
   };
 
-  // Pause: mark the session paused server-side (so the timer offset is
-  // restored on resume), but KEEP the localStorage timer blob — same-browser
-  // resume rehydrates instantly. The session row stays open (finished_at NULL),
-  // and the home screen will surface a Resume banner for it.
+  // Pause: mark the session paused server-side. The session row stays open
+  // (finished_at NULL), and the home screen will surface a Resume banner.
   const handlePauseAndExit = async () => {
     setSessionActionBusy('pause');
     try {
@@ -2386,7 +2390,6 @@ function ExamSimulation({
   // finalise a session for review.
   const handleTerminate = async () => {
     setSessionActionBusy('end');
-    localStorage.removeItem(storageKey);
     try {
       await apiDelete(`/api/sessions/${sessionId}`);
     } catch (e) {
@@ -2398,13 +2401,16 @@ function ExamSimulation({
     }
   };
 
-  // Auto-submit handle
+  // Auto-submit when the timer hits zero. Gated on `hydrated` so it never
+  // fires against the placeholder startedAt we used before /resume returned —
+  // that gate is the fix for "exam cuts to review immediately" with 0:01 time.
   useEffect(() => {
+    if (!hydrated) return;
     if (questions.length > 0 && timeLeftMs <= 0) {
       handleFinish();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [timeLeftMs, questions.length]);
+  }, [hydrated, timeLeftMs, questions.length]);
 
   const handleAnswer = (answer: string) => {
     setAnswers(prev => ({ ...prev, [currentIdx]: answer }));
