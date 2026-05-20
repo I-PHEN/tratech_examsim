@@ -82,6 +82,9 @@ export async function createSession(uid: string, input: SessionCreateInput) {
       mode: input.mode,
       topic_id: input.topic_id ?? null,
       total_questions: picked.picked.length,
+      // Persist the picked question ids in original order so any device can
+      // resume the same exam with the same questions in the same positions.
+      question_ids: picked.picked.map((q) => q.id),
     })
     .select('*')
     .single();
@@ -360,6 +363,137 @@ export async function getSessionById(uid: string, sessionId: string) {
     },
     answers: (answers ?? []) as SessionAnswerRow[],
     questions,
+  };
+}
+
+/**
+ * Everything needed to rehydrate an in-progress exam on any device:
+ *   - the session row (timer state, mode, course/topic names)
+ *   - the picked questions in their original order (full content for the UI)
+ *   - existing answers (so previously-typed responses are restored)
+ *
+ * `paused_at` is NOT reset here — that's done by the explicit `/resume` POST
+ * the exam screen fires on mount.
+ */
+export async function getSessionResume(uid: string, sessionId: string) {
+  const { data: sRow, error: sErr } = await supabase
+    .from('sessions')
+    .select(
+      `${SESSION_COLUMNS}, question_ids, program_courses!inner(courses(name)), topics(name)`
+    )
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (sErr) throw sErr;
+  if (!sRow) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  const s = sRow as unknown as SessionRow & {
+    question_ids: string[] | null;
+    program_courses: { courses: { name: string } | null } | null;
+    topics: { name: string } | null;
+  };
+  if (s.user_uid !== uid) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  if (s.finished_at) throw new ApiError(409, 'ALREADY_FINISHED', 'Session already finished');
+
+  const orderedIds = Array.isArray(s.question_ids) ? s.question_ids : [];
+  if (orderedIds.length === 0) {
+    // Legacy session created before we persisted picked ids — fall back to
+    // whatever the user already answered, in answered order.
+    const { data: aRows } = await supabase
+      .from('session_answers')
+      .select('question_id, position')
+      .eq('session_id', sessionId)
+      .order('position', { ascending: true });
+    for (const r of aRows ?? []) orderedIds.push((r as { question_id: string }).question_id);
+  }
+
+  // Hydrate questions in original picked order.
+  let picked: Array<{
+    id: string;
+    type: 'mcq' | 'calc';
+    difficulty: 'easy' | 'medium' | 'hard';
+    exam_scope: 'midsem' | 'final' | 'both';
+    topic_id: string;
+    answer_type: 'exact' | 'range' | null;
+    content: QuestionContent;
+    options?: McqOption[];
+    assets: QuestionAsset[];
+  }> = [];
+
+  if (orderedIds.length > 0) {
+    const { data: qRows, error: qErr } = await supabase
+      .from('questions')
+      .select(
+        'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
+          'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
+          'mcq_options(id, text, is_correct), ' +
+          'question_assets(id, storage_path, mime_type, position)'
+      )
+      .in('id', orderedIds);
+    if (qErr) throw qErr;
+
+    const byId = new Map<string, unknown>();
+    for (const row of qRows ?? []) byId.set((row as unknown as { id: string }).id, row);
+
+    picked = orderedIds
+      .map((id) => byId.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .map((row) => {
+        const r = row as unknown as {
+          id: string;
+          type: 'mcq' | 'calc';
+          difficulty: 'easy' | 'medium' | 'hard';
+          exam_scope: 'midsem' | 'final' | 'both';
+          topic_id: string;
+          answer_type: 'exact' | 'range' | null;
+          question_content: QuestionContent | QuestionContent[] | null;
+          mcq_options: McqOption[] | null;
+          question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
+        };
+        const contentArr: QuestionContent[] = Array.isArray(r.question_content)
+          ? r.question_content
+          : r.question_content
+          ? [r.question_content]
+          : [];
+        return {
+          id: r.id,
+          type: r.type,
+          difficulty: r.difficulty,
+          exam_scope: r.exam_scope,
+          topic_id: r.topic_id,
+          answer_type: r.answer_type,
+          content: contentArr[0],
+          options: r.type === 'mcq' ? r.mcq_options ?? [] : undefined,
+          assets: mapAssets(r.question_assets),
+        };
+      });
+  }
+
+  const { data: aRows } = await supabase
+    .from('session_answers')
+    .select('question_id, position, picked_option_id, picked_text')
+    .eq('session_id', sessionId);
+  const answered = (aRows ?? []) as Array<{
+    question_id: string;
+    position: number;
+    picked_option_id: string | null;
+    picked_text: string | null;
+  }>;
+
+  return {
+    session: {
+      id: s.id,
+      program_course_id: s.program_course_id,
+      mode: s.mode,
+      topic_id: s.topic_id,
+      total_questions: s.total_questions,
+      started_at: s.started_at,
+      finished_at: s.finished_at,
+      paused_at: s.paused_at,
+      total_paused_ms: s.total_paused_ms,
+      course_name: s.program_courses?.courses?.name ?? null,
+      topic_name: s.topics?.name ?? null,
+    },
+    picked_questions: picked,
+    answered,
   };
 }
 

@@ -13,6 +13,7 @@ import {
   deleteSession,
   finishSession,
   getSessionById,
+  getSessionResume,
   listSessions,
   pauseSession,
   resumeSession,
@@ -108,6 +109,17 @@ router.post(
     const { id } = parse(IdParam, req.params);
     const row = await resumeSession(uid, id);
     res.json(row);
+  })
+);
+
+router.get(
+  '/:id/resume',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const { id } = parse(IdParam, req.params);
+    const data = await getSessionResume(uid, id);
+    res.json(data);
   })
 );
 

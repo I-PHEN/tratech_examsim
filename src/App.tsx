@@ -74,7 +74,7 @@ import { NavItem } from './components/ui/NavItem';
 import { ModeCard } from './components/ui/ModeCard';
 import { TopicCard } from './components/ui/TopicCard';
 import { NotificationsBell } from './components/NotificationsBell';
-import { ApiError, apiGet, apiPost } from './lib/apiClient';
+import { ApiError, apiDelete, apiGet, apiPost } from './lib/apiClient';
 import { Loader2 } from 'lucide-react';
 
 interface ApiProgramCourse {
@@ -140,6 +140,13 @@ function modeToApi(m: StudyMode): 'practice' | 'diagnostic' | 'midsem' | 'full_e
   if (m === 'DIAGNOSTIC') return 'diagnostic';
   if (m === 'MIDSEM') return 'midsem';
   return 'full_exam';
+}
+
+function apiToMode(m: 'practice' | 'diagnostic' | 'midsem' | 'full_exam'): StudyMode {
+  if (m === 'practice') return 'PRACTICE';
+  if (m === 'diagnostic') return 'DIAGNOSTIC';
+  if (m === 'midsem') return 'MIDSEM';
+  return 'FULL_EXAM';
 }
 
 function apiQuestionToFrontend(q: ApiQuestion, idx: number): Question {
@@ -330,7 +337,9 @@ export default function App() {
   const [practiceTimeUserSet, setPracticeTimeUserSet] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[] } | null>(null);
+  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[]; prefilledAnswers?: Record<number, string> } | null>(null);
+  const [resumingId, setResumingId] = useState<string | null>(null);
+  const [resumeError, setResumeError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -760,11 +769,25 @@ export default function App() {
             <ExamSimulation
               onBack={goBack}
               onFinish={finishExam}
+              onTerminate={() => {
+                setActiveSession(null);
+                setState(prev => ({
+                  ...prev,
+                  step: 'MODE_SELECT',
+                  mode: null,
+                  reviewSessionId: undefined,
+                }));
+                // Refresh dashboard data so the terminated row is gone.
+                apiGet<typeof recentSessions>('/api/sessions?limit=12')
+                  .then(setRecentSessions)
+                  .catch(() => {});
+              }}
               courseName={state.selectedCourse?.name || 'Session'}
               mode={state.mode!}
               sessionId={activeSession.sessionId}
               questions={activeSession.questions}
               practiceTimeLimit={state.practiceTimeLimit}
+              prefilledAnswers={activeSession.prefilledAnswers}
             />
           ) : null
         ) : state.step === 'REVIEW' && state.reviewSessionId ? (
@@ -896,19 +919,71 @@ export default function App() {
                     title="What do you want to tackle today?"
                   />
 
-                  {/* Resume banner: first unfinished session on this browser */}
+                  {/* Resume banner: any in-progress session is resumable from any
+                      device — we fetch /resume to rehydrate questions + answers
+                      from the server, not localStorage. */}
                   {(() => {
                     const pending = recentSessions.find((s) => s.finished_at === null);
                     if (!pending) return null;
-                    let cached: { courseName: string; mode: StudyMode; questions: Question[] } | null = null;
-                    try {
-                      const raw = localStorage.getItem(`engine_questions_${pending.id}`);
-                      if (raw) cached = JSON.parse(raw);
-                    } catch {
-                      cached = null;
-                    }
+                    const onResume = async () => {
+                      setResumingId(pending.id);
+                      setResumeError(null);
+                      try {
+                        const data = await apiGet<{
+                          session: {
+                            id: string;
+                            program_course_id: string;
+                            mode: 'practice' | 'diagnostic' | 'midsem' | 'full_exam';
+                            course_name: string | null;
+                          };
+                          picked_questions: ApiQuestion[];
+                          answered: Array<{
+                            position: number;
+                            picked_option_id: string | null;
+                            picked_text: string | null;
+                          }>;
+                        }>(`/api/sessions/${pending.id}/resume`);
+
+                        const questions = data.picked_questions.map((q, i) => apiQuestionToFrontend(q, i));
+                        const prefilledAnswers: Record<number, string> = {};
+                        for (const a of data.answered) {
+                          const q = data.picked_questions[a.position];
+                          if (!q) continue;
+                          if (q.type === 'mcq' && a.picked_option_id) {
+                            const opt = (q.options ?? []).find((o) => o.id === a.picked_option_id);
+                            if (opt) prefilledAnswers[a.position] = opt.text;
+                          } else if (a.picked_text != null) {
+                            prefilledAnswers[a.position] = a.picked_text;
+                          }
+                        }
+
+                        setActiveSession({
+                          sessionId: pending.id,
+                          questions,
+                          prefilledAnswers,
+                        });
+                        setState((prev) => ({
+                          ...prev,
+                          step: 'EXAM',
+                          mode: apiToMode(data.session.mode),
+                          selectedCourse:
+                            prev.selectedCourse?.id === data.session.program_course_id
+                              ? prev.selectedCourse
+                              : { id: data.session.program_course_id, name: data.session.course_name ?? 'Session' },
+                        }));
+                      } catch (e) {
+                        setResumeError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setResumingId(null);
+                      }
+                    };
+
                     return (
-                      <Card variant="default" padding="md" className="border-accent/40 bg-accent-muted/40 flex items-center justify-between gap-4">
+                      <Card
+                        variant="default"
+                        padding="md"
+                        className="border-accent/40 bg-accent-muted/40 flex items-center justify-between gap-4"
+                      >
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-10 h-10 rounded-full bg-accent text-slate-950 flex items-center justify-center shrink-0">
                             <PauseCircle className="w-5 h-5" />
@@ -918,47 +993,22 @@ export default function App() {
                               Continue your {pending.course_name ?? 'in-progress'} exam {pending.paused_at ? '— paused' : '— in progress'}
                             </p>
                             <p className="text-[11px] text-text-secondary">
-                              {pending.mode.replace('_', ' ').toUpperCase()} · started {new Date(pending.started_at).toLocaleDateString()}
-                              {!cached && ' · resume not available on this device'}
+                              {pending.mode.replace('_', ' ').toUpperCase()} · {pending.total_questions} question{pending.total_questions === 1 ? '' : 's'}
                             </p>
+                            {resumeError && (
+                              <p className="text-[11px] text-[color:var(--accent-danger)] mt-1">{resumeError}</p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
-                          {cached ? (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                setActiveSession({ sessionId: pending.id, questions: cached!.questions });
-                                setState(prev => ({
-                                  ...prev,
-                                  step: 'EXAM',
-                                  mode: cached!.mode,
-                                  selectedCourse:
-                                    prev.selectedCourse?.id
-                                      ? prev.selectedCourse
-                                      : { id: pending.program_course_id, name: cached!.courseName },
-                                }));
-                              }}
-                            >
-                              Resume
-                            </Button>
-                          ) : (
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              onClick={async () => {
-                                try {
-                                  await apiPost(`/api/sessions/${pending.id}/finish`, {});
-                                } catch {/* swallow */}
-                                apiGet<typeof recentSessions>('/api/sessions?limit=12')
-                                  .then(setRecentSessions)
-                                  .catch(() => {});
-                              }}
-                            >
-                              End session
-                            </Button>
-                          )}
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={onResume}
+                            disabled={resumingId === pending.id}
+                          >
+                            {resumingId === pending.id ? 'Resuming…' : 'Resume'}
+                          </Button>
                         </div>
                       </Card>
                     );
@@ -1023,14 +1073,20 @@ export default function App() {
                         }
                       />
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
                         {recent24.map(activity => {
                           const accuracyPct = (activity.accuracy ?? 0) * 100;
+                          const accentVar =
+                            accuracyPct >= 70
+                              ? 'var(--accent)'
+                              : accuracyPct >= 50
+                              ? 'var(--warning-text)'
+                              : 'var(--accent-danger)';
                           return (
                             <Card
                               key={activity.id}
                               variant="interactive"
-                              padding="md"
+                              padding="none"
                               onClick={() => {
                                 setState(prev => ({
                                   ...prev,
@@ -1039,40 +1095,29 @@ export default function App() {
                                   reviewSessionId: activity.id,
                                 }));
                               }}
-                              className="flex gap-5 items-center group"
+                              className="flex items-center gap-3 p-3 md:p-4 group"
                             >
-                              <div className="w-16 h-16 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
+                              {/* Accuracy ring — sole indicator of score, smaller on phone */}
+                              <div className="w-11 h-11 md:w-14 md:h-14 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
                                 <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
                                   <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
-                                  <circle cx="32" cy="32" r="28" fill="transparent" stroke={accuracyPct >= 70 ? 'var(--accent)' : accuracyPct >= 50 ? 'var(--warning-text)' : 'var(--accent-danger)'} strokeWidth="4" strokeDasharray={`${(accuracyPct / 100) * 175.9} 175.9`} strokeLinecap="round" />
+                                  <circle cx="32" cy="32" r="28" fill="transparent" stroke={accentVar} strokeWidth="4" strokeDasharray={`${(accuracyPct / 100) * 175.9} 175.9`} strokeLinecap="round" />
                                 </svg>
-                                <span
-                                  className={cn(
-                                    'text-sm font-bold',
-                                    accuracyPct >= 50 && accuracyPct < 70 && 'text-warning-text'
-                                  )}
-                                  style={
-                                    accuracyPct >= 70
-                                      ? { color: 'var(--accent)' }
-                                      : accuracyPct < 50
-                                      ? { color: 'var(--accent-danger)' }
-                                      : undefined
-                                  }
-                                >
+                                <span className="text-[11px] md:text-xs font-bold" style={{ color: accentVar }}>
                                   {Math.round(accuracyPct)}%
                                 </span>
                               </div>
+                              {/* Text — wraps fully, never truncated */}
                               <div className="flex-1 min-w-0">
-                                <h4 className="text-base font-semibold text-text-primary truncate">{activity.course_name ?? 'Unknown course'}</h4>
-                                <p className="text-sm text-text-secondary truncate mt-1">{activity.topic_name ?? 'All topics'}</p>
-                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                <h4 className="text-sm md:text-base font-semibold text-text-primary break-words leading-tight">
+                                  {activity.course_name ?? 'Unknown course'}
+                                </h4>
+                                <p className="text-xs md:text-sm text-text-secondary break-words leading-snug mt-0.5">
+                                  {activity.topic_name ?? 'All topics'}
+                                </p>
+                                <div className="mt-1.5">
                                   <Pill tone="neutral">{activity.mode.replace('_', ' ').toUpperCase()}</Pill>
-                                  <Pill tone="neutral">{new Date(activity.started_at).toLocaleDateString()}</Pill>
-                                  <Pill tone="neutral">{accuracyPct.toFixed(0)}% accuracy</Pill>
                                 </div>
-                              </div>
-                              <div className="p-3 rounded-xl bg-bg-raised text-text-secondary group-hover:text-text-primary group-hover:bg-bg-sunken transition-colors">
-                                <ArrowRight className="w-5 h-5" />
                               </div>
                             </Card>
                           );
@@ -2125,22 +2170,26 @@ function StatPill({ label, value, color }: { label: string, value: string | numb
 function ExamSimulation({
   onBack,
   onFinish,
+  onTerminate,
   courseName,
   mode,
   sessionId,
   questions,
   practiceTimeLimit,
+  prefilledAnswers,
 }: {
   onBack: () => void;
   onFinish: (sessionId: string) => void;
+  onTerminate: (sessionId: string) => void;
   courseName: string;
   mode: StudyMode;
   sessionId: string;
   questions: Question[];
   practiceTimeLimit: number;
+  prefilledAnswers?: Record<number, string>;
 }) {
   const [currentIdx, setCurrentIdx] = useState(0);
-  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [answers, setAnswers] = useState<Record<number, string>>(() => prefilledAnswers ?? {});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -2151,22 +2200,10 @@ function ExamSimulation({
 
   const totalQuestions = questions.length;
 
-  // Persistent Timer Logic
+  // Persistent Timer Logic. The questions themselves no longer live here —
+  // server-side `question_ids` + GET /resume make cross-device resume work
+  // from any browser/device.
   const storageKey = `engine_session_${courseName}_${mode}`;
-  // Persisted questions blob keyed by sessionId so the home "Resume" banner can
-  // rehydrate the same exam on this browser even after a page reload.
-  const questionsKey = `engine_questions_${sessionId}`;
-  useEffect(() => {
-    try {
-      localStorage.setItem(
-        questionsKey,
-        JSON.stringify({ courseName, mode, questions })
-      );
-    } catch {
-      // localStorage quota / private mode — resume from the banner will fall
-      // back to the "not available on this device" path.
-    }
-  }, [questionsKey, courseName, mode, questions]);
   const [session, setSession] = useState<TimerSession>(() => {
     const saved = localStorage.getItem(storageKey);
     if (saved) return JSON.parse(saved);
@@ -2275,7 +2312,6 @@ function ExamSimulation({
 
   const handleFinish = async () => {
     localStorage.removeItem(storageKey);
-    localStorage.removeItem(questionsKey);
     try {
       await apiPost(`/api/sessions/${sessionId}/finish`, {});
     } catch (e) {
@@ -2301,13 +2337,21 @@ function ExamSimulation({
     }
   };
 
-  const handleEndNow = async () => {
+  // Terminate: hard-delete the session so it never happened. Server cascades
+  // session_answers; metrics are untouched. We do NOT call /finish (no score,
+  // no review row). The "Submit Exam" navigator button is still the way to
+  // finalise a session for review.
+  const handleTerminate = async () => {
     setSessionActionBusy('end');
+    localStorage.removeItem(storageKey);
     try {
-      await handleFinish();
+      await apiDelete(`/api/sessions/${sessionId}`);
+    } catch (e) {
+      console.error('terminate session failed', e);
     } finally {
       setSessionActionBusy(null);
       setEndConfirmOpen(false);
+      onTerminate(sessionId);
     }
   };
 
@@ -2553,9 +2597,9 @@ function ExamSimulation({
                   >
                     <StopCircle className="w-5 h-5 text-[color:var(--accent-danger)] shrink-0 mt-0.5" />
                     <div className="flex-1">
-                      <div className="text-sm font-semibold text-text-primary">End session now</div>
+                      <div className="text-sm font-semibold text-text-primary">Terminate session</div>
                       <div className="text-[11px] text-text-secondary leading-snug">
-                        Submit your answers and see your score immediately.
+                        Discard this attempt entirely. Won't affect your metrics — behaves as if you never started.
                       </div>
                     </div>
                   </button>
@@ -2787,12 +2831,14 @@ function ExamSimulation({
           >
             <div className="flex items-start gap-3">
               <div className="w-10 h-10 rounded-full bg-[color:var(--danger-bg)] text-[color:var(--accent-danger)] flex items-center justify-center shrink-0">
-                <StopCircle className="w-5 h-5" />
+                <AlertTriangle className="w-5 h-5" />
               </div>
               <div className="flex-1">
-                <h3 className="text-base font-bold text-text-primary mb-1">Submit your answers now?</h3>
+                <h3 className="text-base font-bold text-text-primary mb-1">Terminate this session?</h3>
                 <p className="text-sm text-text-secondary leading-relaxed">
-                  This ends the exam, computes your score, and locks any unanswered questions.
+                  This discards the attempt and every answer in it. Your accuracy, time, and trend stay
+                  unchanged — like you never started. If you want a score instead, hit
+                  <span className="font-semibold text-text-primary"> Submit Exam</span> from the question navigator.
                 </p>
               </div>
             </div>
@@ -2807,12 +2853,12 @@ function ExamSimulation({
               </Button>
               <button
                 type="button"
-                onClick={handleEndNow}
+                onClick={handleTerminate}
                 disabled={sessionActionBusy === 'end'}
                 className="inline-flex items-center gap-1.5 bg-[color:var(--accent-danger)] text-white px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50 hover:opacity-90 transition-opacity"
               >
                 {sessionActionBusy === 'end' ? <Loader2 className="w-4 h-4 animate-spin" /> : <StopCircle className="w-4 h-4" />}
-                End session
+                Terminate
               </button>
             </div>
           </div>
