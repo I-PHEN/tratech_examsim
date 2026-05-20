@@ -26,7 +26,18 @@ function getAuthErrorMessage(errorCode: string): string {
     case 'auth/network-request-failed':
       return 'Network error. Please check your connection.';
     case 'auth/popup-closed-by-user':
+    case 'auth/cancelled-popup-request':
       return 'Sign-in popup was closed before completing.';
+    case 'auth/popup-blocked':
+      return 'Your browser blocked the sign-in popup. Allow popups for this site and try again.';
+    case 'auth/unauthorized-domain':
+      return 'This site is not authorised for sign-in. The admin needs to add this domain in Firebase → Authentication → Settings → Authorized domains.';
+    case 'auth/operation-not-allowed':
+      return 'Google sign-in is not enabled for this project. Enable it in Firebase → Authentication → Sign-in method.';
+    case 'auth/account-exists-with-different-credential':
+      return 'An account already exists with this email using a different sign-in method.';
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a moment and try again.';
     default:
       return 'An unexpected error occurred. Please try again.';
   }
@@ -85,6 +96,7 @@ export function OnboardingScreen() {
       const result = await signInWithPopup(auth, googleProvider);
       await createUserDocument(result.user);
     } catch (err: any) {
+      console.error('[Google sign-in failed]', err?.code, err);
       setError(getAuthErrorMessage(err.code || ''));
     } finally {
       setLoading(false);

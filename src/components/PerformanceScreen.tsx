@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ChevronLeft, Target, Clock, BrainCircuit, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiGet } from '../lib/apiClient';
+import { cn } from '../lib/utils';
 import { Card } from './ui/Card';
 import { Spinner } from './ui/Spinner';
 import { EmptyState } from './ui/EmptyState';
@@ -26,19 +27,38 @@ function formatHours(ms: number): { h: number; m: number } {
   return { h: Math.floor(totalMin / 60), m: totalMin % 60 };
 }
 
-export function PerformanceScreen({ onBack }: { onBack: () => void }) {
+export function PerformanceScreen({
+  onBack,
+  yearLevel,
+  semester,
+}: {
+  onBack: () => void;
+  yearLevel?: number;
+  semester?: number;
+}) {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [scope, setScope] = useState<'period' | 'all'>('period');
+
+  // Build the period query suffix only when scope === 'period' AND we actually
+  // have a current period from the profile. In 'all' mode we drop it entirely.
+  const periodQs = useMemo(() => {
+    if (scope !== 'period') return '';
+    const parts: string[] = [];
+    if (yearLevel != null) parts.push(`year_level=${yearLevel}`);
+    if (semester != null) parts.push(`semester=${semester}`);
+    return parts.length ? `&${parts.join('&')}` : '';
+  }, [scope, yearLevel, semester]);
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     Promise.all([
-      apiGet<Overview>('/api/analytics/overview'),
-      apiGet<TrendPoint[]>('/api/analytics/accuracy-trend?limit=10'),
+      apiGet<Overview>(`/api/analytics/overview?${periodQs.replace(/^&/, '')}`),
+      apiGet<TrendPoint[]>(`/api/analytics/accuracy-trend?limit=10${periodQs}`),
     ])
       .then(([o, t]) => {
         if (!cancelled) {
@@ -55,7 +75,7 @@ export function PerformanceScreen({ onBack }: { onBack: () => void }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [periodQs]);
 
   const chartData = useMemo(
     () =>
@@ -98,11 +118,53 @@ export function PerformanceScreen({ onBack }: { onBack: () => void }) {
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div>
+          <div className="flex-1">
             <h1 className="text-3xl md:text-4xl font-display italic text-text-primary leading-tight">Performance Overview</h1>
             <p className="text-sm md:text-base text-text-secondary mt-1">Analyze your progress and identify areas for improvement.</p>
           </div>
+          {(yearLevel != null || semester != null) && (
+            <div
+              role="tablist"
+              aria-label="Period scope"
+              className="hidden sm:inline-flex bg-bg-surface border border-border-subtle rounded-full p-1 text-xs font-semibold"
+            >
+              {(['period', 'all'] as const).map((k) => (
+                <button
+                  key={k}
+                  role="tab"
+                  aria-selected={scope === k}
+                  onClick={() => setScope(k)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full transition-colors',
+                    scope === k ? 'bg-accent text-slate-950' : 'text-text-secondary hover:text-text-primary'
+                  )}
+                >
+                  {k === 'period' ? 'This semester' : 'All-time'}
+                </button>
+              ))}
+            </div>
+          )}
         </header>
+        {(yearLevel != null || semester != null) && (
+          <div className="sm:hidden flex justify-center">
+            <div role="tablist" aria-label="Period scope" className="inline-flex bg-bg-surface border border-border-subtle rounded-full p-1 text-xs font-semibold">
+              {(['period', 'all'] as const).map((k) => (
+                <button
+                  key={k}
+                  role="tab"
+                  aria-selected={scope === k}
+                  onClick={() => setScope(k)}
+                  className={cn(
+                    'px-3 py-1.5 rounded-full transition-colors',
+                    scope === k ? 'bg-accent text-slate-950' : 'text-text-secondary hover:text-text-primary'
+                  )}
+                >
+                  {k === 'period' ? 'This semester' : 'All-time'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         {empty ? (
           <EmptyState

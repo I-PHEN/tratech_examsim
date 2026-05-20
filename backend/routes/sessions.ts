@@ -10,9 +10,12 @@ import {
 } from '../schemas/session';
 import {
   createSession,
+  deleteSession,
   finishSession,
   getSessionById,
   listSessions,
+  pauseSession,
+  resumeSession,
   submitAnswer,
 } from '../services/sessionService';
 
@@ -72,6 +75,39 @@ router.get(
     const { id } = parse(IdParam, req.params);
     const data = await getSessionById(uid, id);
     res.json(data);
+  })
+);
+
+router.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const { id } = parse(IdParam, req.params);
+    await deleteSession(uid, id);
+    res.status(204).end();
+  })
+);
+
+router.post(
+  '/:id/pause',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const { id } = parse(IdParam, req.params);
+    const row = await pauseSession(uid, id);
+    res.json(row);
+  })
+);
+
+router.post(
+  '/:id/resume',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const { id } = parse(IdParam, req.params);
+    const row = await resumeSession(uid, id);
+    res.json(row);
   })
 );
 

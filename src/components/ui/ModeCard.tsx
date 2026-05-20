@@ -31,7 +31,7 @@ export function ModeCard({
       <h3 className="text-lg font-semibold mb-1.5 text-text-primary group-hover:translate-x-0.5 transition-transform">
         {title}
       </h3>
-      <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">{description}</p>
+      <p className="text-sm text-text-secondary leading-relaxed">{description}</p>
     </button>
   );
 }

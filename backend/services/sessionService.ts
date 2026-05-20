@@ -20,7 +20,12 @@ export interface SessionRow {
   finished_at: string | null;
   score: number | null;
   duration_ms: number | null;
+  paused_at: string | null;
+  total_paused_ms: number;
 }
+
+const SESSION_COLUMNS =
+  'id, user_uid, program_course_id, mode, topic_id, total_questions, started_at, finished_at, score, duration_ms, paused_at, total_paused_ms';
 
 export interface SessionListItem extends SessionRow {
   course_name: string | null;
@@ -227,8 +232,7 @@ export async function listSessions(uid: string, limit = 20, offset = 0): Promise
   const { data, error } = await supabase
     .from('sessions')
     .select(
-      'id, user_uid, program_course_id, mode, topic_id, total_questions, started_at, finished_at, score, duration_ms, ' +
-        'program_courses!inner(courses(name)), topics(name)'
+      `${SESSION_COLUMNS}, program_courses!inner(courses(name)), topics(name)`
     )
     .eq('user_uid', uid)
     .order('started_at', { ascending: false })
@@ -255,6 +259,8 @@ export async function listSessions(uid: string, limit = 20, offset = 0): Promise
       finished_at: r.finished_at,
       score: r.score,
       duration_ms: r.duration_ms,
+      paused_at: r.paused_at,
+      total_paused_ms: r.total_paused_ms,
       course_name: courseName,
       topic_name: topicName,
       accuracy,
@@ -266,8 +272,7 @@ export async function getSessionById(uid: string, sessionId: string) {
   const { data: session, error: sErr } = await supabase
     .from('sessions')
     .select(
-      'id, user_uid, program_course_id, mode, topic_id, total_questions, started_at, finished_at, score, duration_ms, ' +
-        'program_courses!inner(courses(name)), topics(name)'
+      `${SESSION_COLUMNS}, program_courses!inner(courses(name)), topics(name)`
     )
     .eq('id', sessionId)
     .maybeSingle();
@@ -347,6 +352,8 @@ export async function getSessionById(uid: string, sessionId: string) {
       finished_at: s.finished_at,
       score: s.score,
       duration_ms: s.duration_ms,
+      paused_at: s.paused_at,
+      total_paused_ms: s.total_paused_ms,
       course_name: s.program_courses?.courses?.name ?? null,
       topic_name: s.topics?.name ?? null,
       accuracy,
@@ -354,4 +361,65 @@ export async function getSessionById(uid: string, sessionId: string) {
     answers: (answers ?? []) as SessionAnswerRow[],
     questions,
   };
+}
+
+/** Delete a session permanently. Cascades to session_answers via FK. */
+export async function deleteSession(uid: string, sessionId: string): Promise<void> {
+  const { data: row, error: selErr } = await supabase
+    .from('sessions')
+    .select('user_uid')
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (selErr) throw selErr;
+  // Don't leak whether the id exists — 404 in both "missing" and "not yours".
+  if (!row || row.user_uid !== uid) {
+    throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  }
+  const { error: delErr } = await supabase.from('sessions').delete().eq('id', sessionId);
+  if (delErr) throw delErr;
+}
+
+async function loadOwnedSession(uid: string, sessionId: string): Promise<SessionRow> {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select(SESSION_COLUMNS)
+    .eq('id', sessionId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  const row = data as SessionRow;
+  if (row.user_uid !== uid) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
+  return row;
+}
+
+/** Pause an in-progress session. No-op if already paused or already finished. */
+export async function pauseSession(uid: string, sessionId: string): Promise<SessionRow> {
+  const row = await loadOwnedSession(uid, sessionId);
+  if (row.finished_at) throw new ApiError(409, 'ALREADY_FINISHED', 'Session already finished');
+  if (row.paused_at) return row;
+  const { data, error } = await supabase
+    .from('sessions')
+    .update({ paused_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .select(SESSION_COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as SessionRow;
+}
+
+/** Resume a paused session: rolls the pause duration into total_paused_ms. */
+export async function resumeSession(uid: string, sessionId: string): Promise<SessionRow> {
+  const row = await loadOwnedSession(uid, sessionId);
+  if (row.finished_at) throw new ApiError(409, 'ALREADY_FINISHED', 'Session already finished');
+  if (!row.paused_at) return row;
+  const pausedMs = Date.now() - new Date(row.paused_at).getTime();
+  const nextTotal = (row.total_paused_ms ?? 0) + Math.max(0, pausedMs);
+  const { data, error } = await supabase
+    .from('sessions')
+    .update({ paused_at: null, total_paused_ms: nextTotal })
+    .eq('id', sessionId)
+    .select(SESSION_COLUMNS)
+    .single();
+  if (error) throw error;
+  return data as SessionRow;
 }

@@ -53,7 +53,10 @@ import {
   Globe,
   Plus,
   Minus,
-  AlertTriangle
+  AlertTriangle,
+  MoreVertical,
+  PauseCircle,
+  StopCircle
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
 import { cn } from './lib/utils';
@@ -310,6 +313,9 @@ export default function App() {
     score: number | null;
     total_questions: number;
     started_at: string;
+    finished_at: string | null;
+    paused_at: string | null;
+    program_course_id: string;
   }>>([]);
   const [weaknesses, setWeaknesses] = useState<Array<{
     topic_id: string;
@@ -386,14 +392,20 @@ export default function App() {
 
   useEffect(() => {
     if (state.step !== 'MODE_SELECT') return;
-    apiGet<typeof recentSessions>('/api/sessions?limit=4')
+    // Pull more than we display so the 24h transience filter still leaves
+    // a useful row count, and so the Resume banner can find in-progress rows.
+    apiGet<typeof recentSessions>('/api/sessions?limit=12')
       .then(setRecentSessions)
       .catch(() => setRecentSessions([]));
   }, [state.step]);
 
   useEffect(() => {
     if (state.step !== 'TARGETED_PRACTICE') return;
-    apiGet<typeof weaknesses>('/api/analytics/by-topic')
+    // Scope weakness suggestions to the user's current academic period so
+    // they aren't seeing last year's weak topics on a fresh dashboard.
+    const yl = yearStringToNumber(state.year);
+    const sem = semStringToNumber(state.semester);
+    apiGet<typeof weaknesses>(`/api/analytics/by-topic?year_level=${yl}&semester=${sem}`)
       .then((rows) => {
         const sorted = rows
           .filter((r) => r.attempts > 0)
@@ -402,7 +414,7 @@ export default function App() {
         setWeaknesses(sorted);
       })
       .catch(() => setWeaknesses([]));
-  }, [state.step]);
+  }, [state.step, state.year, state.semester]);
 
   // Purge any legacy resume blob from previous app versions
   useEffect(() => {
@@ -774,8 +786,10 @@ export default function App() {
              }}
           />
         ) : state.step === 'PERFORMANCE' ? (
-          <PerformanceScreen 
+          <PerformanceScreen
              onBack={goBack}
+             yearLevel={yearStringToNumber(state.year)}
+             semester={semStringToNumber(state.semester)}
           />
         ) : state.step === 'SETTINGS' ? (
           <SettingsScreen 
@@ -882,6 +896,74 @@ export default function App() {
                     title="What do you want to tackle today?"
                   />
 
+                  {/* Resume banner: first unfinished session on this browser */}
+                  {(() => {
+                    const pending = recentSessions.find((s) => s.finished_at === null);
+                    if (!pending) return null;
+                    let cached: { courseName: string; mode: StudyMode; questions: Question[] } | null = null;
+                    try {
+                      const raw = localStorage.getItem(`engine_questions_${pending.id}`);
+                      if (raw) cached = JSON.parse(raw);
+                    } catch {
+                      cached = null;
+                    }
+                    return (
+                      <Card variant="default" padding="md" className="border-accent/40 bg-accent-muted/40 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-full bg-accent text-slate-950 flex items-center justify-center shrink-0">
+                            <PauseCircle className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold text-text-primary truncate">
+                              Continue your {pending.course_name ?? 'in-progress'} exam {pending.paused_at ? '— paused' : '— in progress'}
+                            </p>
+                            <p className="text-[11px] text-text-secondary">
+                              {pending.mode.replace('_', ' ').toUpperCase()} · started {new Date(pending.started_at).toLocaleDateString()}
+                              {!cached && ' · resume not available on this device'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {cached ? (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => {
+                                setActiveSession({ sessionId: pending.id, questions: cached!.questions });
+                                setState(prev => ({
+                                  ...prev,
+                                  step: 'EXAM',
+                                  mode: cached!.mode,
+                                  selectedCourse:
+                                    prev.selectedCourse?.id
+                                      ? prev.selectedCourse
+                                      : { id: pending.program_course_id, name: cached!.courseName },
+                                }));
+                              }}
+                            >
+                              Resume
+                            </Button>
+                          ) : (
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={async () => {
+                                try {
+                                  await apiPost(`/api/sessions/${pending.id}/finish`, {});
+                                } catch {/* swallow */}
+                                apiGet<typeof recentSessions>('/api/sessions?limit=12')
+                                  .then(setRecentSessions)
+                                  .catch(() => {});
+                              }}
+                            >
+                              End session
+                            </Button>
+                          )}
+                        </div>
+                      </Card>
+                    );
+                  })()}
+
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
                     <ModeCard 
                       title="Practice by Topic" 
@@ -908,7 +990,15 @@ export default function App() {
                     />
                   </div>
 
-                  {/* Recent Performance Section directly on dashboard */}
+                  {/* Recent Performance Section directly on dashboard.
+                      Transient by design: only shows sessions from the last 24h. */}
+                  {(() => {
+                    const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+                    const cutoff = Date.now() - RECENT_WINDOW_MS;
+                    const recent24 = recentSessions
+                      .filter(s => s.finished_at !== null && new Date(s.started_at).getTime() >= cutoff)
+                      .slice(0, 4);
+                    return (
                   <section className="space-y-4">
                     <SectionHeader
                       eyebrow="Analytics"
@@ -922,15 +1012,19 @@ export default function App() {
                       }
                     />
 
-                    {recentSessions.length === 0 ? (
+                    {recent24.length === 0 ? (
                       <EmptyState
                         icon={Activity}
-                        title="No sessions yet"
-                        description="Take your first session and your recent performance will show up here."
+                        title={recentSessions.length === 0 ? 'No sessions yet' : 'Nothing in the last 24 hours'}
+                        description={
+                          recentSessions.length === 0
+                            ? 'Take your first session and your recent performance will show up here.'
+                            : 'Your full session history lives in My Sessions.'
+                        }
                       />
                     ) : (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-                        {recentSessions.slice(0, 4).map(activity => {
+                        {recent24.map(activity => {
                           const accuracyPct = (activity.accuracy ?? 0) * 100;
                           return (
                             <Card
@@ -970,11 +1064,9 @@ export default function App() {
                               </div>
                               <div className="flex-1 min-w-0">
                                 <h4 className="text-base font-semibold text-text-primary truncate">{activity.course_name ?? 'Unknown course'}</h4>
-                                <p className="text-sm text-text-secondary truncate mt-1">
-                                  {activity.topic_name ?? 'All topics'}{' '}
-                                  <span className="uppercase text-[10px] font-semibold tracking-wide bg-bg-raised px-1.5 py-0.5 rounded ml-2">{activity.mode.replace('_', ' ')}</span>
-                                </p>
-                                <div className="flex items-center gap-2 mt-3">
+                                <p className="text-sm text-text-secondary truncate mt-1">{activity.topic_name ?? 'All topics'}</p>
+                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                  <Pill tone="neutral">{activity.mode.replace('_', ' ').toUpperCase()}</Pill>
                                   <Pill tone="neutral">{new Date(activity.started_at).toLocaleDateString()}</Pill>
                                   <Pill tone="neutral">{accuracyPct.toFixed(0)}% accuracy</Pill>
                                 </div>
@@ -988,6 +1080,8 @@ export default function App() {
                       </div>
                     )}
                   </section>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -2051,11 +2145,28 @@ function ExamSimulation({
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
+  const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
+  const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  const [sessionActionBusy, setSessionActionBusy] = useState<'pause' | 'end' | null>(null);
 
   const totalQuestions = questions.length;
 
   // Persistent Timer Logic
   const storageKey = `engine_session_${courseName}_${mode}`;
+  // Persisted questions blob keyed by sessionId so the home "Resume" banner can
+  // rehydrate the same exam on this browser even after a page reload.
+  const questionsKey = `engine_questions_${sessionId}`;
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        questionsKey,
+        JSON.stringify({ courseName, mode, questions })
+      );
+    } catch {
+      // localStorage quota / private mode — resume from the banner will fall
+      // back to the "not available on this device" path.
+    }
+  }, [questionsKey, courseName, mode, questions]);
   const [session, setSession] = useState<TimerSession>(() => {
     const saved = localStorage.getItem(storageKey);
     if (saved) return JSON.parse(saved);
@@ -2124,14 +2235,80 @@ function ExamSimulation({
 
   const currentQuestion = questions[currentIdx];
 
+  // Reconcile with server on mount: resume any paused session and inherit the
+  // authoritative started_at / total_paused_ms (so a different browser or a
+  // cleared cache still restores the correct timer offset).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const row = await apiPost<{ started_at: string; total_paused_ms: number }>(
+          `/api/sessions/${sessionId}/resume`,
+          {}
+        );
+        if (cancelled) return;
+        const serverStart = new Date(row.started_at).getTime();
+        const serverPaused = row.total_paused_ms ?? 0;
+        setSession((prev) => {
+          const merged: TimerSession = {
+            ...prev,
+            totalPausedMs: Math.max(prev.totalPausedMs ?? 0, serverPaused),
+            pausedAt: null,
+          };
+          // Cross-device: localStorage was empty, so prev.startedAt got
+          // initialised to "now". If the server started much earlier, trust it.
+          if (serverStart < prev.startedAt - 30000) {
+            merged.startedAt = serverStart;
+          }
+          return merged;
+        });
+      } catch (e) {
+        // Never block exam play on a resume hiccup.
+        console.error('resume session failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+
   const handleFinish = async () => {
     localStorage.removeItem(storageKey);
+    localStorage.removeItem(questionsKey);
     try {
       await apiPost(`/api/sessions/${sessionId}/finish`, {});
     } catch (e) {
       console.error('finish session failed', e);
     }
     onFinish(sessionId);
+  };
+
+  // Pause: mark the session paused server-side (so the timer offset is
+  // restored on resume), but KEEP the localStorage timer blob — same-browser
+  // resume rehydrates instantly. The session row stays open (finished_at NULL),
+  // and the home screen will surface a Resume banner for it.
+  const handlePauseAndExit = async () => {
+    setSessionActionBusy('pause');
+    try {
+      await apiPost(`/api/sessions/${sessionId}/pause`, {});
+    } catch (e) {
+      console.error('pause session failed', e);
+    } finally {
+      setSessionActionBusy(null);
+      setSessionMenuOpen(false);
+      onBack();
+    }
+  };
+
+  const handleEndNow = async () => {
+    setSessionActionBusy('end');
+    try {
+      await handleFinish();
+    } finally {
+      setSessionActionBusy(null);
+      setEndConfirmOpen(false);
+    }
   };
 
   // Auto-submit handle
@@ -2324,16 +2501,68 @@ function ExamSimulation({
       {/* HUD Header */}
       <header className="relative h-12 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-4 md:px-6 shrink-0 z-50">
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => {
-              localStorage.removeItem(storageKey);
-              onBack();
-            }}
-            className="p-2 -ml-2 hover:bg-bg-raised/50 rounded-lg group shrink-0"
-            title="Terminate Session"
-          >
-            <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary transition-colors" />
-          </button>
+          <div className="relative">
+            <button
+              onClick={() => setSessionMenuOpen((v) => !v)}
+              className="p-2 -ml-2 hover:bg-bg-raised/50 rounded-lg group shrink-0"
+              title="Session menu"
+              aria-haspopup="menu"
+              aria-expanded={sessionMenuOpen}
+            >
+              <MoreVertical className="w-5 h-5 text-text-secondary group-hover:text-text-primary transition-colors" />
+            </button>
+            {sessionMenuOpen && (
+              <>
+                <button
+                  type="button"
+                  aria-label="Close menu"
+                  className="fixed inset-0 z-40 cursor-default"
+                  onClick={() => setSessionMenuOpen(false)}
+                />
+                <div
+                  role="menu"
+                  className="absolute left-0 top-full mt-2 z-50 w-64 bg-bg-surface border border-border-subtle rounded-2xl shadow-xl p-2 animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={handlePauseAndExit}
+                    disabled={sessionActionBusy !== null}
+                    className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-bg-raised text-left disabled:opacity-50"
+                  >
+                    {sessionActionBusy === 'pause' ? (
+                      <Loader2 className="w-5 h-5 text-text-secondary animate-spin shrink-0 mt-0.5" />
+                    ) : (
+                      <PauseCircle className="w-5 h-5 text-accent shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-text-primary">Pause & continue later</div>
+                      <div className="text-[11px] text-text-secondary leading-snug">
+                        Save your timer and answers — resume from the home screen.
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setSessionMenuOpen(false);
+                      setEndConfirmOpen(true);
+                    }}
+                    className="w-full flex items-start gap-3 p-3 rounded-xl hover:bg-bg-raised text-left"
+                  >
+                    <StopCircle className="w-5 h-5 text-[color:var(--accent-danger)] shrink-0 mt-0.5" />
+                    <div className="flex-1">
+                      <div className="text-sm font-semibold text-text-primary">End session now</div>
+                      <div className="text-[11px] text-text-secondary leading-snug">
+                        Submit your answers and see your score immediately.
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 md:w-10 md:h-10 bg-accent-muted rounded-xl flex items-center justify-center shrink-0">
               <Zap className="w-5 h-5 md:w-6 md:h-6 text-accent fill-accent" />
@@ -2544,6 +2773,51 @@ function ExamSimulation({
           </div>
         </div>
       </div>
+
+      {endConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 animate-fade-in"
+          onClick={() => {
+            if (sessionActionBusy !== 'end') setEndConfirmOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-[color:var(--danger-bg)] text-[color:var(--accent-danger)] flex items-center justify-center shrink-0">
+                <StopCircle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-text-primary mb-1">Submit your answers now?</h3>
+                <p className="text-sm text-text-secondary leading-relaxed">
+                  This ends the exam, computes your score, and locks any unanswered questions.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setEndConfirmOpen(false)}
+                disabled={sessionActionBusy === 'end'}
+              >
+                Cancel
+              </Button>
+              <button
+                type="button"
+                onClick={handleEndNow}
+                disabled={sessionActionBusy === 'end'}
+                className="inline-flex items-center gap-1.5 bg-[color:var(--accent-danger)] text-white px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50 hover:opacity-90 transition-opacity"
+              >
+                {sessionActionBusy === 'end' ? <Loader2 className="w-4 h-4 animate-spin" /> : <StopCircle className="w-4 h-4" />}
+                End session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );

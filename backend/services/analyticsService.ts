@@ -29,11 +29,26 @@ export interface DifficultyBreakdown {
   hard: { attempts: number; correct: number; accuracy: number };
 }
 
-export async function overview(uid: string): Promise<OverviewStats> {
-  const { data: answers, error: aErr } = await supabase
+/** Optional academic-period scope. Both fields are independently optional — when
+ * present we narrow by `program_courses.year_level`/`semester`, so a student
+ * who just moved up to Year 2 sees a fresh dashboard automatically. */
+export interface PeriodScope {
+  yearLevel?: number;
+  semester?: number;
+}
+
+export async function overview(uid: string, scope?: PeriodScope): Promise<OverviewStats> {
+  // Always inner-join program_courses so the filter columns exist whenever a
+  // scope is passed; the join cost is negligible and keeping the select string
+  // literal lets Supabase's type inference work.
+  let aq = supabase
     .from('session_answers')
-    .select('is_correct, time_ms, sessions!inner(user_uid)')
+    .select('is_correct, time_ms, sessions!inner(user_uid, program_courses!inner(year_level, semester))')
     .eq('sessions.user_uid', uid);
+  if (scope?.yearLevel != null) aq = aq.eq('sessions.program_courses.year_level', scope.yearLevel);
+  if (scope?.semester != null) aq = aq.eq('sessions.program_courses.semester', scope.semester);
+
+  const { data: answers, error: aErr } = await aq;
   if (aErr) throw aErr;
 
   const rows = (answers ?? []) as Array<{ is_correct: boolean | null; time_ms: number | null }>;
@@ -41,11 +56,15 @@ export async function overview(uid: string): Promise<OverviewStats> {
   const totalCorrect = rows.filter((r) => r.is_correct === true).length;
   const totalTime = rows.reduce((s, r) => s + (r.time_ms ?? 0), 0);
 
-  const { count: sessionsCompleted, error: sErr } = await supabase
+  let sq = supabase
     .from('sessions')
-    .select('id', { count: 'exact', head: true })
+    .select('id, program_courses!inner(year_level, semester)', { count: 'exact', head: true })
     .eq('user_uid', uid)
     .not('finished_at', 'is', null);
+  if (scope?.yearLevel != null) sq = sq.eq('program_courses.year_level', scope.yearLevel);
+  if (scope?.semester != null) sq = sq.eq('program_courses.semester', scope.semester);
+
+  const { count: sessionsCompleted, error: sErr } = await sq;
   if (sErr) throw sErr;
 
   return {
@@ -57,12 +76,20 @@ export async function overview(uid: string): Promise<OverviewStats> {
   };
 }
 
-export async function byTopic(uid: string, programCourseId?: string): Promise<TopicStat[]> {
+export async function byTopic(
+  uid: string,
+  programCourseId?: string,
+  scope?: PeriodScope
+): Promise<TopicStat[]> {
   let q = supabase
     .from('session_answers')
-    .select('is_correct, questions!inner(topic_id, program_course_id, topics(name)), sessions!inner(user_uid)')
+    .select(
+      'is_correct, questions!inner(topic_id, program_course_id, topics(name)), sessions!inner(user_uid, program_courses!inner(year_level, semester))'
+    )
     .eq('sessions.user_uid', uid);
   if (programCourseId) q = q.eq('questions.program_course_id', programCourseId);
+  if (scope?.yearLevel != null) q = q.eq('sessions.program_courses.year_level', scope.yearLevel);
+  if (scope?.semester != null) q = q.eq('sessions.program_courses.semester', scope.semester);
 
   const { data, error } = await q;
   if (error) throw error;
@@ -98,14 +125,22 @@ export async function byTopic(uid: string, programCourseId?: string): Promise<To
   }));
 }
 
-export async function accuracyTrend(uid: string, limit = 10): Promise<TrendPoint[]> {
-  const { data, error } = await supabase
+export async function accuracyTrend(
+  uid: string,
+  limit = 10,
+  scope?: PeriodScope
+): Promise<TrendPoint[]> {
+  let q = supabase
     .from('sessions')
-    .select('id, mode, score, total_questions, finished_at')
+    .select('id, mode, score, total_questions, finished_at, program_courses!inner(year_level, semester)')
     .eq('user_uid', uid)
     .not('finished_at', 'is', null)
     .order('finished_at', { ascending: false })
     .limit(limit);
+  if (scope?.yearLevel != null) q = q.eq('program_courses.year_level', scope.yearLevel);
+  if (scope?.semester != null) q = q.eq('program_courses.semester', scope.semester);
+
+  const { data, error } = await q;
   if (error) throw error;
 
   return ((data ?? []) as Array<{
@@ -124,11 +159,15 @@ export async function accuracyTrend(uid: string, limit = 10): Promise<TrendPoint
     }));
 }
 
-export async function byDifficulty(uid: string): Promise<DifficultyBreakdown> {
-  const { data, error } = await supabase
+export async function byDifficulty(uid: string, scope?: PeriodScope): Promise<DifficultyBreakdown> {
+  let q = supabase
     .from('session_answers')
-    .select('is_correct, questions!inner(difficulty), sessions!inner(user_uid)')
+    .select('is_correct, questions!inner(difficulty), sessions!inner(user_uid, program_courses!inner(year_level, semester))')
     .eq('sessions.user_uid', uid);
+  if (scope?.yearLevel != null) q = q.eq('sessions.program_courses.year_level', scope.yearLevel);
+  if (scope?.semester != null) q = q.eq('sessions.program_courses.semester', scope.semester);
+
+  const { data, error } = await q;
   if (error) throw error;
 
   const result: DifficultyBreakdown = {

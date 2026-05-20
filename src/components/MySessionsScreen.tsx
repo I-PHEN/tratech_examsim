@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Clock, Search, History, CheckCircle2, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Clock, Search, History, CheckCircle2, ChevronRight, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { StudyMode } from '../types';
-import { apiGet } from '../lib/apiClient';
+import { apiDelete, apiGet } from '../lib/apiClient';
 import { Card } from './ui/Card';
 import { Spinner } from './ui/Spinner';
 import { EmptyState } from './ui/EmptyState';
@@ -53,7 +53,25 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void; onR
   const [sessions, setSessions] = useState<ApiSession[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<ApiSession | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const itemsPerPage = 5;
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiDelete(`/api/sessions/${pendingDelete.id}`);
+      setSessions((prev) => prev.filter((s) => s.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   React.useEffect(() => {
     setCurrentPage(1);
@@ -232,7 +250,19 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void; onR
                         {score} / {session.total_questions}
                       </span>
                     </div>
-                    <div className="w-8 h-8 rounded-full bg-bg-raised flex items-center justify-center border border-border-subtle group-hover:bg-accent group-hover:border-accent transition-colors shrink-0 md:ml-2">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setDeleteError(null);
+                        setPendingDelete(session);
+                      }}
+                      title="Delete this session"
+                      className="w-8 h-8 rounded-full bg-bg-raised flex items-center justify-center border border-border-subtle text-text-tertiary hover:text-[color:var(--accent-danger)] hover:border-[color:var(--danger-border)] hover:bg-[color:var(--danger-bg)] transition-colors shrink-0 md:ml-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                    <div className="w-8 h-8 rounded-full bg-bg-raised flex items-center justify-center border border-border-subtle group-hover:bg-accent group-hover:border-accent transition-colors shrink-0">
                       <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-slate-950 transition-colors" />
                     </div>
                   </div>
@@ -292,6 +322,58 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void; onR
           )}
         </div>
       </div>
+
+      {pendingDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 animate-fade-in"
+          onClick={() => {
+            if (!deleting) setPendingDelete(null);
+          }}
+        >
+          <div
+            className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-[color:var(--danger-bg)] text-[color:var(--accent-danger)] flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-text-primary mb-1">Delete this session?</h3>
+                <p className="text-sm text-text-secondary leading-relaxed">
+                  Deleting <span className="font-semibold text-text-primary">{pendingDelete.course_name ?? 'this session'}</span>{' '}
+                  removes it permanently and updates your accuracy, time, and trend as if it never happened.
+                  Past sessions are useful to see your progress — only delete if you really mean to.
+                </p>
+              </div>
+            </div>
+            {deleteError && (
+              <div className="px-3 py-2 rounded-lg text-xs bg-[color:var(--danger-bg)] border border-[color:var(--danger-border)] text-[color:var(--danger-text)]">
+                {deleteError}
+              </div>
+            )}
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setPendingDelete(null)}
+                disabled={deleting}
+              >
+                Cancel
+              </Button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-1.5 bg-[color:var(--accent-danger)] text-white px-4 py-2 rounded-lg font-semibold text-sm disabled:opacity-50 hover:opacity-90 transition-opacity"
+              >
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Delete permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
