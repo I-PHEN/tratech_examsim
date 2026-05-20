@@ -135,6 +135,26 @@ export function ManualQuestionEntry({
   const [answerType, setAnswerType] = useState<AnswerType>('exact');
   const [answerTolerance, setAnswerTolerance] = useState('');
   const [unit, setUnit] = useState('');
+  const [unitFormatBusy, setUnitFormatBusy] = useState(false);
+
+  const formatUnit = async () => {
+    if (!unit.trim()) return;
+    setUnitFormatBusy(true);
+    try {
+      const { formatted } = await apiPost<{ formatted: string }>(
+        '/api/ingestion/format',
+        { text: unit }
+      );
+      setUnit(formatted.trim());
+    } catch (err) {
+      setMsg({
+        text: err instanceof Error ? err.message : String(err),
+        type: 'err',
+      });
+    } finally {
+      setUnitFormatBusy(false);
+    }
+  };
 
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [attachedDiagrams, setAttachedDiagrams] = useState<AttachedAsset[]>([]);
@@ -658,15 +678,39 @@ export function ManualQuestionEntry({
               />
             </div>
             <div>
-              <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
-                Unit
-              </label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
+                  Unit
+                </label>
+                <button
+                  type="button"
+                  onClick={formatUnit}
+                  disabled={unitFormatBusy || !unit.trim()}
+                  title="AI clean-up to KaTeX (e.g. m^3 → $\mathrm{m^{3}}$)"
+                  className="flex items-center gap-1 text-[10px] text-text-secondary hover:text-primary disabled:opacity-40"
+                >
+                  {unitFormatBusy ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  Format
+                </button>
+              </div>
               <input
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
-                placeholder="e.g. mol/L"
-                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
+                placeholder="e.g. mol/L or $\mathrm{m^{3}}$"
+                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none font-mono"
               />
+              {unit.trim() && (
+                <div className="mt-1 text-[10px] text-text-tertiary flex items-baseline gap-1.5">
+                  <span className="uppercase tracking-wider font-bold">Preview:</span>
+                  <span className="text-text-primary normal-case tracking-normal font-semibold">
+                    <RichText inline>{unit}</RichText>
+                  </span>
+                </div>
+              )}
             </div>
             <div>
               <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">

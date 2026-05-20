@@ -61,7 +61,7 @@ interface DraftRowProps {
 const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, focused }) => {
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | null>(null);
+  const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | 'unit' | null>(null);
   const [preview, setPreview] = useState<Set<'prompt' | 'explanation'>>(new Set());
   const d = draft.draft_data;
 
@@ -73,15 +73,16 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
       return next;
     });
 
-  const formatField = async (field: 'prompt' | 'explanation') => {
-    const value = field === 'prompt' ? d.prompt : d.explanation;
+  const formatField = async (field: 'prompt' | 'explanation' | 'unit') => {
+    const value = field === 'prompt' ? d.prompt : field === 'explanation' ? d.explanation : d.unit;
     if (!value || !value.trim()) return;
     setFmtBusy(field);
     try {
       const { formatted } = await apiPost<{ formatted: string }>(`/api/ingestion/format`, {
         text: value,
       });
-      update({ [field]: formatted } as Partial<DraftData>);
+      const cleaned = field === 'unit' ? formatted.trim() : formatted;
+      update({ [field]: cleaned } as Partial<DraftData>);
     } catch (err) {
       alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -349,9 +350,27 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
             </select>
           </label>
           <label className="text-xs">
-            <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
-              {d.answer_type === 'range' ? 'Tolerance' : 'Unit'}
-            </span>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-text-secondary font-bold uppercase tracking-wider block">
+                {d.answer_type === 'range' ? 'Tolerance' : 'Unit'}
+              </span>
+              {d.answer_type !== 'range' && (
+                <button
+                  type="button"
+                  onClick={() => formatField('unit')}
+                  disabled={fmtBusy !== null || !d.unit?.trim()}
+                  title="AI clean-up to KaTeX (e.g. m^3 → $\mathrm{m^{3}}$)"
+                  className="flex items-center gap-1 text-[10px] text-text-secondary hover:text-primary disabled:opacity-40"
+                >
+                  {fmtBusy === 'unit' ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  Format
+                </button>
+              )}
+            </div>
             {d.answer_type === 'range' ? (
               <input
                 type="number"
@@ -361,11 +380,22 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
                 className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
               />
             ) : (
-              <input
-                value={d.unit ?? ''}
-                onChange={(e) => update({ unit: e.target.value })}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-              />
+              <>
+                <input
+                  value={d.unit ?? ''}
+                  onChange={(e) => update({ unit: e.target.value })}
+                  placeholder="e.g. mol/L or $\mathrm{m^{3}}$"
+                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary font-mono"
+                />
+                {d.unit?.trim() && (
+                  <div className="mt-1 text-[10px] text-text-tertiary flex items-baseline gap-1.5">
+                    <span className="uppercase tracking-wider font-bold">Preview:</span>
+                    <span className="text-text-primary normal-case tracking-normal font-semibold">
+                      <RichText inline>{d.unit}</RichText>
+                    </span>
+                  </div>
+                )}
+              </>
             )}
           </label>
         </div>

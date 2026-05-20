@@ -16,6 +16,7 @@ export interface Question {
   optionIds?: string[];
   correctOptionId?: string;
   correctAnswer?: string;
+  unit?: string;
   assets?: { id: string; url: string }[];
 }
 
