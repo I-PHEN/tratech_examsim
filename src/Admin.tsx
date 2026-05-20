@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Upload, FileText, Database, Users, Loader2, Search, Plus, Pencil } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Database, Users, Loader2, Search, Plus, Pencil, Library as LibraryIcon } from 'lucide-react';
 import { cn } from './lib/utils';
 import { collection, query, where, getDocs, doc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { db, OperationType, handleFirestoreError } from './lib/firebase';
@@ -8,6 +8,7 @@ import { IngestionUpload } from './components/admin/IngestionUpload';
 import { IngestionJobList } from './components/admin/IngestionJobList';
 import { IngestionWizard } from './components/admin/IngestionWizard';
 import { ManualQuestionEntry } from './components/admin/ManualQuestionEntry';
+import { QuestionLibrary } from './components/admin/QuestionLibrary';
 import { CurriculumManager } from './components/admin/curriculum/CurriculumManager';
 import 'katex/dist/katex.min.css';
 
@@ -123,7 +124,7 @@ function IngestionTab() {
 }
 
 export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'upload' | 'manual' | 'manage' | 'admins'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'manual' | 'library' | 'manage' | 'admins'>('upload');
   
   return (
     <div className="absolute inset-0 flex flex-col bg-surface-dim z-50 overflow-hidden">
@@ -168,6 +169,16 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
                 Manual Entry
               </button>
               <button
+                onClick={() => setActiveTab('library')}
+                className={cn(
+                  "flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm border border-transparent transition-colors",
+                  activeTab === 'library' ? "bg-bg-raised text-primary border-primary/30" : "bg-surface-container-low text-text-secondary hover:bg-bg-raised hover:text-text-primary"
+                )}
+              >
+                <LibraryIcon className="w-4 h-4" />
+                Library
+              </button>
+              <button
                 onClick={() => setActiveTab('manage')}
                 className={cn(
                   "flex-1 md:flex-none flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm border border-transparent transition-colors",
@@ -194,6 +205,7 @@ export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
             {activeTab === 'admins' && <AdminManager />}
             {activeTab === 'upload' && <IngestionTab />}
             {activeTab === 'manual' && <ManualQuestionEntry />}
+            {activeTab === 'library' && <QuestionLibrary />}
             {activeTab === 'manage' && <CurriculumManager />}
           </div>
         </div>

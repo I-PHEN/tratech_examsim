@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
 import { shuffle } from '../lib/shuffle';
 import { uploadFile, removeFile } from './storage';
-import type { QuestionCreateInput } from '../schemas/question';
+import type { QuestionCreateInput, QuestionUpdateInput } from '../schemas/question';
 
 const STORAGE_BUCKET = 'ingestion-uploads';
 
@@ -49,6 +49,7 @@ export interface QuestionAsset {
   mime_type: string;
   position: number;
   url: string;
+  kind?: 'prompt' | 'solution';
 }
 
 export interface QuestionWithContent {
@@ -82,7 +83,10 @@ export function shuffleOptionsIfMcq(q: QuestionWithContent): QuestionWithContent
 export async function listQuestions(filters: QuestionListFilters) {
   let q = supabase
     .from('questions')
-    .select('id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, created_at')
+    .select(
+      'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, created_at, ' +
+        'question_content(prompt)'
+    )
     .order('created_at', { ascending: false });
 
   if (filters.program_course_id) q = q.eq('program_course_id', filters.program_course_id);
@@ -97,7 +101,18 @@ export async function listQuestions(filters: QuestionListFilters) {
 
   const { data, error } = await q;
   if (error) throw error;
-  return data;
+  return (data ?? []).map((row) => {
+    const r = row as unknown as Record<string, unknown> & {
+      question_content?: { prompt: string } | { prompt: string }[] | null;
+    };
+    const { question_content, ...rest } = r;
+    const contentArr = Array.isArray(question_content)
+      ? question_content
+      : question_content
+      ? [question_content]
+      : [];
+    return { ...rest, prompt: contentArr[0]?.prompt ?? '' };
+  });
 }
 
 interface AssetRow {
@@ -105,6 +120,7 @@ interface AssetRow {
   storage_path: string;
   mime_type: string;
   position: number;
+  kind?: 'prompt' | 'solution';
 }
 
 interface QuestionJoinRow {
@@ -134,7 +150,7 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
         'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
         'mcq_options(id, text, is_correct), ' +
-        'question_assets(id, storage_path, mime_type, position)'
+        'question_assets(id, storage_path, mime_type, position, kind)'
     )
     .eq('id', id)
     .maybeSingle();
@@ -240,6 +256,94 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
     await supabase.from('questions').delete().eq('id', questionId);
     throw err;
   }
+}
+
+export async function updateQuestion(
+  id: string,
+  input: QuestionUpdateInput
+): Promise<QuestionWithContent> {
+  const existing = await getQuestionById(id);
+  if (existing.type !== input.type) {
+    throw new ApiError(
+      400,
+      'TYPE_CHANGE_NOT_ALLOWED',
+      `Cannot change question type from ${existing.type} to ${input.type}`
+    );
+  }
+
+  if (input.type === 'mcq') {
+    const correctCount = input.options.filter((o) => o.is_correct).length;
+    if (correctCount !== 1) {
+      throw new ApiError(
+        400,
+        'INVALID_MCQ',
+        `MCQ questions must have exactly one correct option (got ${correctCount})`
+      );
+    }
+  } else if (input.answer_type === 'range' && !input.content.answer_tolerance) {
+    throw new ApiError(
+      400,
+      'INVALID_CALC',
+      'Calc questions with answer_type=range require answer_tolerance'
+    );
+  }
+
+  const questionPatch = {
+    topic_id: input.topic_id,
+    difficulty: input.difficulty,
+    exam_scope: input.exam_scope,
+    answer_type: input.type === 'calc' ? input.answer_type : 'exact',
+  };
+  const { error: qErr } = await supabase.from('questions').update(questionPatch).eq('id', id);
+  if (qErr) throw qErr;
+
+  const { error: delContentErr } = await supabase
+    .from('question_content')
+    .delete()
+    .eq('question_id', id);
+  if (delContentErr) throw delContentErr;
+
+  const contentRow =
+    input.type === 'mcq'
+      ? {
+          question_id: id,
+          prompt: input.content.prompt,
+          explanation: input.content.explanation ?? null,
+          correct_answer: input.options.find((o) => o.is_correct)!.text,
+          answer_tolerance: null,
+          unit: null,
+          source_reference: input.content.source_reference ?? null,
+        }
+      : {
+          question_id: id,
+          prompt: input.content.prompt,
+          explanation: input.content.explanation ?? null,
+          correct_answer: input.content.correct_answer,
+          answer_tolerance: input.content.answer_tolerance ?? null,
+          unit: input.content.unit ?? null,
+          source_reference: input.content.source_reference ?? null,
+        };
+
+  const { error: contentErr } = await supabase.from('question_content').insert(contentRow);
+  if (contentErr) throw contentErr;
+
+  if (input.type === 'mcq') {
+    const { error: delOptsErr } = await supabase
+      .from('mcq_options')
+      .delete()
+      .eq('question_id', id);
+    if (delOptsErr) throw delOptsErr;
+
+    const optionRows = input.options.map((o) => ({
+      question_id: id,
+      text: o.text,
+      is_correct: o.is_correct,
+    }));
+    const { error: optsErr } = await supabase.from('mcq_options').insert(optionRows);
+    if (optsErr) throw optsErr;
+  }
+
+  return await getQuestionById(id);
 }
 
 export async function deleteQuestion(id: string): Promise<void> {

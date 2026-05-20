@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Eye, EyeOff, Maximize2, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { RichText } from '../ui/RichText';
@@ -54,9 +54,10 @@ interface DraftRowProps {
   onChange: (next: Draft) => void;
   onSave: () => Promise<void>;
   onReject: () => Promise<void>;
+  onExpand?: () => void;
 }
 
-const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject }) => {
+const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand }) => {
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | null>(null);
@@ -157,6 +158,16 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           {draft.ai_confidence != null && ` • confidence ${(draft.ai_confidence * 100).toFixed(0)}%`}
         </span>
         <div className="flex gap-2">
+          {onExpand && (
+            <button
+              onClick={onExpand}
+              className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
+              title="Open in fullscreen focus mode"
+            >
+              <Maximize2 className="w-3 h-3" />
+              Expand
+            </button>
+          )}
           <button
             onClick={save}
             disabled={saving}
@@ -466,6 +477,7 @@ export function DraftReviewTable({
   const [bulkDifficulty, setBulkDifficulty] = useState('');
   const [bulkSource, setBulkSource] = useState('');
   const [verifying, setVerifying] = useState(false);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -500,6 +512,14 @@ export function DraftReviewTable({
   const rejectDraft = async (draft: Draft) => {
     await apiDelete(`/api/ingestion/drafts/${draft.id}`);
     setDrafts((prev) => prev.map((d) => (d.id === draft.id ? { ...d, status: 'rejected' } : d)));
+    if (focusedId === draft.id) {
+      const stillPending = drafts.filter((d) => d.status === 'pending' && d.id !== draft.id);
+      const currentIdx = drafts.findIndex((d) => d.id === draft.id);
+      const next =
+        stillPending.find((d) => drafts.indexOf(d) > currentIdx) ??
+        stillPending[stillPending.length - 1];
+      setFocusedId(next?.id ?? null);
+    }
   };
 
   const bulkApplyScope = async (scope: 'midsem' | 'final' | 'both') => {
@@ -756,10 +776,135 @@ export function DraftReviewTable({
               onChange={updateDraft}
               onSave={() => saveDraft(d)}
               onReject={() => rejectDraft(d)}
+              onExpand={d.status === 'pending' ? () => setFocusedId(d.id) : undefined}
             />
           ))}
         </div>
       )}
+
+      {focusedId && (
+        <DraftFocusModal
+          drafts={drafts}
+          focusedId={focusedId}
+          topics={topics}
+          jobId={jobId}
+          onChange={updateDraft}
+          onSave={saveDraft}
+          onReject={rejectDraft}
+          onClose={() => setFocusedId(null)}
+          onNavigate={setFocusedId}
+        />
+      )}
     </div>
   );
 }
+
+interface DraftFocusModalProps {
+  drafts: Draft[];
+  focusedId: string;
+  topics: Topic[];
+  jobId: string;
+  onChange: (next: Draft) => void;
+  onSave: (d: Draft) => Promise<void>;
+  onReject: (d: Draft) => Promise<void>;
+  onClose: () => void;
+  onNavigate: (id: string) => void;
+}
+
+const DraftFocusModal: React.FC<DraftFocusModalProps> = ({
+  drafts,
+  focusedId,
+  topics,
+  jobId,
+  onChange,
+  onSave,
+  onReject,
+  onClose,
+  onNavigate,
+}) => {
+  const pending = drafts.filter((d) => d.status === 'pending');
+  const idx = pending.findIndex((d) => d.id === focusedId);
+  const current = drafts.find((d) => d.id === focusedId);
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < pending.length - 1;
+
+  const goPrev = () => {
+    if (hasPrev) onNavigate(pending[idx - 1].id);
+  };
+  const goNext = () => {
+    if (hasNext) onNavigate(pending[idx + 1].id);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if (e.key === 'ArrowLeft') {
+        if (hasPrev) onNavigate(pending[idx - 1].id);
+      } else if (e.key === 'ArrowRight') {
+        if (hasNext) onNavigate(pending[idx + 1].id);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasPrev, hasNext, idx, pending, onClose, onNavigate]);
+
+  if (!current) {
+    return null;
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-surface-dim/95 backdrop-blur-md flex flex-col">
+      <header className="h-16 flex items-center justify-between px-6 border-b border-border-subtle shrink-0 bg-surface-container-low/80">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Back to list
+        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={goPrev}
+            disabled={!hasPrev}
+            className="flex items-center gap-1 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken disabled:opacity-30"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            Prev
+          </button>
+          <span className="text-xs font-bold uppercase tracking-wider text-text-secondary">
+            {idx >= 0 ? `Draft ${idx + 1} of ${pending.length}` : '—'}
+          </span>
+          <button
+            onClick={goNext}
+            disabled={!hasNext}
+            className="flex items-center gap-1 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken disabled:opacity-30"
+          >
+            Next
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <button
+          onClick={onClose}
+          className="p-2 text-text-secondary hover:text-text-primary"
+          title="Close (Esc)"
+        >
+          <X className="w-5 h-5" />
+        </button>
+      </header>
+      <main className="flex-1 overflow-y-auto px-6 py-6">
+        <div className="max-w-4xl mx-auto">
+          <DraftRow
+            key={current.id}
+            draft={current}
+            topics={topics}
+            jobId={jobId}
+            onChange={onChange}
+            onSave={() => onSave(current)}
+            onReject={() => onReject(current)}
+          />
+        </div>
+      </main>
+    </div>
+  );
+};

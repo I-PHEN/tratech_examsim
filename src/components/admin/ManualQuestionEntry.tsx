@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, ImageUp, X, Sparkles, Eye, EyeOff } from 'lucide-react';
-import { apiGet, apiPost, apiUpload } from '../../lib/apiClient';
+import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { RichText } from '../ui/RichText';
 import { CourseSelect } from './CourseSelect';
@@ -31,6 +31,34 @@ interface PendingImage {
   remoteId?: string;
 }
 
+interface AttachedAsset {
+  id: string;
+  url: string;
+  mime_type: string;
+  position: number;
+  kind?: 'prompt' | 'solution';
+}
+
+interface LoadedQuestion {
+  id: string;
+  program_course_id: string;
+  topic_id: string;
+  type: QType;
+  difficulty: Difficulty;
+  exam_scope: ExamScope;
+  answer_type: AnswerType | null;
+  content: {
+    prompt: string;
+    explanation: string | null;
+    correct_answer: string;
+    answer_tolerance: number | null;
+    unit: string | null;
+    source_reference?: string | null;
+  };
+  options?: Array<{ id: string; text: string; is_correct: boolean }>;
+  assets: AttachedAsset[];
+}
+
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
 const EXAM_SCOPES: ExamScope[] = ['midsem', 'final', 'both'];
 
@@ -38,7 +66,21 @@ function emptyOption() {
   return { text: '', is_correct: false };
 }
 
-export function ManualQuestionEntry() {
+export interface ManualQuestionEntryProps {
+  editing?: { id: string } | null;
+  courseLabel?: string;
+  topicLabel?: string;
+  onDone?: () => void;
+  onCancel?: () => void;
+}
+
+export function ManualQuestionEntry({
+  editing = null,
+  courseLabel,
+  topicLabel,
+  onDone,
+  onCancel,
+}: ManualQuestionEntryProps = {}) {
   const [type, setType] = useState<QType>('mcq');
   const [programCourseId, setProgramCourseId] = useState('');
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -95,13 +137,60 @@ export function ManualQuestionEntry() {
   const [unit, setUnit] = useState('');
 
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const [attachedDiagrams, setAttachedDiagrams] = useState<AttachedAsset[]>([]);
+  const [attachedSolution, setAttachedSolution] = useState<AttachedAsset | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
-  const [statusText, setStatusText] = useState('Save Question');
+  const [statusText, setStatusText] = useState(editing ? 'Save changes' : 'Save Question');
   const [msg, setMsg] = useState<{ text: string; type: 'ok' | 'err' } | null>(null);
 
+  const [loading, setLoading] = useState(Boolean(editing));
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => {
-    setTopicId('');
+    if (!editing) return;
+    let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
+    apiGet<LoadedQuestion>(`/api/questions/${editing.id}`)
+      .then((q) => {
+        if (cancelled) return;
+        setType(q.type);
+        setProgramCourseId(q.program_course_id);
+        setTopicId(q.topic_id);
+        setDifficulty(q.difficulty);
+        setExamScope(q.exam_scope);
+        setPrompt(q.content.prompt ?? '');
+        setExplanation(q.content.explanation ?? '');
+        setSourceReference(q.content.source_reference ?? '');
+        if (q.type === 'mcq' && q.options) {
+          setOptions(q.options.map((o) => ({ text: o.text, is_correct: o.is_correct })));
+        } else {
+          setCorrectAnswer(q.content.correct_answer ?? '');
+          setAnswerType(q.answer_type ?? 'exact');
+          setAnswerTolerance(
+            q.content.answer_tolerance != null ? String(q.content.answer_tolerance) : ''
+          );
+          setUnit(q.content.unit ?? '');
+        }
+        const diagrams = (q.assets ?? []).filter((a) => a.kind !== 'solution');
+        const sol = (q.assets ?? []).find((a) => a.kind === 'solution') ?? null;
+        setAttachedDiagrams(diagrams);
+        setAttachedSolution(sol);
+      })
+      .catch((e) => {
+        if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [editing]);
+
+  useEffect(() => {
+    if (!editing) setTopicId('');
     setAddingTopic(false);
     setNewTopicName('');
     setTopicError(null);
@@ -114,7 +203,7 @@ export function ManualQuestionEntry() {
       .then(setTopics)
       .catch(console.error)
       .finally(() => setTopicsLoading(false));
-  }, [programCourseId]);
+  }, [programCourseId, editing]);
 
   const createTopic = async () => {
     const name = newTopicName.trim();
@@ -209,6 +298,24 @@ export function ManualQuestionEntry() {
     });
   };
 
+  const removeAttachedAsset = async (assetId: string, kind: 'prompt' | 'solution') => {
+    if (!editing) return;
+    if (!confirm('Remove this image? This cannot be undone.')) return;
+    try {
+      await apiDelete(`/api/questions/${editing.id}/assets/${assetId}`);
+      if (kind === 'solution') {
+        setAttachedSolution(null);
+      } else {
+        setAttachedDiagrams((prev) => prev.filter((a) => a.id !== assetId));
+      }
+    } catch (e) {
+      setMsg({
+        text: `Failed to remove image: ${e instanceof Error ? e.message : String(e)}`,
+        type: 'err',
+      });
+    }
+  };
+
   const validateBeforeSubmit = (): string | null => {
     if (!programCourseId) return 'Pick a course.';
     if (!topicId) return 'Pick a topic.';
@@ -238,20 +345,16 @@ export function ManualQuestionEntry() {
     }
     setSubmitting(true);
     setMsg(null);
-    setStatusText('Saving question…');
+    setStatusText(editing ? 'Saving changes…' : 'Saving question…');
 
     try {
-      const basePayload = {
-        program_course_id: programCourseId,
-        topic_id: topicId,
-        difficulty,
-        exam_scope: examScope,
-      };
-
-      const payload =
+      const createPayload =
         type === 'mcq'
           ? {
-              ...basePayload,
+              program_course_id: programCourseId,
+              topic_id: topicId,
+              difficulty,
+              exam_scope: examScope,
               type: 'mcq' as const,
               content: {
                 prompt: prompt.trim(),
@@ -261,7 +364,10 @@ export function ManualQuestionEntry() {
               options: options.map((o) => ({ text: o.text.trim(), is_correct: o.is_correct })),
             }
           : {
-              ...basePayload,
+              program_course_id: programCourseId,
+              topic_id: topicId,
+              difficulty,
+              exam_scope: examScope,
               type: 'calc' as const,
               answer_type: answerType,
               content: {
@@ -274,7 +380,15 @@ export function ManualQuestionEntry() {
               },
             };
 
-      const created = await apiPost<{ id: string }>('/api/questions', payload);
+      let targetId: string;
+      if (editing) {
+        const { program_course_id: _omit, ...rest } = createPayload;
+        await apiPatch(`/api/questions/${editing.id}`, rest);
+        targetId = editing.id;
+      } else {
+        const created = await apiPost<{ id: string }>('/api/questions', createPayload);
+        targetId = created.id;
+      }
 
       let solutionImageError: string | null = null;
       if (solutionImage) {
@@ -283,7 +397,7 @@ export function ManualQuestionEntry() {
           const sfd = new FormData();
           sfd.append('file', solutionImage);
           sfd.append('kind', 'solution');
-          await apiUpload<CreatedAsset>(`/api/questions/${created.id}/assets`, sfd);
+          await apiUpload<CreatedAsset>(`/api/questions/${targetId}/assets`, sfd);
         } catch (e) {
           solutionImageError = e instanceof Error ? e.message : String(e);
         }
@@ -303,7 +417,7 @@ export function ManualQuestionEntry() {
           const fd = new FormData();
           fd.append('file', img.file);
           const asset = await apiUpload<CreatedAsset>(
-            `/api/questions/${created.id}/assets`,
+            `/api/questions/${targetId}/assets`,
             fd
           );
           uploadedRemoteIds.push(asset.id);
@@ -325,48 +439,100 @@ export function ManualQuestionEntry() {
         }
       }
 
+      const verb = editing ? 'updated' : 'published';
       if (imageError) {
         setMsg({
-          text: `Question saved (${uploadedRemoteIds.length}/${total} diagrams uploaded). Last error: ${imageError}. Remove or retry the failing diagram.`,
+          text: `Question ${verb} (${uploadedRemoteIds.length}/${total} diagrams uploaded). Last error: ${imageError}. Remove or retry the failing diagram.`,
           type: 'err',
         });
       } else if (solutionImageError) {
         setMsg({
-          text: `Question published, but the solution image failed to attach: ${solutionImageError}`,
+          text: `Question ${verb}, but the solution image failed to attach: ${solutionImageError}`,
           type: 'err',
         });
       } else {
         setMsg({
           text:
             total > 0
-              ? `Question published with ${total} diagram${total === 1 ? '' : 's'}.`
-              : 'Question published.',
+              ? `Question ${verb} with ${total} new diagram${total === 1 ? '' : 's'}.`
+              : `Question ${verb}.`,
           type: 'ok',
         });
-        resetForm();
+        if (!editing) {
+          resetForm();
+        } else {
+          pendingImages.forEach((p) => URL.revokeObjectURL(p.previewUrl));
+          setPendingImages([]);
+          setSolutionImage(null);
+          onDone?.();
+        }
       }
     } catch (err) {
       setMsg({ text: err instanceof Error ? err.message : String(err), type: 'err' });
     } finally {
       setSubmitting(false);
-      setStatusText('Save Question');
+      setStatusText(editing ? 'Save changes' : 'Save Question');
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[200px] text-text-secondary">
+        <Loader2 className="w-6 h-6 animate-spin" />
+      </div>
+    );
+  }
+  if (loadError) {
+    return (
+      <div className="bg-red-500/10 border border-red-500/30 text-red-500 rounded-2xl px-4 py-3 text-sm">
+        Failed to load question: {loadError}
+        {onCancel && (
+          <button onClick={onCancel} className="ml-3 underline font-bold">
+            Back
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 animate-in fade-in duration-200">
       <div className="lg:col-span-2 bg-surface-container-low border border-border-subtle rounded-2xl p-5 flex flex-col gap-4">
+        {editing && (
+          <div className="flex items-center justify-between bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2">
+            <div className="text-xs text-text-secondary">
+              Editing question
+              {(courseLabel || topicLabel) && (
+                <span className="text-text-primary font-bold">
+                  {' '}
+                  in {courseLabel ?? '—'} / {topicLabel ?? '—'}
+                </span>
+              )}
+            </div>
+            {onCancel && (
+              <button
+                onClick={onCancel}
+                className="text-xs font-bold text-text-secondary hover:text-text-primary"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
         <div className="flex gap-2">
           {(['mcq', 'calc'] as QType[]).map((t) => (
             <button
               key={t}
-              onClick={() => setType(t)}
+              onClick={() => !editing && setType(t)}
+              disabled={Boolean(editing) && type !== t}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all',
                 type === t
                   ? 'bg-bg-raised text-primary border border-primary/20'
-                  : 'bg-surface-container-low text-text-secondary border border-border-subtle hover:bg-bg-raised'
+                  : 'bg-surface-container-low text-text-secondary border border-border-subtle hover:bg-bg-raised',
+                editing && 'disabled:opacity-30 disabled:cursor-not-allowed'
               )}
+              title={editing ? 'Type cannot be changed after publish' : undefined}
             >
               {t === 'mcq' ? <ListChecks className="w-3.5 h-3.5" /> : <Calculator className="w-3.5 h-3.5" />}
               {t === 'mcq' ? 'Multiple Choice' : 'Calculation'}
@@ -641,6 +807,26 @@ export function ManualQuestionEntry() {
             <p className="text-[10px] text-text-secondary mt-1">
               OCR fills the explanation above; the single answer stays the marking input.
             </p>
+            {attachedSolution && (
+              <div className="mt-2 flex items-center gap-2 bg-bg-sunken border border-border-subtle rounded-lg p-2">
+                <img
+                  src={attachedSolution.url}
+                  alt="attached solution"
+                  className="w-12 h-12 object-cover rounded"
+                />
+                <span className="text-[10px] text-text-secondary flex-1 truncate">
+                  Existing solution image attached
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachedAsset(attachedSolution.id, 'solution')}
+                  className="p-1.5 text-text-secondary hover:text-red-500"
+                  title="Remove attached solution image"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
@@ -663,13 +849,36 @@ export function ManualQuestionEntry() {
               />
             </label>
           </div>
-          {pendingImages.length === 0 ? (
+          {pendingImages.length === 0 && attachedDiagrams.length === 0 ? (
             <div className="bg-bg-sunken border border-dashed border-border-subtle rounded-xl px-4 py-6 text-center text-xs text-text-secondary flex flex-col items-center gap-1.5">
               <ImageIcon className="w-5 h-5" />
               No diagrams attached. Use “Add image” for figures students need to see.
             </div>
           ) : (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+              {attachedDiagrams.map((a) => (
+                <div
+                  key={a.id}
+                  className="relative group rounded-lg overflow-hidden border border-border-subtle bg-bg-sunken"
+                >
+                  <img
+                    src={a.url}
+                    alt="attached diagram"
+                    className="w-full h-28 object-cover"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-bold uppercase tracking-wider bg-tertiary/80 text-on-primary">
+                    Attached
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeAttachedAsset(a.id, 'prompt')}
+                    className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Remove attached image"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              ))}
               {pendingImages.map((img) => (
                 <div
                   key={img.localId}
@@ -732,12 +941,27 @@ export function ManualQuestionEntry() {
       </div>
 
       <div className="space-y-4">
-        <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">
-          <h4 className="font-bold uppercase tracking-widest text-xs text-text-primary mb-3">
-            Target Course
-          </h4>
-          <CourseSelect value={programCourseId} onChange={setProgramCourseId} compact />
-        </div>
+        {!editing && (
+          <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">
+            <h4 className="font-bold uppercase tracking-widest text-xs text-text-primary mb-3">
+              Target Course
+            </h4>
+            <CourseSelect value={programCourseId} onChange={setProgramCourseId} compact />
+          </div>
+        )}
+        {editing && (
+          <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">
+            <h4 className="font-bold uppercase tracking-widest text-xs text-text-primary mb-2">
+              Course
+            </h4>
+            <div className="bg-bg-sunken border border-border-subtle rounded-lg px-2.5 py-2 text-sm text-text-primary">
+              {courseLabel ?? 'Locked — change requires delete + recreate'}
+            </div>
+            <p className="text-[10px] text-text-tertiary mt-2 leading-snug">
+              A question cannot be moved across courses. Delete and recreate it if needed.
+            </p>
+          </div>
+        )}
 
         <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">
           <div className="flex items-center justify-between mb-3">

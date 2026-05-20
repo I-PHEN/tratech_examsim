@@ -40,20 +40,37 @@ const CalcCreate = z.object({
 export const QuestionCreate = z.discriminatedUnion('type', [McqCreate, CalcCreate]);
 export type QuestionCreateInput = z.infer<typeof QuestionCreate>;
 
-export const QuestionUpdate = z.object({
-  difficulty: Difficulty.optional(),
-  exam_scope: ExamScope.optional(),
-  content: z
-    .object({
-      prompt: z.string().min(1).optional(),
-      explanation: z.string().optional(),
-      correct_answer: z.string().min(1).optional(),
-      answer_tolerance: z.number().positive().optional(),
-      unit: z.string().optional(),
-      source_reference: z.string().max(500).optional(),
-    })
-    .optional(),
+const McqUpdate = z.object({
+  topic_id: uuid,
+  type: z.literal('mcq'),
+  difficulty: Difficulty,
+  exam_scope: ExamScope,
+  content: z.object({
+    prompt: z.string().min(1),
+    explanation: z.string().optional(),
+    source_reference: z.string().max(500).optional(),
+  }),
+  options: z.array(McqOption).min(2).max(6),
 });
+
+const CalcUpdate = z.object({
+  topic_id: uuid,
+  type: z.literal('calc'),
+  difficulty: Difficulty,
+  exam_scope: ExamScope,
+  answer_type: AnswerType,
+  content: z.object({
+    prompt: z.string().min(1),
+    explanation: z.string().optional(),
+    correct_answer: z.string().min(1),
+    answer_tolerance: z.number().positive().optional(),
+    unit: z.string().optional(),
+    source_reference: z.string().max(500).optional(),
+  }),
+});
+
+export const QuestionUpdate = z.discriminatedUnion('type', [McqUpdate, CalcUpdate]);
+export type QuestionUpdateInput = z.infer<typeof QuestionUpdate>;
 
 export const QuestionListQuery = z.object({
   program_course_id: uuid.optional(),

@@ -4,7 +4,7 @@ import { ApiError, asyncHandler } from '../lib/errors';
 import { requireAdmin } from '../lib/auth';
 import { parse } from '../lib/validate';
 import { IdParam } from '../schemas/common';
-import { QuestionCreate, QuestionListQuery } from '../schemas/question';
+import { QuestionCreate, QuestionListQuery, QuestionUpdate } from '../schemas/question';
 import {
   addQuestionAsset,
   createQuestion,
@@ -12,6 +12,7 @@ import {
   getQuestionById,
   listQuestions,
   removeQuestionAsset,
+  updateQuestion,
 } from '../services/questionService';
 import { ocrImage } from '../lib/mistralOcr';
 
@@ -47,6 +48,17 @@ router.post(
     const body = parse(QuestionCreate, req.body);
     const data = await createQuestion(body);
     res.status(201).json(data);
+  })
+);
+
+router.patch(
+  '/:id',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const body = parse(QuestionUpdate, req.body);
+    const data = await updateQuestion(id, body);
+    res.json(data);
   })
 );
 
