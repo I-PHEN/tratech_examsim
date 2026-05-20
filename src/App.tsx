@@ -819,6 +819,15 @@ export default function App() {
                  reviewSessionId: id,
                }));
              }}
+             onSessionDeleted={() => {
+               // Refresh Home's Recent Performance immediately so the deleted
+               // session can't reappear there. Analytics screens refetch on
+               // mount, so they pick up the change next time the user opens
+               // Performance.
+               apiGet<typeof recentSessions>('/api/sessions?limit=12')
+                 .then(setRecentSessions)
+                 .catch(() => setRecentSessions([]));
+             }}
           />
         ) : state.step === 'PERFORMANCE' ? (
           <PerformanceScreen

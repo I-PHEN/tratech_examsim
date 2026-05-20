@@ -46,7 +46,15 @@ function formatDate(iso: string): string {
   });
 }
 
-export function MySessionsScreen({ onBack, onReview }: { onBack: () => void; onReview: (id: string) => void }) {
+export function MySessionsScreen({
+  onBack,
+  onReview,
+  onSessionDeleted,
+}: {
+  onBack: () => void;
+  onReview: (id: string) => void;
+  onSessionDeleted?: () => void;
+}) {
   const [filterMode, setFilterMode] = useState<StudyMode | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -60,12 +68,28 @@ export function MySessionsScreen({ onBack, onReview }: { onBack: () => void; onR
 
   const confirmDelete = async () => {
     if (!pendingDelete) return;
+    const targetId = pendingDelete.id;
     setDeleting(true);
     setDeleteError(null);
     try {
-      await apiDelete(`/api/sessions/${pendingDelete.id}`);
-      setSessions((prev) => prev.filter((s) => s.id !== pendingDelete.id));
+      await apiDelete(`/api/sessions/${targetId}`);
+      // Trust the server: refetch the list so what we display is what the DB
+      // actually has, not an optimistic filter that could lie if anything
+      // upstream silently dropped the request.
+      const fresh = await apiGet<ApiSession[]>('/api/sessions?limit=50');
+      const stillThere = fresh.some((s) => s.id === targetId);
+      if (stillThere) {
+        setDeleteError(
+          'The server accepted the delete but the session is still in the database. Please reload the app (Ctrl+Shift+R) — your browser may be using a cached version.'
+        );
+        setSessions(fresh);
+        return;
+      }
+      setSessions(fresh);
       setPendingDelete(null);
+      // Tell the rest of the app to refresh its copies (Home recent
+      // performance, analytics dashboards, etc.).
+      onSessionDeleted?.();
     } catch (e) {
       setDeleteError(e instanceof Error ? e.message : String(e));
     } finally {
