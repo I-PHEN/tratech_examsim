@@ -945,6 +945,15 @@ export default function App() {
                         }>(`/api/sessions/${pending.id}/resume`);
 
                         const questions = data.picked_questions.map((q, i) => apiQuestionToFrontend(q, i));
+                        if (questions.length === 0) {
+                          // Legacy row from before we persisted question_ids; nothing
+                          // to rehydrate. Surface the situation instead of dropping
+                          // the user into a blank exam screen.
+                          setResumeError(
+                            "This session can't be resumed (missing question data). Discard it to start a fresh session."
+                          );
+                          return;
+                        }
                         const prefilledAnswers: Record<number, string> = {};
                         for (const a of data.answered) {
                           const q = data.picked_questions[a.position];
@@ -978,6 +987,20 @@ export default function App() {
                       }
                     };
 
+                    const onDiscard = async () => {
+                      setResumingId(pending.id);
+                      setResumeError(null);
+                      try {
+                        await apiDelete(`/api/sessions/${pending.id}`);
+                        const rows = await apiGet<typeof recentSessions>('/api/sessions?limit=12');
+                        setRecentSessions(rows);
+                      } catch (e) {
+                        setResumeError(e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setResumingId(null);
+                      }
+                    };
+
                     return (
                       <Card
                         variant="default"
@@ -1001,6 +1024,15 @@ export default function App() {
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={onDiscard}
+                            disabled={resumingId === pending.id}
+                            title="Discard this session"
+                          >
+                            Discard
+                          </Button>
                           <Button
                             variant="primary"
                             size="sm"
@@ -2495,6 +2527,28 @@ function ExamSimulation({
     </div>
   );
 
+  // Guard: a resumed session with empty `question_ids` would otherwise crash
+  // on `currentQuestion.prompt` below. Surface a clean exit instead.
+  if (totalQuestions === 0 || !currentQuestion) {
+    return (
+      <div className="flex flex-col h-full flex-1 bg-bg-page text-text-primary font-sans items-center justify-center p-8 text-center">
+        <div className="max-w-md space-y-4">
+          <AlertTriangle className="w-12 h-12 text-[color:var(--accent-danger)] mx-auto" />
+          <h2 className="text-2xl font-bold text-text-primary">This session can't be resumed</h2>
+          <p className="text-sm text-text-secondary">
+            We couldn't find the questions for this session. It was likely created in an older version of the app. Discard it and start a fresh session.
+          </p>
+          <div className="flex justify-center gap-3 pt-2">
+            <Button variant="ghost" onClick={onBack}>Back</Button>
+            <Button variant="primary" onClick={handleTerminate} disabled={sessionActionBusy === 'end'}>
+              {sessionActionBusy === 'end' ? 'Discarding…' : 'Discard session'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className="flex flex-col h-full flex-1 bg-bg-page text-text-primary font-sans overflow-hidden"
@@ -2679,9 +2733,10 @@ function ExamSimulation({
         </div>
       </header>
 
-      {/* Global Progress Bar */}
-      <div className="w-full bg-surface-container-high h-1.5 shrink-0">
-        <div 
+      {/* Global Progress Bar — small breathing room from the timer header on
+          desktop so it doesn't sit flush against the timer pill. */}
+      <div className="w-full bg-surface-container-high h-1.5 shrink-0 md:mt-3">
+        <div
           className="h-full bg-primary rounded-r-full transition-all duration-300 ease-out"
           style={{ width: `${(Object.keys(answers).length / totalQuestions) * 100}%` }}
         />
