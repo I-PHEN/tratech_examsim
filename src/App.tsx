@@ -2229,6 +2229,11 @@ function ExamSimulation({
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
   const [sessionActionBusy, setSessionActionBusy] = useState<'pause' | 'end' | null>(null);
+  // In-flight answer submissions: handleFinish must wait for these before
+  // posting /finish, otherwise the server may finalise the session while a
+  // late /answer is still in flight (which then 400s with SESSION_FINISHED and
+  // the answer is silently dropped — the "review shows nothing" bug).
+  const pendingAnswersRef = useRef<Set<Promise<unknown>>>(new Set());
 
   const totalQuestions = questions.length;
 
@@ -2344,6 +2349,12 @@ function ExamSimulation({
 
   const handleFinish = async () => {
     localStorage.removeItem(storageKey);
+    // Drain any pending /answer requests first — otherwise the server may
+    // accept /finish before the last answer reaches the DB, which then 400s
+    // with SESSION_FINISHED and leaves the review screen empty.
+    if (pendingAnswersRef.current.size > 0) {
+      await Promise.allSettled(Array.from(pendingAnswersRef.current));
+    }
     try {
       await apiPost(`/api/sessions/${sessionId}/finish`, {});
     } catch (e) {
@@ -2412,9 +2423,11 @@ function ExamSimulation({
     } else {
       payload.picked_text = answer;
     }
-    void apiPost(`/api/sessions/${sessionId}/answer`, payload).catch((e) =>
+    const p = apiPost(`/api/sessions/${sessionId}/answer`, payload).catch((e) =>
       console.error('answer submit failed', e)
     );
+    pendingAnswersRef.current.add(p);
+    p.finally(() => pendingAnswersRef.current.delete(p));
   };
 
   const toggleFlag = () => {
@@ -2687,9 +2700,9 @@ function ExamSimulation({
           )}
 
           <div className={cn(
-            "flex items-center gap-3 md:gap-6 px-3 md:px-6 py-1.5 md:py-2 border rounded-2xl backdrop-blur-md transition-[transform,opacity,box-shadow] duration-150 cursor-pointer select-none",
-            isUrgent 
-              ? "bg-danger-bg border-danger-border shadow-[0_0_20px_var(--danger-border)] animate-pulse" 
+            "h-8 md:h-10 flex items-center gap-3 md:gap-6 px-3 md:px-6 border rounded-2xl backdrop-blur-md transition-[transform,opacity,box-shadow] duration-150 cursor-pointer select-none",
+            isUrgent
+              ? "bg-danger-bg border-danger-border shadow-[0_0_20px_var(--danger-border)] animate-pulse"
               : "bg-bg-raised border-border-subtle hover:bg-bg-raised",
             !showTimer && "opacity-50 grayscale"
           )}
@@ -2733,9 +2746,8 @@ function ExamSimulation({
         </div>
       </header>
 
-      {/* Global Progress Bar — small breathing room from the timer header on
-          desktop so it doesn't sit flush against the timer pill. */}
-      <div className="w-full bg-surface-container-high h-1.5 shrink-0 md:mt-3">
+      {/* Global Progress Bar */}
+      <div className="w-full bg-surface-container-high h-1.5 shrink-0">
         <div
           className="h-full bg-primary rounded-r-full transition-all duration-300 ease-out"
           style={{ width: `${(Object.keys(answers).length / totalQuestions) * 100}%` }}
