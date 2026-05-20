@@ -38,6 +38,9 @@ export const JobListQuery = z.object({
     ])
     .optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
+  archived: z
+    .union([z.literal('true'), z.literal('false'), z.literal('all')])
+    .optional(),
 });
 
 export const ReviewedTextUpdate = z.object({

@@ -55,9 +55,10 @@ interface DraftRowProps {
   onSave: () => Promise<void>;
   onReject: () => Promise<void>;
   onExpand?: () => void;
+  focused?: boolean;
 }
 
-const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand }) => {
+const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, focused }) => {
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | null>(null);
@@ -215,14 +216,22 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           </button>
         </div>
         {preview.has('prompt') ? (
-          <div className="bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary min-h-[80px]">
+          <div
+            className={cn(
+              'bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary',
+              focused ? 'min-h-[420px]' : 'min-h-[80px]'
+            )}
+          >
             <RichText>{d.prompt}</RichText>
           </div>
         ) : (
           <textarea
             value={d.prompt}
             onChange={(e) => update({ prompt: e.target.value })}
-            className="w-full bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none min-h-[80px]"
+            className={cn(
+              'w-full bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none',
+              focused ? 'min-h-[420px]' : 'min-h-[80px]'
+            )}
           />
         )}
       </div>
@@ -396,14 +405,22 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           </div>
         </div>
         {preview.has('explanation') ? (
-          <div className="bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary min-h-[60px]">
+          <div
+            className={cn(
+              'bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary',
+              focused ? 'min-h-[260px]' : 'min-h-[60px]'
+            )}
+          >
             <RichText>{d.explanation ?? ''}</RichText>
           </div>
         ) : (
           <textarea
             value={d.explanation ?? ''}
             onChange={(e) => update({ explanation: e.target.value })}
-            className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary min-h-[60px]"
+            className={cn(
+              'w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary',
+              focused ? 'min-h-[260px]' : 'min-h-[60px]'
+            )}
           />
         )}
       </div>
@@ -893,7 +910,7 @@ const DraftFocusModal: React.FC<DraftFocusModalProps> = ({
         </button>
       </header>
       <main className="flex-1 overflow-y-auto px-6 py-6">
-        <div className="max-w-4xl mx-auto">
+        <div className="max-w-6xl mx-auto">
           <DraftRow
             key={current.id}
             draft={current}
@@ -902,6 +919,7 @@ const DraftFocusModal: React.FC<DraftFocusModalProps> = ({
             onChange={onChange}
             onSave={() => onSave(current)}
             onReject={() => onReject(current)}
+            focused
           />
         </div>
       </main>

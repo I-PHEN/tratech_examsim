@@ -49,9 +49,45 @@ router.get(
       .order('created_at', { ascending: false })
       .limit(limit);
     if (query.status) q = q.eq('status', query.status);
+    if (query.archived === 'true') q = q.not('archived_at', 'is', null);
+    else if (query.archived !== 'all') q = q.is('archived_at', null);
     const { data, error } = await q;
     if (error) throw error;
     res.json(data);
+  })
+);
+
+router.post(
+  '/jobs/:id/archive',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const { data, error } = await supabase
+      .from('ingestion_jobs')
+      .update({ archived_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('created_by_uid', req.user!.uid)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ApiError(404, 'NOT_FOUND', 'Job not found');
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/jobs/:id/unarchive',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const { data, error } = await supabase
+      .from('ingestion_jobs')
+      .update({ archived_at: null, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('created_by_uid', req.user!.uid)
+      .select('id')
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new ApiError(404, 'NOT_FOUND', 'Job not found');
+    res.json({ ok: true });
   })
 );
 
