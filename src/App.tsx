@@ -59,6 +59,7 @@ import {
   PauseCircle,
   StopCircle,
   Maximize2,
+  Minimize2,
   ArrowLeft
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
@@ -1746,7 +1747,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar relative">
-        <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
           {/* Layer 1: Results Summary */}
           <section className="bg-bg-surface border border-border-subtle rounded-2xl p-5 md:p-6 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 w-48 h-48 bg-accent/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
@@ -1802,7 +1803,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
           </div>
 
           {/* Layer 2: Question Review List */}
-          <div className="space-y-3 pb-20">
+          <div className="space-y-2 pb-20">
             {filteredQuestions.length === 0 ? (
               <div className="p-12 rounded-3xl bg-surface-container-low border border-dashed border-border-medium text-center text-sm text-text-secondary">
                 Nothing matches that filter.
@@ -1814,17 +1815,17 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                   <div
                     key={it.id}
                     className={cn(
-                      "bg-bg-surface border rounded-2xl overflow-hidden transition-colors",
+                      "bg-bg-surface border rounded-xl overflow-hidden transition-colors",
                       isOpen ? "border-border-medium" : "border-border-subtle hover:border-border-medium"
                     )}
                   >
-                    <div className="flex items-center gap-3 md:gap-4 p-4 md:p-5">
+                    <div className="flex items-center gap-3 p-3 md:p-3.5">
                       <button
                         onClick={() => setExpandedId(isOpen ? null : it.id)}
-                        className="flex items-center gap-3 md:gap-4 flex-1 min-w-0 text-left"
+                        className="flex items-center gap-3 flex-1 min-w-0 text-left"
                       >
-                        <span className="text-xs font-black text-text-tertiary shrink-0 w-7">Q{it.position + 1}</span>
-                        <p className={cn("text-sm font-medium text-text-primary flex-1 min-w-0", !isOpen && "truncate")}>
+                        <span className="text-xs font-black text-text-tertiary shrink-0 w-6">Q{it.position + 1}</span>
+                        <p className="text-sm font-medium text-text-primary flex-1 min-w-0 truncate">
                           {it.prompt}
                         </p>
                         <div className={cn(
@@ -1845,9 +1846,9 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                       </button>
                     </div>
                     {isOpen && (
-                      <div className="border-t border-border-subtle p-4 md:p-5">
+                      <div className="border-t border-border-subtle p-3.5 md:p-4">
                         <ReviewQuestionDetail it={it} />
-                        <div className="mt-4 flex flex-wrap gap-2">
+                        <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             onClick={() => setFocusedId(it.id)}
                             className="flex items-center gap-2 px-4 py-2 bg-bg-raised border border-border-subtle text-text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-bg-sunken transition-colors"
@@ -1920,8 +1921,8 @@ function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
       : it.pickedText;
 
   return (
-    <div className="space-y-4">
-      <RichText className="text-base md:text-lg text-text-primary leading-relaxed font-medium">
+    <div className="space-y-3">
+      <RichText className="text-sm text-text-primary leading-relaxed font-medium">
         {it.prompt}
       </RichText>
 
@@ -2125,6 +2126,7 @@ function JudePanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const [inputValue, setInputValue] = useState("");
+  const [mode, setMode] = useState<'sidebar' | 'full'>('sidebar');
   const scrollRef = useRef<HTMLDivElement>(null);
   const aliveRef = useRef(true);
 
@@ -2164,7 +2166,8 @@ Stay strictly on THIS question — politely decline unrelated requests.
 # Formatting (the chat renders rich Markdown — use it well)
 - Use ## / ### headings, **bold** for key terms, and bullet / numbered lists.
 - Use GitHub-flavoured tables for comparisons.
-- Use LaTeX for ALL math: $...$ inline, $$...$$ for display. Put each calculation step on its own line.
+- Use LaTeX for ALL math. Delimiters MUST be dollar signs: $...$ inline, $$...$$ for display.
+  NEVER use \\( \\) or \\[ \\] — those do not render. Put each calculation step on its own line.
 - When a diagram genuinely helps (a process, cycle, decision tree, relationship), emit a
   \`\`\`mermaid fenced block. Keep the syntax simple (flowchart TD or graph LR).
 - For a multi-step worked solution, wrap EACH step in its own fenced block so the student can
@@ -2260,18 +2263,41 @@ Stay strictly on THIS question — politely decline unrelated requests.
   const conversationStarted = messages.length > 0 || isStreaming;
 
   return (
-    <div className="fixed inset-0 z-[120] bg-bg-page flex flex-col">
+    <>
+      {mode === 'sidebar' && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 z-[119] bg-bg-page/40 backdrop-blur-sm"
+        />
+      )}
+      <div
+        className={cn(
+          'z-[120] bg-bg-page flex flex-col',
+          mode === 'full'
+            ? 'fixed inset-0'
+            : 'fixed top-0 right-0 bottom-0 w-full md:w-[480px] border-l border-border-subtle shadow-2xl'
+        )}
+      >
       {/* Minimal top bar */}
       <header className="shrink-0 flex items-center justify-between gap-4 px-4 md:px-6 py-3">
         <span className="text-sm font-black text-text-primary tracking-tight">Jude</span>
-        <button onClick={onClose} className="p-2 -mr-2 text-text-tertiary hover:text-text-primary transition-colors" title="Close (Esc)">
-          <X className="w-5 h-5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setMode((m) => (m === 'full' ? 'sidebar' : 'full'))}
+            className="p-2 text-text-tertiary hover:text-text-primary transition-colors"
+            title={mode === 'full' ? 'Collapse to sidebar' : 'Expand to full screen'}
+          >
+            {mode === 'full' ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
+          <button onClick={onClose} className="p-2 -mr-2 text-text-tertiary hover:text-text-primary transition-colors" title="Close (Esc)">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
       </header>
 
       {/* Conversation */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 scroll-smooth">
-        <div className="max-w-4xl mx-auto pb-10 space-y-7">
+        <div className="max-w-4xl mx-auto pb-10 space-y-5">
           {/* The question, presented as the opening user message */}
           <div className="flex flex-col items-end">
             <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest mb-1 mr-1">Question</span>
@@ -2304,7 +2330,7 @@ Stay strictly on THIS question — politely decline unrelated requests.
             ) : (
               <div key={i} className="space-y-1.5">
                 <span className="text-[9px] font-black text-accent-text uppercase tracking-widest">Jude</span>
-                <RichText className="text-[15px] text-text-primary leading-relaxed">{m.content}</RichText>
+                <RichText className="text-sm text-text-primary leading-relaxed">{m.content}</RichText>
               </div>
             )
           )}
@@ -2314,7 +2340,7 @@ Stay strictly on THIS question — politely decline unrelated requests.
               <span className="text-[9px] font-black text-accent-text uppercase tracking-widest">Jude</span>
               {streamedText ? (
                 <div>
-                  <RichText streaming className="text-[15px] text-text-primary leading-relaxed">{streamedText}</RichText>
+                  <RichText streaming className="text-sm text-text-primary leading-relaxed">{streamedText}</RichText>
                   <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 align-middle animate-pulse" />
                 </div>
               ) : (
@@ -2365,7 +2391,8 @@ Stay strictly on THIS question — politely decline unrelated requests.
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </>
   );
 }
 

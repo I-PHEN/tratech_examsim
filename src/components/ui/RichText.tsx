@@ -14,6 +14,18 @@ const CUSTOM_LANGS = /language-(mermaid|jude-step|jude-tabs)/;
 const MAX_BLOCK_DEPTH = 2;
 
 /**
+ * LLMs frequently emit math with the bracket delimiters `\( … \)` / `\[ … \]`
+ * instead of the `$ … $` / `$$ … $$` form `remark-math` understands — the
+ * bracket form then renders as literal text. Normalise it to dollar delimiters
+ * so math always renders. Function replacers avoid `$`-escaping in `replace`.
+ */
+function normalizeMath(text: string): string {
+  return text
+    .replace(/\\\[([\s\S]+?)\\\]/g, (_, inner) => `$$${inner}$$`)
+    .replace(/\\\(([\s\S]+?)\\\)/g, (_, inner) => `$${inner}$`);
+}
+
+/**
  * While a message is still streaming, the markdown buffer can end mid-token —
  * an unclosed ``` fence corrupts the rest of the document and a dangling $$
  * breaks math. Balance/strip those so the partial render stays clean; the real
@@ -135,7 +147,8 @@ export function RichText({
 }) {
   if (!children || !children.trim()) return null;
 
-  const source = streaming ? closeOpenBlocks(children) : children;
+  let source = normalizeMath(children);
+  if (streaming) source = closeOpenBlocks(source);
   const base = buildComponents(streaming, depth);
   const components: Components = inline
     ? { ...base, p: ({ children }) => <Fragment>{children}</Fragment> }
