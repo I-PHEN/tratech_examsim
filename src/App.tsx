@@ -3053,9 +3053,9 @@ function ExamSimulation({
                               />
                             </div>
                             {currentQuestion.unit && (
-                              <div className="flex-1 min-w-0 space-y-1.5">
+                              <div className="shrink-0 space-y-1.5">
                                 <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Expected Unit</label>
-                                <div className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-5 py-3 text-sm md:text-base font-bold text-text-primary flex items-center justify-center">
+                                <div className="min-w-[96px] bg-bg-sunken border border-border-subtle rounded-xl px-5 py-3 text-sm font-bold text-text-primary flex items-center justify-center whitespace-nowrap">
                                   <RichText inline>{currentQuestion.unit}</RichText>
                                 </div>
                               </div>
