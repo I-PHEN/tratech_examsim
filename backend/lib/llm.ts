@@ -134,6 +134,8 @@ export async function streamingFetch(opts: CompletionOptions): Promise<Response>
     model: opts.model || DEFAULT_MODEL,
     messages: opts.messages,
     stream: true,
+    // (prompt + max_tokens) must stay under Groq's on-demand TPM cap.
+    max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
   };
 
   const response = await fetch(GROQ_URL, {

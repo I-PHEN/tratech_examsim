@@ -1,100 +1,153 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
 import { cn } from '../../lib/utils';
+import { MermaidBlock } from './MermaidBlock';
+import { JudeStep, JudeTabs } from './JudeBlocks';
 
 const remarkPlugins = [remarkMath, remarkGfm];
 const rehypePlugins = [rehypeKatex];
 
-// Tailwind-styled element overrides so markdown matches the surrounding UI
-// instead of pulling in default browser styles.
-const blockComponents: Components = {
-  p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
-  ul: ({ children }) => <ul className="my-2 list-disc pl-5 space-y-1">{children}</ul>,
-  ol: ({ children }) => <ol className="my-2 list-decimal pl-5 space-y-1">{children}</ol>,
-  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-  strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-  em: ({ children }) => <em className="italic">{children}</em>,
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-primary underline">
-      {children}
-    </a>
-  ),
-  img: ({ src, alt }) => {
-    const ok =
-      typeof src === 'string' && /^(https?:|data:image\/)/i.test(src);
-    if (!ok) {
-      // Unresolved OCR placeholder (e.g. ![](img-0.jpeg)) — never show a
-      // broken image; published questions attach the real diagram as an asset.
-      return (
-        <span className="inline-flex items-center gap-1 text-xs text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5 align-middle">
-          🖼 diagram{alt ? ` — ${alt}` : ''}
-        </span>
-      );
-    }
-    return (
-      <img
-        src={src}
-        alt={alt ?? ''}
-        loading="lazy"
-        className="my-2 max-h-80 rounded-xl border border-border-subtle"
-      />
-    );
-  },
-  code: ({ children }) => (
-    <code className="font-mono text-[0.9em] bg-bg-sunken border border-border-subtle rounded px-1 py-0.5">
-      {children}
-    </code>
-  ),
-  pre: ({ children }) => (
-    <pre className="my-2 overflow-x-auto bg-bg-sunken border border-border-subtle rounded-lg p-3 text-sm">
-      {children}
-    </pre>
-  ),
-  table: ({ children }) => (
-    <div className="my-2 overflow-x-auto">
-      <table className="w-full text-sm border-collapse">{children}</table>
-    </div>
-  ),
-  th: ({ children }) => (
-    <th className="border border-border-subtle px-2 py-1 text-left font-bold">{children}</th>
-  ),
-  td: ({ children }) => (
-    <td className="border border-border-subtle px-2 py-1">{children}</td>
-  ),
-};
-
-// Inline variant: unwrap the top-level paragraph so the content drops cleanly
-// into option chips, table cells, and inline answer slots.
-const inlineComponents: Components = {
-  ...blockComponents,
-  p: ({ children }) => <Fragment>{children}</Fragment>,
-};
+const CUSTOM_LANGS = /language-(mermaid|jude-step|jude-tabs)/;
+const MAX_BLOCK_DEPTH = 2;
 
 /**
- * Renders admin-curated Markdown + LaTeX (KaTeX) text. Raw HTML is intentionally
- * NOT enabled (no rehype-raw), so no extra sanitizer is needed.
+ * While a message is still streaming, the markdown buffer can end mid-token —
+ * an unclosed ``` fence corrupts the rest of the document and a dangling $$
+ * breaks math. Balance/strip those so the partial render stays clean; the real
+ * content snaps in as soon as the closing delimiter arrives.
+ */
+function closeOpenBlocks(text: string): string {
+  let out = text;
+  if (((out.match(/```/g) ?? []).length) % 2 === 1) out += '\n```';
+  if (((out.match(/\$\$/g) ?? []).length) % 2 === 1) {
+    out = out.slice(0, out.lastIndexOf('$$'));
+  }
+  return out;
+}
+
+function classOf(node: ReactNode): string {
+  const child = Array.isArray(node) ? node[0] : node;
+  if (child && typeof child === 'object' && 'props' in child) {
+    return String((child as { props?: { className?: string } }).props?.className ?? '');
+  }
+  return '';
+}
+
+// Tailwind-styled element overrides so markdown matches the surrounding UI
+// instead of pulling in default browser styles. `streaming`/`depth` drive the
+// custom fenced-block dispatch (mermaid + interactive Jude blocks).
+function buildComponents(streaming: boolean, depth: number): Components {
+  return {
+    p: ({ children }) => <p className="my-2 first:mt-0 last:mb-0">{children}</p>,
+    ul: ({ children }) => <ul className="my-2 list-disc pl-5 space-y-1">{children}</ul>,
+    ol: ({ children }) => <ol className="my-2 list-decimal pl-5 space-y-1">{children}</ol>,
+    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+    h1: ({ children }) => <h1 className="mt-3 mb-2 text-base font-black first:mt-0">{children}</h1>,
+    h2: ({ children }) => <h2 className="mt-3 mb-2 text-sm font-black uppercase tracking-wide first:mt-0">{children}</h2>,
+    h3: ({ children }) => <h3 className="mt-3 mb-1.5 text-sm font-bold first:mt-0">{children}</h3>,
+    strong: ({ children }) => <strong className="font-bold">{children}</strong>,
+    em: ({ children }) => <em className="italic">{children}</em>,
+    blockquote: ({ children }) => (
+      <blockquote className="my-2 border-l-2 border-border-medium pl-3 text-text-secondary">{children}</blockquote>
+    ),
+    a: ({ children, href }) => (
+      <a href={href} target="_blank" rel="noreferrer" className="text-primary underline">
+        {children}
+      </a>
+    ),
+    img: ({ src, alt }) => {
+      const ok = typeof src === 'string' && /^(https?:|data:image\/)/i.test(src);
+      if (!ok) {
+        // Unresolved OCR placeholder (e.g. ![](img-0.jpeg)) — never show a
+        // broken image; published questions attach the real diagram as an asset.
+        return (
+          <span className="inline-flex items-center gap-1 text-xs text-text-tertiary border border-border-subtle rounded px-1.5 py-0.5 align-middle">
+            🖼 diagram{alt ? ` — ${alt}` : ''}
+          </span>
+        );
+      }
+      return (
+        <img
+          src={src}
+          alt={alt ?? ''}
+          loading="lazy"
+          className="my-2 max-h-80 rounded-xl border border-border-subtle"
+        />
+      );
+    },
+    code: ({ className, children }) => {
+      const lang = /language-([\w-]+)/.exec(className ?? '')?.[1];
+      const raw = String(children ?? '');
+      if (lang && depth < MAX_BLOCK_DEPTH) {
+        if (lang === 'mermaid') return <MermaidBlock code={raw} streaming={streaming} />;
+        if (lang === 'jude-step') return <JudeStep raw={raw} depth={depth} />;
+        if (lang === 'jude-tabs') return <JudeTabs raw={raw} depth={depth} />;
+      }
+      return (
+        <code className="font-mono text-[0.9em] bg-bg-sunken border border-border-subtle rounded px-1 py-0.5">
+          {children}
+        </code>
+      );
+    },
+    pre: ({ children }) => {
+      // Custom blocks render themselves — strip the <pre> chrome around them.
+      if (CUSTOM_LANGS.test(classOf(children))) {
+        return <>{children}</>;
+      }
+      return (
+        <pre className="my-2 overflow-x-auto bg-bg-sunken border border-border-subtle rounded-lg p-3 text-sm">
+          {children}
+        </pre>
+      );
+    },
+    table: ({ children }) => (
+      <div className="my-2 overflow-x-auto">
+        <table className="w-full text-sm border-collapse">{children}</table>
+      </div>
+    ),
+    th: ({ children }) => (
+      <th className="border border-border-subtle px-2 py-1 text-left font-bold">{children}</th>
+    ),
+    td: ({ children }) => <td className="border border-border-subtle px-2 py-1">{children}</td>,
+  };
+}
+
+/**
+ * Renders Markdown + LaTeX (KaTeX). For the AI tutor it also renders ```mermaid
+ * diagrams and the interactive `jude-step` / `jude-tabs` blocks. Raw HTML is
+ * intentionally NOT enabled (no rehype-raw), so no extra sanitizer is needed.
  */
 export function RichText({
   children,
   className,
   inline = false,
+  streaming = false,
+  depth = 0,
 }: {
   children: string | null | undefined;
   className?: string;
   inline?: boolean;
+  streaming?: boolean;
+  depth?: number;
 }) {
   if (!children || !children.trim()) return null;
+
+  const source = streaming ? closeOpenBlocks(children) : children;
+  const base = buildComponents(streaming, depth);
+  const components: Components = inline
+    ? { ...base, p: ({ children }) => <Fragment>{children}</Fragment> }
+    : base;
 
   const md = (
     <ReactMarkdown
       remarkPlugins={remarkPlugins}
       rehypePlugins={rehypePlugins}
-      components={inline ? inlineComponents : blockComponents}
+      components={components}
     >
-      {children}
+      {source}
     </ReactMarkdown>
   );
 

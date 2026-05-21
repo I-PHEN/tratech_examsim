@@ -10,6 +10,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { auth, db } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
 import { RichText } from './components/ui/RichText';
+import { ThinkingDots } from './components/ui/JudeBlocks';
 import 'katex/dist/katex.min.css';
 import {
   Home, 
@@ -1838,23 +1839,34 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
         />
       )}
 
-      {judeIdx !== null && items[judeIdx] && (
-        <JudePanel
-          question={{
-            id: items[judeIdx].id,
-            type: items[judeIdx].type === 'mcq' ? 'MCQ' : 'INPUT',
-            prompt: items[judeIdx].prompt,
-            options: items[judeIdx].options.map((o) => o.text),
-            marks: 1,
-          }}
-          answer={
-            items[judeIdx].type === 'mcq'
-              ? items[judeIdx].options.find((o) => o.id === items[judeIdx].pickedOptionId)?.text ?? ''
-              : items[judeIdx].pickedText ?? ''
-          }
-          onClose={() => setJudeIdx(null)}
-        />
-      )}
+      {judeIdx !== null && items[judeIdx] && (() => {
+        const it = items[judeIdx];
+        const correctOpt = it.options.find((o) => o.is_correct);
+        return (
+          <JudePanel
+            question={{
+              id: it.id,
+              type: it.type === 'mcq' ? 'MCQ' : 'INPUT',
+              prompt: it.prompt,
+              options: it.options.map((o) => o.text),
+              optionIds: it.options.map((o) => o.id),
+              correctOptionId: correctOpt?.id,
+              correctAnswer: it.correctAnswer ?? undefined,
+              unit: it.unit ?? undefined,
+              marks: 1,
+              assets: it.assets,
+            }}
+            studentAnswer={
+              it.type === 'mcq'
+                ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? ''
+                : it.pickedText ?? ''
+            }
+            isCorrect={it.isCorrect}
+            isUnanswered={it.isUnanswered}
+            onClose={() => setJudeIdx(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
@@ -2050,66 +2062,93 @@ function ReviewFocusModal({
   );
 }
 
-function JudePanel({ question, answer, onClose }: { question: Question, answer: string, onClose: () => void }) {
+function JudePanel({
+  question,
+  studentAnswer,
+  isCorrect,
+  isUnanswered,
+  onClose,
+}: {
+  question: Question;
+  studentAnswer: string;
+  isCorrect: boolean | null;
+  isUnanswered: boolean;
+  onClose: () => void;
+}) {
   const { currentUser, userProfile } = useAuth();
   const [messages, setMessages] = useState<{ role: 'user' | 'jude', content: string }[]>([]);
-  const [isStreaming, setIsStreaming] = useState(true);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const [inputValue, setInputValue] = useState("");
+  const [questionOpen, setQuestionOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const aliveRef = useRef(true);
 
-  // Initial explanation
-  useEffect(() => {
-    let isMounted = true;
-    
-    async function startJude() {
-      const prompt = `System:
-You are Jude, an academic tutor built into an exam simulation app for university students.
-Your job is to explain exam answers clearly, honestly, and at a university level.
-Be direct. Do not use filler phrases like "Great question!" or "Certainly!".
-For calculation questions, show every step on a new line with the operation labelled.
-Keep the initial explanation under 200 words unless the question is a multi-step calculation.
-Respond in plain text. Use LaTeX notation for math (wrapped in $$ for display, $ for inline).
+  const studentName = userProfile?.preferredName || currentUser?.displayName || 'the student';
 
-Context:
-- Question: ${question.prompt}
-- Correct answer: ${question.type === 'MCQ' ? question.options![0] : '[Model Answer]'}
-- Student's answer: ${answer || "unanswered"}
-- Question type: ${question.type}
-${question.options ? `- All options: ${question.options.join(', ')}` : ''}
-
-Task:
-Explain why the correct answer is right. If the student answered incorrectly, explain
-specifically why their answer was wrong. End with one sentence connecting this to a
-broader concept or common exam trap.`;
-
-      try {
-        const stream = streamOpenRouter([{ role: 'user', content: prompt }]);
-
-        let fullText = "";
-        for await (const text of stream) {
-          if (!isMounted) break;
-          fullText += text;
-
-          for (let i = 0; i < text.length; i++) {
-            await new Promise(r => setTimeout(r, 15));
-            if (!isMounted) return;
-            setStreamedText(prev => prev + text[i]);
-          }
-        }
-
-        setIsStreaming(false);
-        setMessages([{ role: 'jude', content: fullText }]);
-      } catch (err) {
-        console.error(err);
-        setStreamedText("Calibration error. Please reset neural link.");
-        setIsStreaming(false);
-      }
+  // The real correct answer — derived from correctOptionId / correctAnswer,
+  // never option[0]. Sent to the AI for context only; never shown as a bare
+  // spoiler in the chat chrome.
+  const correctAnswerText = useMemo(() => {
+    if (question.type === 'MCQ') {
+      const i = question.optionIds?.indexOf(question.correctOptionId ?? '') ?? -1;
+      return i >= 0 ? question.options?.[i] ?? null : null;
     }
+    return question.correctAnswer
+      ? `${question.correctAnswer}${question.unit ? ` ${question.unit}` : ''}`
+      : null;
+  }, [question]);
 
-    startJude();
-    return () => { isMounted = false; };
-  }, [question, answer]);
+  const systemPrompt = useMemo(
+    () => `You are Jude, an academic tutor inside an exam-simulation app for university students.
+You are helping ${studentName} review ONE specific exam question they have already submitted an answer to.
+
+# Context (for your reasoning — do not blurt the correct answer as a bare spoiler before you explain it)
+- Question type: ${question.type === 'MCQ' ? 'Multiple choice' : 'Calculation / short answer'}
+- Question: ${question.prompt}
+- The correct answer: ${correctAnswerText ?? '(not available)'}
+- The student's submitted answer: ${studentAnswer || '(left blank)'}
+- Outcome: the student answered ${isUnanswered ? 'nothing' : isCorrect ? 'CORRECTLY' : 'INCORRECTLY'}.
+${question.options && question.options.length ? `- All options: ${question.options.join(' | ')}` : ''}
+
+# Your job
+Explain clearly, honestly, at university level. Be direct — skip filler like "Great question!".
+Always align your explanation with what the student actually submitted: if they were wrong,
+pinpoint the exact misconception; if right, confirm their reasoning and deepen it.
+Stay strictly on THIS question — politely decline unrelated requests.
+
+# Formatting (the chat renders rich Markdown — use it well)
+- Use ## / ### headings, **bold** for key terms, and bullet / numbered lists.
+- Use GitHub-flavoured tables for comparisons.
+- Use LaTeX for ALL math: $...$ inline, $$...$$ for display. Put each calculation step on its own line.
+- When a diagram genuinely helps (a process, cycle, decision tree, relationship), emit a
+  \`\`\`mermaid fenced block. Keep the syntax simple (flowchart TD or graph LR).
+- For a multi-step worked solution, wrap EACH step in its own fenced block so the student can
+  reveal steps one at a time:
+  \`\`\`jude-step
+  title: Step 1 — Identify what is given
+  ...markdown for this step...
+  \`\`\`
+- To compare two or more approaches side by side, use a tabs block:
+  \`\`\`jude-tabs
+  == Method A ==
+  ...markdown...
+  == Method B ==
+  ...markdown...
+  \`\`\`
+- Never output raw HTML. Only use the fenced block types described above.`,
+    [question, correctAnswerText, studentAnswer, isCorrect, isUnanswered, studentName]
+  );
+
+  const suggestedPrompts = useMemo(
+    () =>
+      isUnanswered || isCorrect === false
+        ? ['Why is my answer wrong?', 'Explain this question', 'Break it down step by step', 'Give me a similar practice question']
+        : ['Explain this question', 'Break it down step by step', 'What concept is being tested?', 'Give me a similar practice question'],
+    [isUnanswered, isCorrect]
+  );
+
+  useEffect(() => () => { aliveRef.current = false; }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -2117,138 +2156,204 @@ broader concept or common exam trap.`;
     }
   }, [streamedText, messages]);
 
-  const handleSend = async () => {
-    if (!inputValue.trim() || isStreaming) return;
-    
-    const userMsg = inputValue;
-    setInputValue("");
-    const newMessages = [...messages, { role: 'user' as const, content: userMsg }];
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  const handleSend = async (override?: string) => {
+    const text = (override ?? inputValue).trim();
+    if (!text || isStreaming) return;
+    if (!override) setInputValue("");
+
+    const newMessages = [...messages, { role: 'user' as const, content: text }];
     setMessages(newMessages);
     setIsStreaming(true);
     setStreamedText("");
 
     try {
-      const systemPrompt = `You are Jude, the AI tutor. Help the student (${userProfile?.preferredName || currentUser?.displayName || 'Student'}) with this specific question only. Be concise.`;
       const chatMessages: { role: 'user' | 'assistant' | 'system'; content: string }[] = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `I'm asking about this question: ${question.prompt}` },
-        ...messages.map((m: { role: string; content: string }) => ({
+        ...newMessages.map((m) => ({
           role: m.role === 'jude' ? ('assistant' as const) : ('user' as const),
           content: m.content,
         })),
-        { role: 'user', content: userMsg },
       ];
 
       const stream = streamOpenRouter(chatMessages);
-      let fullText = "";
-      for await (const text of stream) {
-        fullText += text;
-        for (let i = 0; i < text.length; i++) {
-          await new Promise(r => setTimeout(r, 10));
-          setStreamedText(prev => prev + text[i]);
+      let buffer = "";
+      let pending = false;
+      const flush = () => {
+        pending = false;
+        if (aliveRef.current) setStreamedText(buffer);
+      };
+      for await (const chunk of stream) {
+        buffer += chunk;
+        if (!pending) {
+          pending = true;
+          requestAnimationFrame(flush);
         }
       }
-      setMessages([...newMessages, { role: 'jude', content: fullText }]);
+      if (!aliveRef.current) return;
+      setMessages([...newMessages, { role: 'jude', content: buffer }]);
       setIsStreaming(false);
+      setStreamedText("");
     } catch (err) {
       console.error(err);
+      if (!aliveRef.current) return;
+      setMessages([...newMessages, { role: 'jude', content: 'Sorry — I hit an error reaching the tutor. Please try again.' }]);
       setIsStreaming(false);
+      setStreamedText("");
     }
   };
 
+  const conversationStarted = messages.length > 0 || isStreaming;
+
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        onClick={onClose}
-        className="fixed inset-0 bg-bg-page/40 backdrop-blur-sm z-[100]"
-      />
-      
-      {/* Panel */}
-      <aside
-        className="fixed top-0 right-0 h-full w-full md:w-[450px] bg-bg-surface border-l border-border-subtle shadow-[0_0_50px_rgba(0,0,0,0.3)] z-[110] flex flex-col"
-      >
-        {/* Header */}
-        <div className="h-20 border-b border-border-subtle bg-bg-surface/80 backdrop-blur-md px-6 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center">
-              <Sparkles className="w-6 h-6 text-accent fill-accent/10" />
-            </div>
-            <div className="flex flex-col">
-              <h3 className="text-sm font-black text-text-primary uppercase tracking-widest leading-none">Jude</h3>
-              <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest mt-1 italic opacity-60">Academic Tutor ✦ Simulation Mode</span>
-            </div>
+    <div className="fixed inset-0 z-[120] bg-bg-page flex flex-col">
+      {/* Top bar */}
+      <header className="shrink-0 border-b border-border-subtle bg-bg-surface px-4 md:px-8 py-3 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-accent" />
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-bg-raised/50 rounded-xl transition-[transform,opacity,box-shadow]">
-            <X className="w-5 h-5 text-text-tertiary" />
-          </button>
+          <div className="flex flex-col">
+            <h3 className="text-sm font-black text-text-primary uppercase tracking-widest leading-none">Jude</h3>
+            <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest mt-1">Academic Tutor</span>
+          </div>
         </div>
 
-        {/* Conversation Area */}
-        <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar p-6 space-y-8 scroll-smooth">
-          {/* Initial explanation as First message if streaming is done, or live text */}
-          {messages.length === 0 || (messages.length === 1 && isStreaming) ? (
-            <div className="space-y-4">
-               <div className="flex items-center gap-2 mb-4 shrink-0">
-                 <div className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                 <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Thought Stream Active</span>
-               </div>
-               <div className="text-sm text-text-primary leading-relaxed font-medium">
-                  <RichText>{streamedText}</RichText>
-                  {isStreaming && <span className="inline-block w-1.5 h-4 bg-accent ml-1 animate-pulse" />}
-               </div>
+        {/* Pinned question — top right on desktop */}
+        <div className="hidden md:block max-w-md ml-auto bg-bg-sunken border border-border-subtle rounded-2xl px-4 py-2.5">
+          <span className="text-[9px] font-black text-accent-text uppercase tracking-widest">
+            {question.type === 'MCQ' ? 'Multiple choice' : 'Calculation'}
+          </span>
+          <div className="text-sm text-text-primary leading-snug mt-0.5 line-clamp-2">
+            <RichText inline>{question.prompt}</RichText>
+          </div>
+        </div>
+
+        <button onClick={onClose} className="shrink-0 p-2 hover:bg-bg-raised rounded-xl transition-colors" title="Close (Esc)">
+          <X className="w-5 h-5 text-text-tertiary" />
+        </button>
+      </header>
+
+      {/* Mobile: collapsible question band */}
+      <button
+        onClick={() => setQuestionOpen((o) => !o)}
+        className="md:hidden shrink-0 border-b border-border-subtle bg-bg-sunken px-4 py-2 flex items-start gap-2 text-left"
+      >
+        <span className="text-[9px] font-black text-accent-text uppercase tracking-widest mt-0.5 shrink-0">Question</span>
+        <div className={cn('text-xs text-text-secondary leading-snug flex-1 min-w-0', !questionOpen && 'line-clamp-1')}>
+          <RichText inline>{question.prompt}</RichText>
+        </div>
+        <ChevronDown className={cn('w-3.5 h-3.5 text-text-tertiary shrink-0 mt-0.5 transition-transform', questionOpen && 'rotate-180')} />
+      </button>
+
+      {/* Conversation */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 md:px-0 scroll-smooth">
+        <div className="max-w-3xl mx-auto py-6 md:py-10 space-y-5">
+          {!conversationStarted ? (
+            <div className="space-y-6">
+              <div className="text-center space-y-2">
+                <div className="w-14 h-14 mx-auto bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center">
+                  <Sparkles className="w-7 h-7 text-accent" />
+                </div>
+                <p className="text-sm text-text-secondary">Ask me anything about this question.</p>
+              </div>
+              <div className="flex flex-wrap gap-2 justify-center">
+                {suggestedPrompts.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => handleSend(p)}
+                    className="px-4 py-2 rounded-full text-xs font-medium border border-border-subtle bg-bg-surface text-text-secondary hover:border-accent/40 hover:text-text-primary transition-colors"
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
-            <div className="space-y-6">
+            <>
               {messages.map((m, i) => (
-                <div key={i} className={cn("flex flex-col", m.role === 'user' ? "items-end" : "items-start")}>
-                   <div className={cn(
-                     "max-w-[90%] p-4 rounded-2xl text-sm leading-relaxed",
-                     m.role === 'user' 
-                      ? "bg-accent text-bg-page font-medium rounded-tr-none"
-                      : "bg-bg-raised border border-border-subtle text-text-primary rounded-tl-none"
-                   )}>
-                      {m.role === 'user' ? m.content : <RichText>{m.content}</RichText>}
-                   </div>
+                <div key={i} className={cn('flex flex-col', m.role === 'user' ? 'items-end' : 'items-start')}>
+                  <div
+                    className={cn(
+                      m.role === 'user'
+                        ? 'max-w-[85%] bg-accent text-bg-page font-medium rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm whitespace-pre-wrap'
+                        : 'w-full bg-bg-surface border border-border-subtle rounded-2xl px-4 md:px-5 py-4'
+                    )}
+                  >
+                    {m.role === 'user'
+                      ? m.content
+                      : <RichText className="text-sm text-text-primary leading-relaxed">{m.content}</RichText>}
+                  </div>
                 </div>
               ))}
               {isStreaming && (
-                <div className="flex flex-col items-start">
-                   <div className="max-w-[90%] p-4 bg-bg-raised border border-border-subtle text-text-primary rounded-2xl rounded-tl-none text-sm leading-relaxed">
-                      <RichText>{streamedText}</RichText>
-                      <span className="inline-block w-1.5 h-4 bg-accent ml-1 animate-pulse" />
-                   </div>
+                <div className="w-full bg-bg-surface border border-border-subtle rounded-2xl px-4 md:px-5 py-4">
+                  {streamedText ? (
+                    <RichText streaming className="text-sm text-text-primary leading-relaxed">{streamedText}</RichText>
+                  ) : (
+                    <ThinkingDots />
+                  )}
+                  {streamedText && (
+                    <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 align-middle animate-pulse" />
+                  )}
                 </div>
               )}
-            </div>
+            </>
           )}
         </div>
+      </div>
 
-        {/* Input Area */}
-        <div className="p-6 border-t border-border-subtle bg-bg-surface shrink-0">
-           <div className="relative group">
-              <input 
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-                onBlur={() => window.scrollTo(0, 0)}
-                placeholder="Ask a follow-up question..."
-                className="w-full bg-bg-raised border border-border-subtle rounded-2xl pl-6 pr-14 py-4 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-[transform,opacity,box-shadow] placeholder:text-text-tertiary"
-              />
-              <button 
-                onClick={handleSend}
-                disabled={!inputValue.trim() || isStreaming}
-                className="absolute right-2 top-2 bottom-2 w-10 bg-accent text-bg-page rounded-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-[transform,opacity,box-shadow] disabled:opacity-30 disabled:hover:scale-100"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-           </div>
-           <p className="text-[9px] text-center text-text-tertiary uppercase tracking-widest mt-4 opacity-50">
-             Conversation context restricted to Simulation Node {question.id}
-           </p>
+      {/* Composer */}
+      <div className="shrink-0 border-t border-border-subtle bg-bg-surface px-4 md:px-0">
+        <div className="max-w-3xl mx-auto py-3 md:py-4">
+          {conversationStarted && !isStreaming && (
+            <div className="flex flex-wrap gap-2 mb-3">
+              {suggestedPrompts.slice(0, 3).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handleSend(p)}
+                  className="px-3 py-1.5 rounded-full text-[11px] border border-border-subtle bg-bg-sunken text-text-tertiary hover:text-text-primary transition-colors"
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="relative">
+            <textarea
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              rows={1}
+              placeholder="Ask a follow-up…"
+              className="w-full resize-none bg-bg-sunken border border-border-subtle rounded-2xl pl-5 pr-14 py-3.5 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-colors placeholder:text-text-tertiary"
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={!inputValue.trim() || isStreaming}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 bg-accent text-bg-page rounded-xl flex items-center justify-center hover:scale-105 active:scale-95 transition-transform disabled:opacity-30 disabled:hover:scale-100"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </div>
         </div>
-      </aside>
-    </>
+      </div>
+    </div>
   );
 }
 
