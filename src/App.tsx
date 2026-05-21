@@ -1581,6 +1581,23 @@ interface ReviewItem {
   isUnanswered: boolean;
 }
 
+type GradeTone = 'success' | 'accent' | 'neutral' | 'danger';
+
+const GRADE_TONES: Record<GradeTone, { badge: string; dot: string }> = {
+  success: { badge: 'bg-success-bg text-success-text', dot: 'bg-success-text' },
+  accent: { badge: 'bg-accent/10 text-accent', dot: 'bg-accent' },
+  neutral: { badge: 'bg-bg-raised text-text-secondary', dot: 'bg-text-tertiary' },
+  danger: { badge: 'bg-danger-bg text-danger-text', dot: 'bg-danger-text' },
+};
+
+function gradeBand(percent: number): { label: string; tone: GradeTone } {
+  if (percent >= 85) return { label: 'Distinction', tone: 'success' };
+  if (percent >= 70) return { label: 'Excellent', tone: 'success' };
+  if (percent >= 55) return { label: 'Good', tone: 'accent' };
+  if (percent >= 40) return { label: 'Pass', tone: 'neutral' };
+  return { label: 'Needs Work', tone: 'danger' };
+}
+
 function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; onBack: () => void; courseName: string }) {
   const [filter, setFilter] = useState<'All' | 'Correct' | 'Incorrect' | 'Unanswered'>('All');
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -1664,7 +1681,8 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
     });
   }, [items, filter]);
 
-  const isPassed = stats.percent >= 50;
+  const grade = gradeBand(stats.percent);
+  const gradeTone = GRADE_TONES[grade.tone];
 
   const formatDuration = (ms: number | null) => {
     if (!ms || ms <= 0) return '—';
@@ -1717,46 +1735,47 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
         <div className="flex items-center gap-4">
            <ThemeToggle />
            <div className="px-4 py-1.5 bg-bg-sunken border border-border-subtle rounded-xl flex items-center gap-2">
-              <div className={cn("w-2 h-2 rounded-full", isPassed ? "bg-success-text" : "bg-danger-text")} />
-              <span className="text-[10px] font-black uppercase tracking-widest">{isPassed ? "Pass Threshold Met" : "Requires Calibration"}</span>
+              <div className={cn("w-2 h-2 rounded-full", gradeTone.dot)} />
+              <span className="text-[10px] font-black uppercase tracking-widest">{grade.label}</span>
            </div>
         </div>
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar relative">
-        <div className="max-w-4xl mx-auto px-6 py-12 space-y-12">
+        <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
           {/* Layer 1: Results Summary */}
-          <section className="bg-bg-surface border border-border-subtle rounded-[2rem] p-10 shadow-2xl relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-64 h-64 bg-accent/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
-            <div className="flex flex-col md:flex-row items-center justify-between gap-10 relative z-10">
-              <div className="flex flex-col items-center md:items-start text-center md:text-left">
-                <span className="text-[12px] font-black text-text-tertiary uppercase tracking-[0.3em] mb-2">Performance Yield</span>
-                <div className="flex items-baseline gap-2">
-                  <h2 className="text-7xl font-black text-text-primary tracking-tighter italic">{stats.score}</h2>
-                  <span className="text-2xl font-black text-text-tertiary">/ {stats.total}</span>
+          <section className="bg-bg-surface border border-border-subtle rounded-2xl p-5 md:p-6 shadow-lg relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-accent/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
+            <div className="relative z-10 flex flex-col gap-5">
+              <div className="flex items-center justify-between gap-4 flex-wrap">
+                <div className="flex items-center gap-3">
+                  <div className="flex items-baseline gap-1.5">
+                    <h2 className="text-4xl md:text-5xl font-black text-text-primary tracking-tighter italic leading-none">{stats.score}</h2>
+                    <span className="text-lg font-black text-text-tertiary">/ {stats.total}</span>
+                  </div>
+                  <div className={cn(
+                    "px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-1.5",
+                    gradeTone.badge
+                  )}>
+                    <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                    {grade.label} • {stats.percent}%
+                  </div>
                 </div>
-                <div className={cn(
-                  "mt-4 px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest inline-flex items-center gap-2",
-                  isPassed ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
-                )}>
-                  {isPassed ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
-                  {isPassed ? "Simulation Passed" : "Simulation Failed"} • {stats.percent}%
-                </div>
+
+                <button
+                  onClick={() => document.getElementById('review-list')?.scrollIntoView({ behavior: 'smooth' })}
+                  className="px-5 py-2.5 bg-text-primary text-bg-page font-black text-xs uppercase tracking-[0.15em] rounded-xl hover:scale-105 active:scale-95 transition-transform shadow-md flex items-center gap-2"
+                >
+                  Review Answers <ChevronDown className="w-4 h-4" />
+                </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 w-full md:w-auto">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <StatPill label="Correct" value={stats.correct} color="text-success-text" />
                 <StatPill label="Incorrect" value={stats.incorrect} color="text-danger-text" />
                 <StatPill label="Unanswered" value={stats.unanswered} color="text-text-tertiary" />
                 <StatPill label="Time Taken" value={formatDuration(data.session.duration_ms)} color="text-accent" />
               </div>
-
-              <button 
-                onClick={() => document.getElementById('review-list')?.scrollIntoView({ behavior: 'smooth' })}
-                className="w-full md:w-auto px-8 py-5 bg-text-primary text-bg-page font-black text-sm uppercase tracking-[0.2em] rounded-2xl hover:scale-105 active:scale-95 transition-[transform,opacity,box-shadow] shadow-xl flex items-center justify-center gap-3"
-              >
-                Review Answers <ChevronDown className="w-4 h-4" />
-              </button>
             </div>
           </section>
 
@@ -2214,9 +2233,9 @@ function ThemeToggle() {
 
 function StatPill({ label, value, color }: { label: string, value: string | number, color: string }) {
   return (
-    <div className="bg-bg-sunken border border-border-subtle rounded-2xl p-4 flex flex-col items-center justify-center text-center">
-      <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest mb-1">{label}</span>
-      <span className={cn("text-xl font-black italic tracking-tighter truncate w-full", color)}>{value}</span>
+    <div className="bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2.5 flex flex-col items-center justify-center text-center">
+      <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest mb-0.5">{label}</span>
+      <span className={cn("text-base md:text-lg font-black italic tracking-tighter truncate w-full", color)}>{value}</span>
     </div>
   );
 }
