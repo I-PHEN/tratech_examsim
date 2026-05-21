@@ -9,10 +9,11 @@ import {
   toDraftData,
 } from './extraction/pipeline';
 import type { OcrPage } from '../lib/mistralOcr';
-import { ocrImage, decodeOcrImage } from '../lib/mistralOcr';
+import { ocrImage, ocrPdf, decodeOcrImage } from '../lib/mistralOcr';
 import { parallelMap } from '../lib/concurrency';
 import { verifyQuestion } from './extraction/verifier';
 import { classifyPage, classifyPageWithRetry } from './extraction/classifier';
+import { matchAnswers } from './extraction/answerMatcher';
 import { splitIntoQuestions, normalizeFormatting } from './extraction/textFormatter';
 import { createQuestion, addQuestionAsset } from './questionService';
 import { downloadFile, uploadFile } from './storage';
@@ -75,6 +76,27 @@ async function persistOcrImages(
   return manifest;
 }
 
+/** OCR an uploaded marking scheme (PDF or image) into a single text blob. */
+async function ocrMarkscheme(markschemePath: string): Promise<string> {
+  const buffer = await downloadFile(markschemePath);
+  const lower = markschemePath.toLowerCase();
+  let pages: OcrPage[];
+  if (lower.endsWith('.pdf')) {
+    pages = await ocrPdf(buffer);
+  } else {
+    const mime = lower.endsWith('.png')
+      ? 'image/png'
+      : lower.endsWith('.webp')
+        ? 'image/webp'
+        : 'image/jpeg';
+    pages = await ocrImage(buffer.toString('base64'), mime);
+  }
+  return pages
+    .map((p) => p.text)
+    .join('\n\n')
+    .trim();
+}
+
 /** STAGE: extraction only (OCR). Lands at `text_review`. Idempotent. */
 export async function extractJob(jobId: string): Promise<void> {
   const job = await loadJob(jobId);
@@ -88,6 +110,16 @@ export async function extractJob(jobId: string): Promise<void> {
       status: 'text_review',
       stage: 'ocr_done',
     });
+    // Cache the markscheme OCR early so answer-matching is fast later.
+    // Non-fatal: a markscheme hiccup must not fail the questions extraction.
+    if (job.markscheme_path && !job.markscheme_text) {
+      try {
+        const markschemeText = await ocrMarkscheme(job.markscheme_path);
+        await updateJob(jobId, { markscheme_text: markschemeText });
+      } catch (msErr) {
+        console.warn(`[ingestion] markscheme OCR failed for job ${jobId}: ${errMsg(msErr)}`);
+      }
+    }
   } catch (err) {
     const msg = errMsg(err);
     await updateJob(jobId, { status: 'failed', error_message: msg });
@@ -146,6 +178,18 @@ export async function classifyJob(jobId: string): Promise<void> {
       stage: 'done',
       total_drafts: rows.length,
     });
+
+    // Pre-fill answers from an uploaded markscheme. Non-fatal: a matching
+    // failure must not fail a job whose questions extracted fine.
+    if (job.markscheme_path) {
+      try {
+        await matchMarkschemeAnswers(jobId);
+      } catch (matchErr) {
+        console.warn(
+          `[ingestion] markscheme matching failed for job ${jobId}: ${errMsg(matchErr)}`
+        );
+      }
+    }
   } catch (err) {
     const msg = errMsg(err);
     await updateJob(jobId, { status: 'failed', error_message: msg });
@@ -202,6 +246,95 @@ export async function verifyJob(jobId: string): Promise<void> {
       })
       .eq('id', draft.id);
   });
+}
+
+/**
+ * OCR the uploaded marking scheme (if not cached) and pre-fill each pending
+ * draft's correct answer + worked solution with the matched content. Filled
+ * fields are flagged `ai_matched` so the reviewer verifies them rather than
+ * trusting blindly. A field a reviewer has already edited (flag cleared) is
+ * never clobbered. No-op when the job has no markscheme.
+ */
+export async function matchMarkschemeAnswers(jobId: string): Promise<{ matched: number }> {
+  const job = await loadJob(jobId);
+  if (!job.markscheme_path) return { matched: 0 };
+
+  let markschemeText = job.markscheme_text ?? '';
+  if (!markschemeText.trim()) {
+    markschemeText = await ocrMarkscheme(job.markscheme_path);
+    await updateJob(jobId, { markscheme_text: markschemeText });
+  }
+  if (!markschemeText.trim()) return { matched: 0 };
+
+  const { data: drafts, error } = await supabase
+    .from('ingestion_drafts')
+    .select('id, draft_data')
+    .eq('job_id', jobId)
+    .eq('status', 'pending')
+    .order('source_page', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  if (!drafts || drafts.length === 0) return { matched: 0 };
+
+  const matches = await matchAnswers(
+    drafts.map((dr) => {
+      const d = dr.draft_data as DraftDataInput;
+      return { prompt: d.prompt, type: d.type };
+    }),
+    markschemeText,
+    job.model ?? undefined
+  );
+
+  let matched = 0;
+  for (const m of matches) {
+    if (!m.found || m.question_index == null) continue;
+    const draftRow = drafts[m.question_index];
+    if (!draftRow) continue;
+
+    const d = { ...(draftRow.draft_data as DraftDataInput) };
+    const aiMatched = { ...(d.ai_matched ?? {}) };
+    const answer = m.final_answer?.trim();
+    const solution = m.worked_solution?.trim();
+    let touched = false;
+
+    // Worked solution → explanation (both question types).
+    if (solution && (!d.explanation?.trim() || aiMatched.explanation)) {
+      d.explanation = solution;
+      aiMatched.explanation = true;
+      touched = true;
+    }
+
+    if (d.type === 'calc') {
+      if (answer && (!d.correct_answer?.trim() || aiMatched.correct_answer)) {
+        d.correct_answer = answer;
+        aiMatched.correct_answer = true;
+        touched = true;
+      }
+    } else if (d.type === 'mcq' && m.correct_option && Array.isArray(d.options)) {
+      // Best-effort: mark the option whose text matches the markscheme answer,
+      // but only when the reviewer/classifier hasn't already chosen one.
+      const target = m.correct_option.trim().toLowerCase();
+      const idx = d.options.findIndex((o) => {
+        const t = o.text.trim().toLowerCase();
+        return t === target || (target.length > 0 && (t.includes(target) || target.includes(t)));
+      });
+      if (idx >= 0 && !d.options.some((o) => o.is_correct)) {
+        d.options = d.options.map((o, i) => ({ ...o, is_correct: i === idx }));
+        touched = true;
+      }
+    }
+
+    if (!touched) continue;
+    d.ai_matched = aiMatched;
+    const { error: updErr } = await supabase
+      .from('ingestion_drafts')
+      .update({ draft_data: d, updated_at: new Date().toISOString() })
+      .eq('id', draftRow.id);
+    if (updErr) throw updErr;
+    matched += 1;
+  }
+
+  return { matched };
 }
 
 /** Joined source text for a job: human-corrected text wins, else OCR transcripts. */
@@ -334,6 +467,18 @@ export async function classifySegmentsJob(
       stage: 'done',
       total_drafts: rows.length,
     });
+
+    // Pre-fill answers from an uploaded markscheme. Non-fatal.
+    if (job.markscheme_path) {
+      try {
+        await matchMarkschemeAnswers(jobId);
+      } catch (matchErr) {
+        console.warn(
+          `[ingestion] markscheme matching failed for job ${jobId}: ${errMsg(matchErr)}`
+        );
+      }
+    }
+
     return { created: rows.length };
   } catch (err) {
     const msg = errMsg(err);

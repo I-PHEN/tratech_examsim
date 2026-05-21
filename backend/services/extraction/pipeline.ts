@@ -30,6 +30,8 @@ export interface JobRow {
   doc_type: string | null;
   reviewed_text: string | null;
   transcripts: { page_number: number; text: string }[] | null;
+  markscheme_path: string | null;
+  markscheme_text: string | null;
 }
 
 async function updateJob(jobId: string, fields: Record<string, unknown>) {

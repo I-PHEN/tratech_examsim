@@ -26,13 +26,14 @@ import {
   createSegmentDrafts,
   classifySegmentsJob,
   formatText,
+  matchMarkschemeAnswers,
 } from '../services/ingestionService';
 
 const router = Router();
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024, files: 1 },
+  limits: { fileSize: 100 * 1024 * 1024, files: 2 },
 });
 
 router.use(requireAdmin);
@@ -118,7 +119,10 @@ router.get(
 
 router.post(
   '/jobs',
-  upload.array('files', 60),
+  upload.fields([
+    { name: 'files', maxCount: 1 },
+    { name: 'markscheme', maxCount: 1 },
+  ]),
   asyncHandler(async (req, res) => {
     const sourceType = req.body.source_type;
 
@@ -153,7 +157,8 @@ router.post(
       mode: req.body.mode,
     });
 
-    const files = (req.files as Express.Multer.File[] | undefined) ?? [];
+    const fileMap = (req.files as Record<string, Express.Multer.File[]> | undefined) ?? {};
+    const files = fileMap.files ?? [];
     if (files.length !== 1) throw new ApiError(400, 'NO_FILE', 'Exactly one file is required');
 
     const f = files[0];
@@ -162,6 +167,21 @@ router.post(
     }
     if (meta.source_type === 'image' && !f.mimetype.startsWith('image/')) {
       throw new ApiError(400, 'BAD_MIME', `Expected an image file (got ${f.mimetype})`);
+    }
+
+    // Optional second upload: marking scheme / answer key (PDF or image).
+    const markschemeFile = fileMap.markscheme?.[0];
+    if (markschemeFile) {
+      const ok =
+        markschemeFile.mimetype === 'application/pdf' ||
+        markschemeFile.mimetype.startsWith('image/');
+      if (!ok) {
+        throw new ApiError(
+          400,
+          'BAD_MIME',
+          `Markscheme must be a PDF or image (got ${markschemeFile.mimetype})`
+        );
+      }
     }
 
     const { data: jobRow, error: insertErr } = await supabase
@@ -180,6 +200,7 @@ router.post(
       .single();
     if (insertErr) throw insertErr;
 
+    let markschemePath: string | null = null;
     try {
       let filePath: string;
       if (meta.source_type === 'pdf') {
@@ -189,6 +210,19 @@ router.post(
         filePath = `${jobRow.id}/page-001.${ext}`;
       }
       await uploadFile(filePath, f.buffer, f.mimetype);
+
+      if (markschemeFile) {
+        const msExt =
+          markschemeFile.mimetype === 'application/pdf'
+            ? 'pdf'
+            : markschemeFile.mimetype === 'image/png'
+              ? 'png'
+              : markschemeFile.mimetype === 'image/webp'
+                ? 'webp'
+                : 'jpg';
+        markschemePath = `${jobRow.id}/markscheme.${msExt}`;
+        await uploadFile(markschemePath, markschemeFile.buffer, markschemeFile.mimetype);
+      }
     } catch (err) {
       await supabase.from('ingestion_jobs').delete().eq('id', jobRow.id);
       throw err;
@@ -196,7 +230,7 @@ router.post(
 
     await supabase
       .from('ingestion_jobs')
-      .update({ source_path: `${jobRow.id}/` })
+      .update({ source_path: `${jobRow.id}/`, markscheme_path: markschemePath })
       .eq('id', jobRow.id);
 
     res.status(201).json({ job_id: jobRow.id, status: 'uploaded' });
@@ -326,6 +360,15 @@ router.post(
     const { id } = parse(IdParam, req.params);
     await verifyJob(id);
     res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/jobs/:id/match-answers',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const result = await matchMarkschemeAnswers(id);
+    res.json(result);
   })
 );
 

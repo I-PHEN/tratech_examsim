@@ -68,6 +68,14 @@ export const DraftData = z.object({
   source_reference: z.string().max(500).optional(),
   solution_image_path: z.string().optional(),
   solution_image_mime: z.string().optional(),
+  // Review-only: which fields were pre-filled from an uploaded markscheme.
+  // Cleared per-field when a reviewer edits that field. Ignored at publish.
+  ai_matched: z
+    .object({
+      correct_answer: z.boolean().optional(),
+      explanation: z.boolean().optional(),
+    })
+    .optional(),
 });
 
 export const DraftUpdate = z.object({

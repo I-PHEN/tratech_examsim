@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Upload, Loader2, FileText, Image as ImageIcon, Type } from 'lucide-react';
+import { Upload, Loader2, FileText, Image as ImageIcon, Type, KeyRound } from 'lucide-react';
 import { apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { CourseSelect } from './CourseSelect';
@@ -20,6 +20,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
   const [runMode, setRunMode] = useState<'autonomous' | 'stepwise'>('autonomous');
   const [docType, setDocType] = useState<DocType>('past_paper');
   const [file, setFile] = useState<File | null>(null);
+  const [markschemeFile, setMarkschemeFile] = useState<File | null>(null);
   const [text, setText] = useState('');
   const [model, setModel] = useState<string>('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -30,6 +31,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
 
   const reset = () => {
     setFile(null);
+    setMarkschemeFile(null);
     setText('');
   };
 
@@ -61,6 +63,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
         fd.append('mode', runMode);
         if (model.trim()) fd.append('model', model.trim());
         fd.append('files', file);
+        if (markschemeFile) fd.append('markscheme', markschemeFile);
 
         setSubmitStatus('Uploading…');
         await apiUpload('/api/ingestion/jobs', fd);
@@ -113,27 +116,52 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
             className="flex-1 min-h-[180px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-none"
           />
         ) : (
-          <label className="flex-1 min-h-[180px] cursor-pointer flex flex-col items-center justify-center gap-3 bg-bg-sunken border border-dashed border-border-subtle rounded-xl px-4 py-6 hover:border-primary/40 hover:bg-bg-raised/40 transition-colors">
-            <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center">
-              <Upload className="w-6 h-6" />
-            </div>
-            <div className="text-center">
-              <h3 className="text-sm font-bold text-text-primary">
-                {file ? file.name : mode === 'pdf' ? 'Click to select a PDF' : 'Click to select an image'}
-              </h3>
-              <p className="text-xs text-text-secondary mt-0.5">
-                {mode === 'pdf'
-                  ? 'Past papers, slides, or scanned exams · up to 100 MB'
-                  : 'A photo or scan of a question paper · JPG or PNG'}
-              </p>
-            </div>
-            <input
-              type="file"
-              hidden
-              accept={mode === 'pdf' ? 'application/pdf' : 'image/*'}
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
+          <>
+            <label className="flex-1 min-h-[180px] cursor-pointer flex flex-col items-center justify-center gap-3 bg-bg-sunken border border-dashed border-border-subtle rounded-xl px-4 py-6 hover:border-primary/40 hover:bg-bg-raised/40 transition-colors">
+              <div className="w-12 h-12 bg-primary/10 text-primary rounded-full flex items-center justify-center">
+                <Upload className="w-6 h-6" />
+              </div>
+              <div className="text-center">
+                <h3 className="text-sm font-bold text-text-primary">
+                  {file ? file.name : mode === 'pdf' ? 'Click to select a PDF' : 'Click to select an image'}
+                </h3>
+                <p className="text-xs text-text-secondary mt-0.5">
+                  {mode === 'pdf'
+                    ? 'Past papers, slides, or scanned exams · up to 100 MB'
+                    : 'A photo or scan of a question paper · JPG or PNG'}
+                </p>
+              </div>
+              <input
+                type="file"
+                hidden
+                accept={mode === 'pdf' ? 'application/pdf' : 'image/*'}
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+
+            {/* Optional second upload — marking scheme / answer key. Lighter,
+                dashed border at reduced opacity signals it is optional. */}
+            <label className="mt-3 cursor-pointer flex items-center gap-3 bg-bg-sunken/60 border border-dashed border-border-subtle/50 rounded-xl px-4 py-3 hover:border-primary/30 hover:bg-bg-raised/30 transition-colors">
+              <div className="w-9 h-9 bg-primary/5 text-primary/70 rounded-full flex items-center justify-center shrink-0">
+                <KeyRound className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-xs font-bold text-text-primary truncate">
+                  {markschemeFile ? markschemeFile.name : 'Answer Key / Markscheme (optional)'}
+                </h4>
+                <p className="text-[11px] text-text-secondary mt-0.5">
+                  Upload the marking scheme PDF — answers will be matched to questions
+                  automatically
+                </p>
+              </div>
+              <input
+                type="file"
+                hidden
+                accept="application/pdf,image/*"
+                onChange={(e) => setMarkschemeFile(e.target.files?.[0] ?? null)}
+              />
+            </label>
+          </>
         )}
 
         <button
