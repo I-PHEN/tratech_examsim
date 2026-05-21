@@ -2856,27 +2856,29 @@ function ExamSimulation({
                       ) : (
                         <div className="space-y-3">
                           <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Input Response</label>
-                          {currentQuestion.unit && (
-                            <div className="flex items-center gap-3 bg-accent-muted/40 border-2 border-accent rounded-xl px-4 py-3">
-                              <span className="text-[10px] font-black text-accent-text uppercase tracking-widest shrink-0">
-                                Expected Unit
-                              </span>
-                              <span className="text-base md:text-lg font-black text-text-primary leading-none">
-                                <RichText inline>{currentQuestion.unit}</RichText>
-                              </span>
-                            </div>
-                          )}
-                          <input
-                            type="text"
-                            value={answers[currentIdx] || ''}
-                            onChange={(e) => handleAnswer(e.target.value)}
-                            onBlur={() => window.scrollTo(0, 0)}
-                            placeholder={currentQuestion.unit ? 'Numeric value only…' : 'Type your final result here…'}
-                            className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
-                          />
+                          <div className="flex items-stretch gap-2">
+                            <input
+                              type="text"
+                              value={answers[currentIdx] || ''}
+                              onChange={(e) => handleAnswer(e.target.value)}
+                              onBlur={() => window.scrollTo(0, 0)}
+                              placeholder={currentQuestion.unit ? 'Numeric value only…' : 'Type your final result here…'}
+                              className="flex-1 min-w-0 bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
+                            />
+                            {currentQuestion.unit && (
+                              <div className="shrink-0 flex flex-col items-center justify-center bg-accent-muted/40 border-2 border-accent rounded-xl px-3 py-1.5 leading-tight">
+                                <span className="text-[8px] font-black text-accent-text uppercase tracking-widest">
+                                  Unit
+                                </span>
+                                <span className="text-sm md:text-base font-black text-text-primary">
+                                  <RichText inline>{currentQuestion.unit}</RichText>
+                                </span>
+                              </div>
+                            )}
+                          </div>
                           <p className="text-[9px] text-text-tertiary italic">
                             {currentQuestion.unit
-                              ? 'Enter the numeric value only — the unit shown above is assumed. Match specified precision (±0.01).'
+                              ? 'Enter the numeric value only — the unit shown is assumed. Match specified precision (±0.01).'
                               : 'Numerical answers must match specified precision (±0.01).'}
                           </p>
                         </div>

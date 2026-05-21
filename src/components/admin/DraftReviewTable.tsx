@@ -504,13 +504,7 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
   );
 };
 
-export function DraftReviewTable({
-  jobId,
-  onBack,
-}: {
-  jobId: string;
-  onBack: () => void;
-}) {
+export function DraftReviewTable({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<Job | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -682,13 +676,7 @@ export function DraftReviewTable({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-2 text-text-secondary hover:text-text-primary"
-        >
-          <ArrowLeft className="w-4 h-4" /> Back to jobs
-        </button>
+      <div className="flex items-center justify-end mb-6">
         <div className="flex items-center gap-2">
           <button
             onClick={aiFillDetails}

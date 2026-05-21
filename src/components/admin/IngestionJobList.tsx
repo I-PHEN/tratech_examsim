@@ -215,7 +215,14 @@ export function IngestionJobList({
                   Archive
                 </button>
               )}
-              <ChevronRight className="w-4 h-4 text-text-secondary" />
+              <button
+                onClick={() => onSelect(j.id)}
+                title="Open job"
+                aria-label="Open job"
+                className="p-1 text-text-secondary hover:text-text-primary"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
             </div>
           </div>
         ))}

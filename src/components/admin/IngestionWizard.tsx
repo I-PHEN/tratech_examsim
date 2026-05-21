@@ -312,7 +312,7 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
       {step === 2 && <StructureStep jobId={jobId} onDone={load} />}
 
       {/* STEP 3: Review drafts & publish (reuse the existing table) */}
-      {step === 3 && <DraftReviewTable jobId={jobId} onBack={onBack} />}
+      {step === 3 && <DraftReviewTable jobId={jobId} />}
     </div>
   );
 }
