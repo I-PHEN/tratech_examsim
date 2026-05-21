@@ -2258,6 +2258,10 @@ function ExamSimulation({
   const pendingAnswersRef = useRef<Set<Promise<unknown>>>(new Set());
 
   const totalQuestions = questions.length;
+  // A question only counts as answered once it holds a non-empty value, so
+  // clearing the field drops it back to unanswered (matches the grid's
+  // `!!answers[i]`). Empty keys may linger in `answers` — they just don't count.
+  const answeredCount = Object.values(answers).filter((v) => String(v).trim().length > 0).length;
 
   // Timer state lives ONLY on the server. The session row's `started_at` and
   // `total_paused_ms` are the single source of truth — the reconcile effect
@@ -2489,14 +2493,14 @@ function ExamSimulation({
       <div className="bg-surface-container-high border border-outline-variant/10 rounded-2xl p-3 flex flex-col gap-2">
         <div className="flex justify-between items-center text-[10px] text-text-secondary font-bold">
            <span>Progress</span>
-           <span>{Object.keys(answers).length} / {totalQuestions}</span>
+           <span>{answeredCount} / {totalQuestions}</span>
         </div>
         <div className="flex gap-3 text-[9px] uppercase font-black tracking-widest">
            <span className="flex items-center gap-1 text-success-text">
-              <Check className="w-2.5 h-2.5"/> {Object.keys(answers).length} done
+              <Check className="w-2.5 h-2.5"/> {answeredCount} done
            </span>
            <span className="flex items-center gap-1 text-text-tertiary">
-              <Circle className="w-2.5 h-2.5"/> {totalQuestions - Object.keys(answers).length} left
+              <Circle className="w-2.5 h-2.5"/> {totalQuestions - answeredCount} left
            </span>
         </div>
       </div>
@@ -2504,7 +2508,7 @@ function ExamSimulation({
       <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest bg-surface-container-low p-1 rounded-xl">
         <button className="flex-1 py-1.5 bg-bg-surface text-text-primary rounded-lg shadow-sm border border-outline-variant/10 transition-[transform,opacity,box-shadow]">All</button>
         <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Flagged</button>
-        <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Unanswered <span className="opacity-50 ml-1">{totalQuestions - Object.keys(answers).length}</span></button>
+        <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Unanswered <span className="opacity-50 ml-1">{totalQuestions - answeredCount}</span></button>
       </div>
 
       <div className="grid grid-cols-5 gap-1.5 lg:gap-2">
@@ -2766,7 +2770,7 @@ function ExamSimulation({
       <div className="w-full bg-surface-container-high h-1.5 shrink-0">
         <div
           className="h-full bg-primary rounded-r-full transition-all duration-300 ease-out"
-          style={{ width: `${(Object.keys(answers).length / totalQuestions) * 100}%` }}
+          style={{ width: `${(answeredCount / totalQuestions) * 100}%` }}
         />
       </div>
 
@@ -2868,9 +2872,9 @@ function ExamSimulation({
                               />
                             </div>
                             {currentQuestion.unit && (
-                              <div className="shrink-0 space-y-1.5">
+                              <div className="flex-1 min-w-0 space-y-1.5">
                                 <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Expected Unit</label>
-                                <div className="min-w-[96px] bg-bg-sunken border border-border-subtle rounded-xl px-5 py-3 text-sm md:text-base font-bold text-text-primary flex items-center justify-center whitespace-nowrap">
+                                <div className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-5 py-3 text-sm md:text-base font-bold text-text-primary flex items-center justify-center">
                                   <RichText inline>{currentQuestion.unit}</RichText>
                                 </div>
                               </div>
