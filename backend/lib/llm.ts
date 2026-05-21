@@ -2,7 +2,10 @@ import 'dotenv/config';
 
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 const DEFAULT_MODEL = process.env.GROQ_DEFAULT_MODEL || 'openai/gpt-oss-120b';
-const DEFAULT_MAX_TOKENS = Number(process.env.GROQ_MAX_TOKENS) || 16000;
+// Groq on-demand TPM is 8000 for gpt-oss-120b; (prompt + max_tokens) must fit
+// under that, so the default ceiling is well below 8000 and individual callers
+// can opt up if their prompts are small.
+const DEFAULT_MAX_TOKENS = Number(process.env.GROQ_MAX_TOKENS) || 4000;
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
