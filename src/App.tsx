@@ -1604,6 +1604,7 @@ function gradeBand(percent: number): { label: string; tone: GradeTone } {
 function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; onBack: () => void; courseName: string }) {
   const [filter, setFilter] = useState<'All' | 'Correct' | 'Incorrect' | 'Unanswered'>('All');
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [judeIdx, setJudeIdx] = useState<number | null>(null);
   const [data, setData] = useState<ReviewSessionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1745,7 +1746,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar relative">
-        <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
           {/* Layer 1: Results Summary */}
           <section className="bg-bg-surface border border-border-subtle rounded-2xl p-5 md:p-6 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 w-48 h-48 bg-accent/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
@@ -1801,29 +1802,70 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
           </div>
 
           {/* Layer 2: Question Review List */}
-          <div className="space-y-2.5 pb-20">
+          <div className="space-y-3 pb-20">
             {filteredQuestions.length === 0 ? (
               <div className="p-12 rounded-3xl bg-surface-container-low border border-dashed border-border-medium text-center text-sm text-text-secondary">
                 Nothing matches that filter.
               </div>
             ) : (
-              filteredQuestions.map((it) => (
-                <button
-                  key={it.id}
-                  onClick={() => setFocusedId(it.id)}
-                  className="w-full bg-bg-surface border border-border-subtle rounded-2xl p-4 md:p-5 flex items-center gap-3 md:gap-4 text-left hover:border-border-medium transition-colors group"
-                >
-                  <span className="text-xs font-black text-text-tertiary shrink-0 w-7">Q{it.position + 1}</span>
-                  <p className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">{it.prompt}</p>
-                  <div className={cn(
-                    "shrink-0 px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
-                    it.isUnanswered ? "bg-bg-raised text-text-tertiary" : it.isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
-                  )}>
-                    {it.isUnanswered ? "Unanswered" : it.isCorrect ? "Correct" : "Incorrect"}
+              filteredQuestions.map((it) => {
+                const isOpen = expandedId === it.id;
+                return (
+                  <div
+                    key={it.id}
+                    className={cn(
+                      "bg-bg-surface border rounded-2xl overflow-hidden transition-colors",
+                      isOpen ? "border-border-medium" : "border-border-subtle hover:border-border-medium"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 md:gap-4 p-4 md:p-5">
+                      <button
+                        onClick={() => setExpandedId(isOpen ? null : it.id)}
+                        className="flex items-center gap-3 md:gap-4 flex-1 min-w-0 text-left"
+                      >
+                        <span className="text-xs font-black text-text-tertiary shrink-0 w-7">Q{it.position + 1}</span>
+                        <p className={cn("text-sm font-medium text-text-primary flex-1 min-w-0", !isOpen && "truncate")}>
+                          {it.prompt}
+                        </p>
+                        <div className={cn(
+                          "shrink-0 px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
+                          it.isUnanswered ? "bg-bg-raised text-text-tertiary" : it.isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
+                        )}>
+                          {it.isUnanswered ? "Unanswered" : it.isCorrect ? "Correct" : "Incorrect"}
+                        </div>
+                        <ChevronDown className={cn("w-4 h-4 text-text-tertiary shrink-0 transition-transform", isOpen && "rotate-180")} />
+                      </button>
+                      <button
+                        onClick={() => setFocusedId(it.id)}
+                        title="Expand to full screen"
+                        aria-label="Expand to full screen"
+                        className="shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-bg-raised transition-colors"
+                      >
+                        <Maximize2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {isOpen && (
+                      <div className="border-t border-border-subtle p-4 md:p-5">
+                        <ReviewQuestionDetail it={it} />
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <button
+                            onClick={() => setFocusedId(it.id)}
+                            className="flex items-center gap-2 px-4 py-2 bg-bg-raised border border-border-subtle text-text-primary text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-bg-sunken transition-colors"
+                          >
+                            <Maximize2 className="w-3.5 h-3.5" /> Expand
+                          </button>
+                          <button
+                            onClick={() => setJudeIdx(it.position)}
+                            className="flex items-center gap-2 px-4 py-2 bg-accent text-bg-page text-[10px] font-black uppercase tracking-widest rounded-xl shadow-sm hover:-translate-y-0.5 transition-transform"
+                          >
+                            <Sparkles className="w-3.5 h-3.5" /> Ask Jude
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <Maximize2 className="w-4 h-4 text-text-tertiary group-hover:text-text-primary transition-colors shrink-0" />
-                </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -1871,6 +1913,109 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
   );
 }
 
+function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
+  const studentAnswerText =
+    it.type === 'mcq'
+      ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
+      : it.pickedText;
+
+  return (
+    <div className="space-y-4">
+      <RichText className="text-base md:text-lg text-text-primary leading-relaxed font-medium">
+        {it.prompt}
+      </RichText>
+
+      {it.assets.length > 0 && (
+        <div className="flex flex-col gap-3">
+          {it.assets.map((a) => (
+            <img
+              key={a.id}
+              src={a.url}
+              alt="diagram"
+              loading="lazy"
+              className="rounded-xl border border-border-subtle max-h-72 mx-auto"
+            />
+          ))}
+        </div>
+      )}
+
+      {it.type === 'mcq' ? (
+        <div className="grid grid-cols-1 gap-2.5">
+          {it.options.map((opt, optIdx) => {
+            const isCorrectOpt = opt.is_correct;
+            const isStudentAns = it.pickedOptionId === opt.id;
+            const label = String.fromCharCode(65 + optIdx) + '.';
+            return (
+              <div
+                key={opt.id}
+                className={cn(
+                  'flex items-center gap-3 p-3.5 rounded-xl border',
+                  isCorrectOpt
+                    ? 'bg-success-bg border-success-border text-success-text'
+                    : isStudentAns
+                      ? 'bg-danger-bg border-danger-border text-danger-text'
+                      : 'bg-bg-surface border-border-subtle text-text-tertiary opacity-60'
+                )}
+              >
+                <div
+                  className={cn(
+                    'w-5 h-5 rounded-full border flex items-center justify-center shrink-0',
+                    isCorrectOpt
+                      ? 'bg-success-text border-success-text text-bg-page'
+                      : isStudentAns
+                        ? 'bg-danger-text border-danger-text text-bg-page'
+                        : 'border-border-subtle'
+                  )}
+                >
+                  {isCorrectOpt ? <Check className="w-3 h-3" /> : isStudentAns ? <X className="w-3 h-3" /> : null}
+                </div>
+                <div className="flex gap-2.5 text-sm">
+                  <span className="font-black tracking-widest uppercase">{label}</span>
+                  <RichText inline className="font-medium">{opt.text}</RichText>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Response</span>
+            <div className="p-3.5 bg-bg-surface border border-border-subtle rounded-xl font-mono text-sm">
+              {studentAnswerText ? <RichText inline>{studentAnswerText}</RichText> : 'No response provided'}
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
+            <div className="p-3.5 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
+              {it.correctAnswer ? (
+                <RichText inline>{`${it.correctAnswer}${it.unit ? ` ${it.unit}` : ''}`}</RichText>
+              ) : (
+                '—'
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {it.explanation && (
+        <div className="bg-bg-sunken border border-border-subtle rounded-2xl overflow-hidden">
+          <div className="px-4 md:px-5 py-3 border-b border-border-subtle">
+            <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
+              <Sigma className="w-3.5 h-3.5" /> Worked Solution
+            </span>
+          </div>
+          <div className="px-4 md:px-5 py-4">
+            <RichText className="text-sm text-text-secondary leading-relaxed">
+              {it.explanation}
+            </RichText>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReviewFocusModal({
   items,
   focusedId,
@@ -1901,11 +2046,6 @@ function ReviewFocusModal({
 
   if (!it) return null;
 
-  const studentAnswerText =
-    it.type === 'mcq'
-      ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
-      : it.pickedText;
-
   const navBtn =
     'flex items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg hover:bg-bg-sunken disabled:opacity-30 disabled:cursor-not-allowed';
 
@@ -1934,10 +2074,9 @@ function ReviewFocusModal({
         </button>
       </header>
 
-      <main className="flex-1 min-h-0">
-        <div className="max-w-3xl mx-auto w-full h-full flex flex-col px-4 md:px-6 py-4 gap-3">
-          {/* Status row */}
-          <div className="shrink-0 flex items-center justify-between gap-3">
+      <main className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
+        <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-5 space-y-4">
+          <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="text-sm font-black text-text-tertiary">Q{it.position + 1}</span>
               <div
@@ -1961,101 +2100,7 @@ function ReviewFocusModal({
             </button>
           </div>
 
-          {/* Question + answer — scrolls if tall */}
-          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4 pr-0.5">
-            <RichText className="text-base md:text-lg text-text-primary leading-relaxed font-medium">
-              {it.prompt}
-            </RichText>
-
-            {it.assets.length > 0 && (
-              <div className="flex flex-col gap-3">
-                {it.assets.map((a) => (
-                  <img
-                    key={a.id}
-                    src={a.url}
-                    alt="diagram"
-                    loading="lazy"
-                    className="rounded-xl border border-border-subtle max-h-72 mx-auto"
-                  />
-                ))}
-              </div>
-            )}
-
-            {it.type === 'mcq' ? (
-              <div className="grid grid-cols-1 gap-2.5">
-                {it.options.map((opt, optIdx) => {
-                  const isCorrectOpt = opt.is_correct;
-                  const isStudentAns = it.pickedOptionId === opt.id;
-                  const label = String.fromCharCode(65 + optIdx) + '.';
-                  return (
-                    <div
-                      key={opt.id}
-                      className={cn(
-                        'flex items-center gap-3 p-3.5 rounded-xl border',
-                        isCorrectOpt
-                          ? 'bg-success-bg border-success-border text-success-text'
-                          : isStudentAns
-                            ? 'bg-danger-bg border-danger-border text-danger-text'
-                            : 'bg-bg-surface border-border-subtle text-text-tertiary opacity-60'
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          'w-5 h-5 rounded-full border flex items-center justify-center shrink-0',
-                          isCorrectOpt
-                            ? 'bg-success-text border-success-text text-bg-page'
-                            : isStudentAns
-                              ? 'bg-danger-text border-danger-text text-bg-page'
-                              : 'border-border-subtle'
-                        )}
-                      >
-                        {isCorrectOpt ? <Check className="w-3 h-3" /> : isStudentAns ? <X className="w-3 h-3" /> : null}
-                      </div>
-                      <div className="flex gap-2.5 text-sm">
-                        <span className="font-black tracking-widest uppercase">{label}</span>
-                        <RichText inline className="font-medium">{opt.text}</RichText>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Response</span>
-                  <div className="p-3.5 bg-bg-surface border border-border-subtle rounded-xl font-mono text-sm">
-                    {studentAnswerText ? <RichText inline>{studentAnswerText}</RichText> : 'No response provided'}
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
-                  <div className="p-3.5 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
-                    {it.correctAnswer ? (
-                      <RichText inline>{`${it.correctAnswer}${it.unit ? ` ${it.unit}` : ''}`}</RichText>
-                    ) : (
-                      '—'
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Worked solution — its own scroll panel */}
-          {it.explanation && (
-            <div className="flex-1 min-h-0 flex flex-col bg-bg-sunken border border-border-subtle rounded-2xl overflow-hidden">
-              <div className="shrink-0 px-4 md:px-5 py-3 border-b border-border-subtle">
-                <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
-                  <Sigma className="w-3.5 h-3.5" /> Worked Solution
-                </span>
-              </div>
-              <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-5 py-4">
-                <RichText className="text-sm text-text-secondary leading-relaxed">
-                  {it.explanation}
-                </RichText>
-              </div>
-            </div>
-          )}
+          <ReviewQuestionDetail it={it} />
         </div>
       </main>
     </div>
@@ -2080,7 +2125,6 @@ function JudePanel({
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamedText, setStreamedText] = useState("");
   const [inputValue, setInputValue] = useState("");
-  const [questionOpen, setQuestionOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const aliveRef = useRef(true);
 
@@ -2217,105 +2261,73 @@ Stay strictly on THIS question — politely decline unrelated requests.
 
   return (
     <div className="fixed inset-0 z-[120] bg-bg-page flex flex-col">
-      {/* Top bar */}
-      <header className="shrink-0 border-b border-border-subtle bg-bg-surface px-4 md:px-8 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center">
-            <Sparkles className="w-5 h-5 text-accent" />
-          </div>
-          <div className="flex flex-col">
-            <h3 className="text-sm font-black text-text-primary uppercase tracking-widest leading-none">Jude</h3>
-            <span className="text-[10px] text-text-tertiary font-bold uppercase tracking-widest mt-1">Academic Tutor</span>
-          </div>
-        </div>
-
-        {/* Pinned question — top right on desktop */}
-        <div className="hidden md:block max-w-md ml-auto bg-bg-sunken border border-border-subtle rounded-2xl px-4 py-2.5">
-          <span className="text-[9px] font-black text-accent-text uppercase tracking-widest">
-            {question.type === 'MCQ' ? 'Multiple choice' : 'Calculation'}
-          </span>
-          <div className="text-sm text-text-primary leading-snug mt-0.5 line-clamp-2">
-            <RichText inline>{question.prompt}</RichText>
-          </div>
-        </div>
-
-        <button onClick={onClose} className="shrink-0 p-2 hover:bg-bg-raised rounded-xl transition-colors" title="Close (Esc)">
-          <X className="w-5 h-5 text-text-tertiary" />
+      {/* Minimal top bar */}
+      <header className="shrink-0 flex items-center justify-between gap-4 px-4 md:px-6 py-3">
+        <span className="text-sm font-black text-text-primary tracking-tight">Jude</span>
+        <button onClick={onClose} className="p-2 -mr-2 text-text-tertiary hover:text-text-primary transition-colors" title="Close (Esc)">
+          <X className="w-5 h-5" />
         </button>
       </header>
 
-      {/* Mobile: collapsible question band */}
-      <button
-        onClick={() => setQuestionOpen((o) => !o)}
-        className="md:hidden shrink-0 border-b border-border-subtle bg-bg-sunken px-4 py-2 flex items-start gap-2 text-left"
-      >
-        <span className="text-[9px] font-black text-accent-text uppercase tracking-widest mt-0.5 shrink-0">Question</span>
-        <div className={cn('text-xs text-text-secondary leading-snug flex-1 min-w-0', !questionOpen && 'line-clamp-1')}>
-          <RichText inline>{question.prompt}</RichText>
-        </div>
-        <ChevronDown className={cn('w-3.5 h-3.5 text-text-tertiary shrink-0 mt-0.5 transition-transform', questionOpen && 'rotate-180')} />
-      </button>
-
       {/* Conversation */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 md:px-0 scroll-smooth">
-        <div className="max-w-3xl mx-auto py-6 md:py-10 space-y-5">
-          {!conversationStarted ? (
-            <div className="space-y-6">
-              <div className="text-center space-y-2">
-                <div className="w-14 h-14 mx-auto bg-accent/10 border border-accent/20 rounded-2xl flex items-center justify-center">
-                  <Sparkles className="w-7 h-7 text-accent" />
-                </div>
-                <p className="text-sm text-text-secondary">Ask me anything about this question.</p>
-              </div>
-              <div className="flex flex-wrap gap-2 justify-center">
-                {suggestedPrompts.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => handleSend(p)}
-                    className="px-4 py-2 rounded-full text-xs font-medium border border-border-subtle bg-bg-surface text-text-secondary hover:border-accent/40 hover:text-text-primary transition-colors"
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 scroll-smooth">
+        <div className="max-w-4xl mx-auto pb-10 space-y-7">
+          {/* The question, presented as the opening user message */}
+          <div className="flex flex-col items-end">
+            <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest mb-1 mr-1">Question</span>
+            <div className="max-w-[85%] bg-bg-raised border border-border-subtle rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-text-primary leading-relaxed">
+              <RichText>{question.prompt}</RichText>
             </div>
-          ) : (
-            <>
-              {messages.map((m, i) => (
-                <div key={i} className={cn('flex flex-col', m.role === 'user' ? 'items-end' : 'items-start')}>
-                  <div
-                    className={cn(
-                      m.role === 'user'
-                        ? 'max-w-[85%] bg-accent text-bg-page font-medium rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm whitespace-pre-wrap'
-                        : 'w-full bg-bg-surface border border-border-subtle rounded-2xl px-4 md:px-5 py-4'
-                    )}
-                  >
-                    {m.role === 'user'
-                      ? m.content
-                      : <RichText className="text-sm text-text-primary leading-relaxed">{m.content}</RichText>}
-                  </div>
-                </div>
+          </div>
+
+          {messages.length === 0 && !isStreaming && (
+            <div className="flex flex-wrap gap-2">
+              {suggestedPrompts.map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handleSend(p)}
+                  className="px-4 py-2 rounded-full text-xs font-medium border border-border-subtle bg-bg-surface text-text-secondary hover:border-accent/40 hover:text-text-primary transition-colors"
+                >
+                  {p}
+                </button>
               ))}
-              {isStreaming && (
-                <div className="w-full bg-bg-surface border border-border-subtle rounded-2xl px-4 md:px-5 py-4">
-                  {streamedText ? (
-                    <RichText streaming className="text-sm text-text-primary leading-relaxed">{streamedText}</RichText>
-                  ) : (
-                    <ThinkingDots />
-                  )}
-                  {streamedText && (
-                    <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 align-middle animate-pulse" />
-                  )}
+            </div>
+          )}
+
+          {messages.map((m, i) =>
+            m.role === 'user' ? (
+              <div key={i} className="flex justify-end">
+                <div className="max-w-[85%] bg-bg-raised border border-border-subtle rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-text-primary leading-relaxed whitespace-pre-wrap">
+                  {m.content}
                 </div>
+              </div>
+            ) : (
+              <div key={i} className="space-y-1.5">
+                <span className="text-[9px] font-black text-accent-text uppercase tracking-widest">Jude</span>
+                <RichText className="text-[15px] text-text-primary leading-relaxed">{m.content}</RichText>
+              </div>
+            )
+          )}
+
+          {isStreaming && (
+            <div className="space-y-1.5">
+              <span className="text-[9px] font-black text-accent-text uppercase tracking-widest">Jude</span>
+              {streamedText ? (
+                <div>
+                  <RichText streaming className="text-[15px] text-text-primary leading-relaxed">{streamedText}</RichText>
+                  <span className="inline-block w-1.5 h-4 bg-accent ml-0.5 align-middle animate-pulse" />
+                </div>
+              ) : (
+                <ThinkingDots />
               )}
-            </>
+            </div>
           )}
         </div>
       </div>
 
       {/* Composer */}
-      <div className="shrink-0 border-t border-border-subtle bg-bg-surface px-4 md:px-0">
-        <div className="max-w-3xl mx-auto py-3 md:py-4">
+      <div className="shrink-0 px-4 pb-4">
+        <div className="max-w-4xl mx-auto">
           {conversationStarted && !isStreaming && (
             <div className="flex flex-wrap gap-2 mb-3">
               {suggestedPrompts.slice(0, 3).map((p) => (
@@ -2340,7 +2352,7 @@ Stay strictly on THIS question — politely decline unrelated requests.
                 }
               }}
               rows={1}
-              placeholder="Ask a follow-up…"
+              placeholder="Ask Jude about this question…"
               className="w-full resize-none bg-bg-sunken border border-border-subtle rounded-2xl pl-5 pr-14 py-3.5 text-sm text-text-primary focus:outline-none focus:border-accent/40 transition-colors placeholder:text-text-tertiary"
             />
             <button
