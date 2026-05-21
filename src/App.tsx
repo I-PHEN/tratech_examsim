@@ -56,7 +56,9 @@ import {
   AlertTriangle,
   MoreVertical,
   PauseCircle,
-  StopCircle
+  StopCircle,
+  Maximize2,
+  ArrowLeft
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
 import { cn } from './lib/utils';
@@ -1600,7 +1602,7 @@ function gradeBand(percent: number): { label: string; tone: GradeTone } {
 
 function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; onBack: () => void; courseName: string }) {
   const [filter, setFilter] = useState<'All' | 'Correct' | 'Incorrect' | 'Unanswered'>('All');
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [focusedId, setFocusedId] = useState<string | null>(null);
   const [judeIdx, setJudeIdx] = useState<number | null>(null);
   const [data, setData] = useState<ReviewSessionData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -1798,179 +1800,43 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
           </div>
 
           {/* Layer 2: Question Review List */}
-          <div className="space-y-4 pb-20">
+          <div className="space-y-2.5 pb-20">
             {filteredQuestions.length === 0 ? (
               <div className="p-12 rounded-3xl bg-surface-container-low border border-dashed border-border-medium text-center text-sm text-text-secondary">
                 Nothing matches that filter.
               </div>
             ) : (
-              filteredQuestions.map((it) => {
-              const isExpanded = expandedIdx === it.position;
-              const studentAnswerText =
-                it.type === 'mcq'
-                  ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
-                  : it.pickedText;
-
-              return (
-                <div
+              filteredQuestions.map((it) => (
+                <button
                   key={it.id}
-                  className={cn(
-                    "bg-bg-surface border border-border-subtle rounded-2xl overflow-hidden transition-colors",
-                    isExpanded ? "ring-2 ring-accent/30 shadow-2xl" : "hover:border-border-medium"
-                  )}
+                  onClick={() => setFocusedId(it.id)}
+                  className="w-full bg-bg-surface border border-border-subtle rounded-2xl p-4 md:p-5 flex items-center gap-3 md:gap-4 text-left hover:border-border-medium transition-colors group"
                 >
-                  {/* Collapsed Item */}
-                  <div
-                    onClick={() => setExpandedIdx(isExpanded ? null : it.position)}
-                    className="p-4 md:p-5 flex flex-col md:flex-row md:items-center justify-between gap-3 md:gap-6 cursor-pointer select-none group"
-                  >
-                    <div className="flex items-start md:items-center gap-3 md:gap-4 flex-1 min-w-0">
-                      <span className="text-xs font-black text-text-tertiary shrink-0 w-6 md:w-8 mt-0.5 md:mt-0">Q{it.position + 1}</span>
-                      <p className="text-sm font-medium text-text-primary line-clamp-2 md:truncate">{it.prompt}</p>
-                    </div>
-
-                    <div className="flex items-center justify-between md:justify-end gap-3 md:gap-4 shrink-0 pl-9 md:pl-0 w-full md:w-auto mt-2 md:mt-0">
-                      <div className="flex items-center gap-2 md:gap-4">
-                        <div className={cn(
-                          "px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
-                          it.isUnanswered ? "bg-bg-raised text-text-tertiary" : it.isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
-                        )}>
-                          {it.isUnanswered ? "Unanswered" : it.isCorrect ? "Correct" : "Incorrect"}
-                        </div>
-
-                        {!isExpanded && (
-                          <button
-                            onClick={(e) => { e.stopPropagation(); setJudeIdx(it.position); }}
-                            className={cn(
-                              "flex items-center gap-1.5 md:gap-2 px-3 md:px-4 py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border",
-                              it.isCorrect ? "text-text-tertiary border-border-subtle" : "text-accent border-accent/20 bg-accent/5 hover:bg-accent/10"
-                            )}
-                          >
-                            Ask Jude {it.isCorrect && "✦"}
-                          </button>
-                        )}
-                      </div>
-
-                      <ChevronRight className={cn("w-4 h-4 text-text-tertiary transition-transform", isExpanded && "rotate-90")} />
-                    </div>
+                  <span className="text-xs font-black text-text-tertiary shrink-0 w-7">Q{it.position + 1}</span>
+                  <p className="text-sm font-medium text-text-primary truncate flex-1 min-w-0">{it.prompt}</p>
+                  <div className={cn(
+                    "shrink-0 px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
+                    it.isUnanswered ? "bg-bg-raised text-text-tertiary" : it.isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
+                  )}>
+                    {it.isUnanswered ? "Unanswered" : it.isCorrect ? "Correct" : "Incorrect"}
                   </div>
-
-                  {/* Expanded Content */}
-                  {isExpanded && (
-                    <div className="border-t border-border-subtle bg-bg-sunken/30">
-                      <div className="p-4 md:p-8 space-y-6 md:space-y-8">
-                          <RichText className="text-lg text-text-primary leading-relaxed font-medium">{it.prompt}</RichText>
-
-                          {it.assets.length > 0 && (
-                            <div className="flex flex-col gap-3">
-                              {it.assets.map((a) => (
-                                <img
-                                  key={a.id}
-                                  src={a.url}
-                                  alt="diagram"
-                                  loading="lazy"
-                                  className="rounded-xl border border-border-subtle max-h-80 mx-auto"
-                                />
-                              ))}
-                            </div>
-                          )}
-
-                          {it.type === 'mcq' ? (
-                            <div className="grid grid-cols-1 gap-3">
-                              {it.options.map((opt, optIdx) => {
-                                const isCorrectOpt = opt.is_correct;
-                                const isStudentAns = it.pickedOptionId === opt.id;
-                                const label = String.fromCharCode(65 + optIdx) + '.';
-
-                                return (
-                                  <div
-                                    key={opt.id}
-                                    className={cn(
-                                      "flex items-center gap-4 p-5 rounded-2xl border transition-[transform,opacity,box-shadow]",
-                                      isCorrectOpt
-                                        ? "bg-success-bg border-success-border text-success-text shadow-[0_4px_12px_rgba(34,197,94,0.1)]"
-                                        : isStudentAns
-                                          ? "bg-danger-bg border-danger-border text-danger-text"
-                                          : "bg-bg-surface border-border-subtle text-text-tertiary opacity-60"
-                                    )}
-                                  >
-                                    <div className={cn(
-                                      "w-6 h-6 rounded-full border flex items-center justify-center shrink-0",
-                                      isCorrectOpt ? "bg-success-text border-success-text text-bg-page" : isStudentAns ? "bg-danger-text border-danger-text text-bg-page" : "border-border-subtle"
-                                    )}>
-                                      {isCorrectOpt ? <Check className="w-3 h-3" /> : isStudentAns ? <X className="w-3 h-3" /> : null}
-                                    </div>
-                                    <div className="flex gap-3 text-sm">
-                                      <span className="font-black tracking-widest uppercase">{label}</span>
-                                      <RichText inline className="font-medium">{opt.text}</RichText>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                              <div className="space-y-2">
-                                <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Response</span>
-                                <div className="p-4 bg-bg-surface border border-border-subtle rounded-xl font-mono text-sm">
-                                   {studentAnswerText ? <RichText inline>{studentAnswerText}</RichText> : "No response provided"}
-                                </div>
-                              </div>
-                              <div className="space-y-2">
-                                <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
-                                <div className="p-4 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
-                                   {it.correctAnswer ? <RichText inline>{`${it.correctAnswer}${it.unit ? ` ${it.unit}` : ''}`}</RichText> : '—'}
-                                </div>
-                              </div>
-                            </div>
-                          )}
-
-                          {it.explanation && (
-                            <div className="bg-bg-sunken border border-border-subtle rounded-2xl p-6 space-y-4">
-                              <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
-                                 <Sigma className="w-3.5 h-3.5" /> Worked Solution
-                              </span>
-                              <RichText className="text-sm text-text-secondary leading-relaxed opacity-90">
-                                 {it.explanation}
-                              </RichText>
-                            </div>
-                          )}
-
-                          <div className="flex flex-col-reverse md:flex-row md:items-center justify-between gap-4 pt-6 border-t border-border-subtle">
-                             <div className="flex justify-between w-full md:w-auto gap-2">
-                               <button
-                                 disabled={it.position === 0}
-                                 onClick={() => setExpandedIdx(it.position - 1 >= 0 ? it.position - 1 : null)}
-                                 className="flex-1 md:flex-none p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-30 flex justify-center items-center"
-                               >
-                                 <ChevronLeft className="w-4 h-4" />
-                               </button>
-                               <button
-                                 disabled={it.position === items.length - 1}
-                                 onClick={() => setExpandedIdx(it.position + 1 < items.length ? it.position + 1 : null)}
-                                 className="flex-1 md:flex-none p-3 bg-bg-raised border border-border-subtle rounded-xl text-text-tertiary hover:text-text-primary transition-colors disabled:opacity-30 flex justify-center items-center"
-                               >
-                                 <ChevronRight className="w-4 h-4" />
-                               </button>
-                             </div>
-
-                             <button
-                                onClick={() => setJudeIdx(it.position)}
-                                className="w-full md:w-auto px-6 md:px-10 py-3 md:py-4 bg-accent text-bg-page text-[10px] md:text-xs font-black uppercase tracking-widest rounded-xl md:rounded-2xl shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow] flex items-center justify-center gap-3"
-                              >
-                                Ask Jude {it.isCorrect && "✦"}
-                              </button>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                </div>
-              );
-              })
+                  <Maximize2 className="w-4 h-4 text-text-tertiary group-hover:text-text-primary transition-colors shrink-0" />
+                </button>
+              ))
             )}
           </div>
         </div>
       </div>
+
+      {focusedId && filteredQuestions.some((it) => it.id === focusedId) && (
+        <ReviewFocusModal
+          items={filteredQuestions}
+          focusedId={focusedId}
+          onClose={() => setFocusedId(null)}
+          onNavigate={setFocusedId}
+          onAskJude={(it) => setJudeIdx(it.position)}
+        />
+      )}
 
       {judeIdx !== null && items[judeIdx] && (
         <JudePanel
@@ -1989,6 +1855,197 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
           onClose={() => setJudeIdx(null)}
         />
       )}
+    </div>
+  );
+}
+
+function ReviewFocusModal({
+  items,
+  focusedId,
+  onClose,
+  onNavigate,
+  onAskJude,
+}: {
+  items: ReviewItem[];
+  focusedId: string;
+  onClose: () => void;
+  onNavigate: (id: string) => void;
+  onAskJude: (it: ReviewItem) => void;
+}) {
+  const idx = items.findIndex((it) => it.id === focusedId);
+  const it = items[idx];
+  const hasPrev = idx > 0;
+  const hasNext = idx >= 0 && idx < items.length - 1;
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft' && hasPrev) onNavigate(items[idx - 1].id);
+      else if (e.key === 'ArrowRight' && hasNext) onNavigate(items[idx + 1].id);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasPrev, hasNext, idx, items, onClose, onNavigate]);
+
+  if (!it) return null;
+
+  const studentAnswerText =
+    it.type === 'mcq'
+      ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
+      : it.pickedText;
+
+  const navBtn =
+    'flex items-center gap-1 text-[10px] font-black uppercase tracking-widest bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg hover:bg-bg-sunken disabled:opacity-30 disabled:cursor-not-allowed';
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-bg-page flex flex-col">
+      <header className="h-16 shrink-0 flex items-center justify-between gap-3 px-4 md:px-6 border-b border-border-subtle bg-bg-surface">
+        <button
+          onClick={onClose}
+          className="flex items-center gap-2 text-sm font-bold text-text-secondary hover:text-text-primary"
+        >
+          <ArrowLeft className="w-4 h-4" /> Back
+        </button>
+        <div className="flex items-center gap-2 md:gap-3">
+          <button onClick={() => hasPrev && onNavigate(items[idx - 1].id)} disabled={!hasPrev} className={navBtn}>
+            <ChevronLeft className="w-3.5 h-3.5" /> Prev
+          </button>
+          <span className="text-[11px] font-black uppercase tracking-widest text-text-tertiary tabular-nums">
+            {idx + 1} / {items.length}
+          </span>
+          <button onClick={() => hasNext && onNavigate(items[idx + 1].id)} disabled={!hasNext} className={navBtn}>
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <button onClick={onClose} className="p-2 text-text-tertiary hover:text-text-primary" title="Close (Esc)">
+          <X className="w-5 h-5" />
+        </button>
+      </header>
+
+      <main className="flex-1 min-h-0">
+        <div className="max-w-3xl mx-auto w-full h-full flex flex-col px-4 md:px-6 py-4 gap-3">
+          {/* Status row */}
+          <div className="shrink-0 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-black text-text-tertiary">Q{it.position + 1}</span>
+              <div
+                className={cn(
+                  'px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest',
+                  it.isUnanswered
+                    ? 'bg-bg-raised text-text-tertiary'
+                    : it.isCorrect
+                      ? 'bg-success-bg text-success-text'
+                      : 'bg-danger-bg text-danger-text'
+                )}
+              >
+                {it.isUnanswered ? 'Unanswered' : it.isCorrect ? 'Correct' : 'Incorrect'}
+              </div>
+            </div>
+            <button
+              onClick={() => onAskJude(it)}
+              className="flex items-center gap-2 px-4 py-2 bg-accent text-bg-page text-[10px] font-black uppercase tracking-widest rounded-xl shadow-sm hover:-translate-y-0.5 transition-transform"
+            >
+              <Sparkles className="w-3.5 h-3.5" /> Ask Jude
+            </button>
+          </div>
+
+          {/* Question + answer — scrolls if tall */}
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar space-y-4 pr-0.5">
+            <RichText className="text-base md:text-lg text-text-primary leading-relaxed font-medium">
+              {it.prompt}
+            </RichText>
+
+            {it.assets.length > 0 && (
+              <div className="flex flex-col gap-3">
+                {it.assets.map((a) => (
+                  <img
+                    key={a.id}
+                    src={a.url}
+                    alt="diagram"
+                    loading="lazy"
+                    className="rounded-xl border border-border-subtle max-h-72 mx-auto"
+                  />
+                ))}
+              </div>
+            )}
+
+            {it.type === 'mcq' ? (
+              <div className="grid grid-cols-1 gap-2.5">
+                {it.options.map((opt, optIdx) => {
+                  const isCorrectOpt = opt.is_correct;
+                  const isStudentAns = it.pickedOptionId === opt.id;
+                  const label = String.fromCharCode(65 + optIdx) + '.';
+                  return (
+                    <div
+                      key={opt.id}
+                      className={cn(
+                        'flex items-center gap-3 p-3.5 rounded-xl border',
+                        isCorrectOpt
+                          ? 'bg-success-bg border-success-border text-success-text'
+                          : isStudentAns
+                            ? 'bg-danger-bg border-danger-border text-danger-text'
+                            : 'bg-bg-surface border-border-subtle text-text-tertiary opacity-60'
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'w-5 h-5 rounded-full border flex items-center justify-center shrink-0',
+                          isCorrectOpt
+                            ? 'bg-success-text border-success-text text-bg-page'
+                            : isStudentAns
+                              ? 'bg-danger-text border-danger-text text-bg-page'
+                              : 'border-border-subtle'
+                        )}
+                      >
+                        {isCorrectOpt ? <Check className="w-3 h-3" /> : isStudentAns ? <X className="w-3 h-3" /> : null}
+                      </div>
+                      <div className="flex gap-2.5 text-sm">
+                        <span className="font-black tracking-widest uppercase">{label}</span>
+                        <RichText inline className="font-medium">{opt.text}</RichText>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Response</span>
+                  <div className="p-3.5 bg-bg-surface border border-border-subtle rounded-xl font-mono text-sm">
+                    {studentAnswerText ? <RichText inline>{studentAnswerText}</RichText> : 'No response provided'}
+                  </div>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
+                  <div className="p-3.5 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
+                    {it.correctAnswer ? (
+                      <RichText inline>{`${it.correctAnswer}${it.unit ? ` ${it.unit}` : ''}`}</RichText>
+                    ) : (
+                      '—'
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Worked solution — its own scroll panel */}
+          {it.explanation && (
+            <div className="flex-1 min-h-0 flex flex-col bg-bg-sunken border border-border-subtle rounded-2xl overflow-hidden">
+              <div className="shrink-0 px-4 md:px-5 py-3 border-b border-border-subtle">
+                <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
+                  <Sigma className="w-3.5 h-3.5" /> Worked Solution
+                </span>
+              </div>
+              <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-5 py-4">
+                <RichText className="text-sm text-text-secondary leading-relaxed">
+                  {it.explanation}
+                </RichText>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
     </div>
   );
 }
