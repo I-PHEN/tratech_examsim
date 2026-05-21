@@ -1,4 +1,4 @@
-import { completion } from '../../lib/openrouter';
+import { completion } from '../../lib/llm';
 import type { ExtractedDraft, TopicHint } from './classifier';
 
 export interface TopicMatch {

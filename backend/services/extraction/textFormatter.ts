@@ -1,4 +1,4 @@
-import { completion } from '../../lib/openrouter';
+import { completion } from '../../lib/llm';
 
 function stripFences(s: string): string {
   return s.replace(/^\s*```(?:json|markdown|md)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();

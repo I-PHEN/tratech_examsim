@@ -294,7 +294,7 @@ export async function classifySegmentsJob(
 
   try {
     const concurrency =
-      (job.model ?? process.env.OPENROUTER_DEFAULT_MODEL ?? '').endsWith(':free') ? 1 : 3;
+      (job.model ?? process.env.GROQ_DEFAULT_MODEL ?? '').endsWith(':free') ? 1 : 3;
 
     const perSegment = await parallelMap(clean, concurrency, async (segment) => {
       let extracted: Awaited<ReturnType<typeof classifyPage>> = [];

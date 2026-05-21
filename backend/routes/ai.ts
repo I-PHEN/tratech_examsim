@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../lib/errors';
 import { parse } from '../lib/validate';
 import { ChatRequest } from '../schemas/ai';
-import { streamingFetch } from '../lib/openrouter';
+import { streamingFetch } from '../lib/llm';
 
 const router = Router();
 

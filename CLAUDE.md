@@ -8,7 +8,7 @@ Notes for Claude Code working in this repo. Keep this short — anything that wo
 - **Frontend**: React 19 + Vite + Tailwind 4. Entry is [src/App.tsx](src/App.tsx) (student) and [src/Admin.tsx](src/Admin.tsx) (admin console).
 - **Database**: Supabase Postgres + Storage (bucket `ingestion-uploads`).
 - **Auth**: Firebase Auth (ID tokens) + Firestore for user profile.
-- **AI**: OpenRouter (LLM — classifier / verifier / topic matcher / tutor) and Mistral (OCR for PDF + images).
+- **AI**: Groq (LLM — classifier / verifier / topic matcher / tutor) and Mistral (OCR for PDF + images).
 
 ## Dev loop
 
@@ -72,7 +72,7 @@ Don't regex error messages and don't render raw error JSON to users.
 
 ## AI services
 
-- **OpenRouter** ([backend/lib/openrouter.ts](backend/lib/openrouter.ts)): default model in `.env` `OPENROUTER_DEFAULT_MODEL`. The wrapper retries 429 / 502 / 503 / 504 (and body errors with `code` 429) with `Retry-After` or 2s/5s/12s backoff, up to 3 attempts. On retry-exhausted or 200-with-empty-content, throws a descriptive error including `finish_reason` and a body snippet.
+- **Groq** ([backend/lib/llm.ts](backend/lib/llm.ts)): default model in `.env` `GROQ_DEFAULT_MODEL` (typical: `openai/gpt-oss-120b`). OpenAI-compatible endpoint at `https://api.groq.com/openai/v1/chat/completions`. The wrapper retries 429 / 502 / 503 / 504 (and body errors with `code` 429) with `Retry-After` or 2s/5s/12s backoff, up to 3 attempts. On retry-exhausted or 200-with-empty-content, throws a descriptive error including `finish_reason` and a body snippet.
 - **Pipeline concurrency** ([backend/services/extraction/pipeline.ts](backend/services/extraction/pipeline.ts)): drops classify concurrency from 3 → 1 when the model id ends in `:free` (free models have aggressive rate limits).
 - **Mistral OCR** ([backend/lib/mistralOcr.ts](backend/lib/mistralOcr.ts)): PDF goes through Files API (upload → signed URL → OCR). Images go inline base64.
 

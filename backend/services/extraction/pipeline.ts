@@ -14,7 +14,7 @@ const CLASSIFY_CONCURRENCY_FREE = 1;
 const VERIFY_CONCURRENCY = 5;
 
 function classifyConcurrencyFor(model: string | null): number {
-  const effective = model ?? process.env.OPENROUTER_DEFAULT_MODEL ?? '';
+  const effective = model ?? process.env.GROQ_DEFAULT_MODEL ?? '';
   return effective.endsWith(':free') ? CLASSIFY_CONCURRENCY_FREE : CLASSIFY_CONCURRENCY_PAID;
 }
 

@@ -2855,37 +2855,29 @@ function ExamSimulation({
                         </div>
                       ) : (
                         <div className="space-y-3">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Input Response</label>
-                            {currentQuestion.unit && (
-                              <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest">
-                                Expected unit:{' '}
-                                <span className="text-text-primary normal-case tracking-normal font-semibold">
-                                  <RichText inline>{currentQuestion.unit}</RichText>
-                                </span>
+                          <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Input Response</label>
+                          {currentQuestion.unit && (
+                            <div className="flex items-center gap-3 bg-accent-muted/40 border-2 border-accent rounded-xl px-4 py-3">
+                              <span className="text-[10px] font-black text-accent-text uppercase tracking-widest shrink-0">
+                                Expected Unit
                               </span>
-                            )}
-                          </div>
-                          <div className="relative">
-                            <input
-                              type="text"
-                              value={answers[currentIdx] || ''}
-                              onChange={(e) => handleAnswer(e.target.value)}
-                              onBlur={() => window.scrollTo(0, 0)}
-                              placeholder="Type your final result here..."
-                              className={cn(
-                                "w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono",
-                                currentQuestion.unit ? "pr-24" : ""
-                              )}
-                            />
-                            {currentQuestion.unit && (
-                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-text-tertiary font-semibold bg-bg-raised border border-border-subtle rounded-md px-2 py-0.5 pointer-events-none">
+                              <span className="text-base md:text-lg font-black text-text-primary leading-none">
                                 <RichText inline>{currentQuestion.unit}</RichText>
                               </span>
-                            )}
-                          </div>
+                            </div>
+                          )}
+                          <input
+                            type="text"
+                            value={answers[currentIdx] || ''}
+                            onChange={(e) => handleAnswer(e.target.value)}
+                            onBlur={() => window.scrollTo(0, 0)}
+                            placeholder={currentQuestion.unit ? 'Numeric value only…' : 'Type your final result here…'}
+                            className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
+                          />
                           <p className="text-[9px] text-text-tertiary italic">
-                            Enter the numeric value only{currentQuestion.unit ? ' — the unit shown above is already assumed' : ''}. Numerical answers must match specified precision (±0.01).
+                            {currentQuestion.unit
+                              ? 'Enter the numeric value only — the unit shown above is assumed. Match specified precision (±0.01).'
+                              : 'Numerical answers must match specified precision (±0.01).'}
                           </p>
                         </div>
                       )}

@@ -1,4 +1,4 @@
-import { completion, type ChatMessage } from '../lib/openrouter';
+import { completion, type ChatMessage } from '../lib/llm';
 
 export interface ProposedTopic {
   name: string;

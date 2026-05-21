@@ -1,8 +1,8 @@
 import 'dotenv/config';
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const DEFAULT_MODEL = process.env.OPENROUTER_DEFAULT_MODEL || 'google/gemma-4-31b-it:free';
-const DEFAULT_MAX_TOKENS = Number(process.env.OPENROUTER_MAX_TOKENS) || 16000;
+const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const DEFAULT_MODEL = process.env.GROQ_DEFAULT_MODEL || 'openai/gpt-oss-120b';
+const DEFAULT_MAX_TOKENS = Number(process.env.GROQ_MAX_TOKENS) || 16000;
 
 export type ChatMessage = {
   role: 'system' | 'user' | 'assistant';
@@ -22,8 +22,8 @@ export interface CompletionOptions {
 }
 
 function getKey(): string {
-  const key = process.env.OPENROUTER_API_KEY;
-  if (!key) throw new Error('OPENROUTER_API_KEY not configured');
+  const key = process.env.GROQ_API_KEY;
+  if (!key) throw new Error('GROQ_API_KEY not configured');
   return key;
 }
 
@@ -61,7 +61,7 @@ export async function completion(opts: CompletionOptions): Promise<{ content: st
   let lastStatus = 0;
 
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    const response = await fetch(OPENROUTER_URL, {
+    const response = await fetch(GROQ_URL, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${getKey()}`,
@@ -78,12 +78,12 @@ export async function completion(opts: CompletionOptions): Promise<{ content: st
         const retryAfter = parseRetryAfter(response.headers.get('retry-after'));
         const wait = retryAfter ?? DEFAULT_BACKOFF_MS[attempt - 1];
         console.warn(
-          `[openrouter] ${response.status} for ${body.model}, retrying in ${Math.round(wait / 1000)}s (attempt ${attempt}/${MAX_ATTEMPTS})`
+          `[groq] ${response.status} for ${body.model}, retrying in ${Math.round(wait / 1000)}s (attempt ${attempt}/${MAX_ATTEMPTS})`
         );
         await sleep(wait);
         continue;
       }
-      throw new Error(`OpenRouter error ${response.status}: ${lastErrorText}`);
+      throw new Error(`Groq error ${response.status}: ${lastErrorText}`);
     }
 
     const data = (await response.json()) as {
@@ -96,13 +96,13 @@ export async function completion(opts: CompletionOptions): Promise<{ content: st
       if (RETRYABLE_STATUSES.has(code) && attempt < MAX_ATTEMPTS) {
         const wait = DEFAULT_BACKOFF_MS[attempt - 1];
         console.warn(
-          `[openrouter] body-error ${code} for ${body.model}, retrying in ${Math.round(wait / 1000)}s (attempt ${attempt}/${MAX_ATTEMPTS})`
+          `[groq] body-error ${code} for ${body.model}, retrying in ${Math.round(wait / 1000)}s (attempt ${attempt}/${MAX_ATTEMPTS})`
         );
         await sleep(wait);
         continue;
       }
       throw new Error(
-        `OpenRouter returned error (model=${body.model}): ${data.error.message ?? JSON.stringify(data.error)}`
+        `Groq returned error (model=${body.model}): ${data.error.message ?? JSON.stringify(data.error)}`
       );
     }
 
@@ -114,7 +114,7 @@ export async function completion(opts: CompletionOptions): Promise<{ content: st
       const upstream = choice?.error?.message;
       const snippet = JSON.stringify(data).slice(0, 400);
       throw new Error(
-        `OpenRouter returned empty content (model=${body.model}, finish_reason=${finish}${
+        `Groq returned empty content (model=${body.model}, finish_reason=${finish}${
           upstream ? `, upstream=${upstream}` : ''
         }). Raw: ${snippet}`
       );
@@ -123,7 +123,7 @@ export async function completion(opts: CompletionOptions): Promise<{ content: st
     return { content };
   }
 
-  throw new Error(`OpenRouter error ${lastStatus} after ${MAX_ATTEMPTS} attempts: ${lastErrorText}`);
+  throw new Error(`Groq error ${lastStatus} after ${MAX_ATTEMPTS} attempts: ${lastErrorText}`);
 }
 
 export async function streamingFetch(opts: CompletionOptions): Promise<Response> {
@@ -133,7 +133,7 @@ export async function streamingFetch(opts: CompletionOptions): Promise<Response>
     stream: true,
   };
 
-  const response = await fetch(OPENROUTER_URL, {
+  const response = await fetch(GROQ_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${getKey()}`,
@@ -144,7 +144,7 @@ export async function streamingFetch(opts: CompletionOptions): Promise<Response>
 
   if (!response.ok || !response.body) {
     const errText = await response.text().catch(() => '');
-    throw new Error(`OpenRouter streaming error ${response.status}: ${errText}`);
+    throw new Error(`Groq streaming error ${response.status}: ${errText}`);
   }
 
   return response;

@@ -1,4 +1,4 @@
-import { completion } from '../../lib/openrouter';
+import { completion } from '../../lib/llm';
 
 export interface ExtractedDraft {
   type: 'mcq' | 'calc';
