@@ -2168,8 +2168,12 @@ Stay strictly on THIS question — politely decline unrelated requests.
 - Use GitHub-flavoured tables for comparisons.
 - Use LaTeX for ALL math. Delimiters MUST be dollar signs: $...$ inline, $$...$$ for display.
   NEVER use \\( \\) or \\[ \\] — those do not render. Put each calculation step on its own line.
-- When a diagram genuinely helps (a process, cycle, decision tree, relationship), emit a
-  \`\`\`mermaid fenced block. Keep the syntax simple (flowchart TD or graph LR).
+- When a diagram would help (a process, cycle, decision tree, relationship, comparison),
+  emit a \`\`\`mermaid fenced block — and ALWAYS do so when the student asks to "see",
+  "draw", "show" or "visualise" something. Use \`flowchart TD\` or \`flowchart LR\`.
+  CRITICAL: wrap EVERY node label in double quotes — write \`A["Charge (8 min)"]\`, never
+  \`A[Charge (8 min)]\`; unquoted parentheses or symbols break the renderer. Keep edge
+  labels plain text and diagrams to about 8 nodes.
 - For a multi-step worked solution, wrap EACH step in its own fenced block so the student can
   reveal steps one at a time:
   \`\`\`jude-step
@@ -2190,8 +2194,8 @@ Stay strictly on THIS question — politely decline unrelated requests.
   const suggestedPrompts = useMemo(
     () =>
       isUnanswered || isCorrect === false
-        ? ['Why is my answer wrong?', 'Explain this question', 'Break it down step by step', 'Give me a similar practice question']
-        : ['Explain this question', 'Break it down step by step', 'What concept is being tested?', 'Give me a similar practice question'],
+        ? ['Why is my answer wrong?', 'Break it down step by step', 'Show me a diagram', 'Give me a similar practice question']
+        : ['Explain this question', 'Break it down step by step', 'Show me a diagram', 'Give me a similar practice question'],
     [isUnanswered, isCorrect]
   );
 
@@ -2280,7 +2284,14 @@ Stay strictly on THIS question — politely decline unrelated requests.
       >
       {/* Minimal top bar */}
       <header className="shrink-0 flex items-center justify-between gap-4 px-4 md:px-6 py-3">
-        <span className="text-sm font-black text-text-primary tracking-tight">Jude</span>
+        <span
+          className={cn(
+            'font-black text-text-primary tracking-tight',
+            mode === 'full' ? 'text-2xl' : 'text-lg'
+          )}
+        >
+          Jude
+        </span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setMode((m) => (m === 'full' ? 'sidebar' : 'full'))}

@@ -13,6 +13,19 @@ const rehypePlugins = [rehypeKatex];
 const CUSTOM_LANGS = /language-(mermaid|jude-step|jude-tabs)/;
 const MAX_BLOCK_DEPTH = 2;
 
+// Mermaid diagram-type keywords. The model frequently emits a diagram inside a
+// bare ``` fence (no `mermaid` language tag); detecting the keyword on the first
+// line lets us still render it as a diagram instead of a raw code block.
+const MERMAID_KEYWORDS =
+  /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|C4Context|xychart-beta|block-beta|sankey-beta)\b/;
+
+function detectFenceLang(raw: string): 'mermaid' | null {
+  // Multi-line guard so single-backtick inline code is never misread.
+  if (!raw.includes('\n')) return null;
+  const first = raw.replace(/^\s+/, '').split('\n', 1)[0].trim();
+  return MERMAID_KEYWORDS.test(first) ? 'mermaid' : null;
+}
+
 /**
  * LLMs frequently emit math with the bracket delimiters `\( … \)` / `\[ … \]`
  * instead of the `$ … $` / `$$ … $$` form `remark-math` understands — the
@@ -44,6 +57,18 @@ function classOf(node: ReactNode): string {
   const child = Array.isArray(node) ? node[0] : node;
   if (child && typeof child === 'object' && 'props' in child) {
     return String((child as { props?: { className?: string } }).props?.className ?? '');
+  }
+  return '';
+}
+
+// Pulls the raw text content out of a <pre>'s child <code> element so the `pre`
+// override can recognise an untagged mermaid fence and strip its chrome.
+function rawOf(node: ReactNode): string {
+  const child = Array.isArray(node) ? node[0] : node;
+  if (child && typeof child === 'object' && 'props' in child) {
+    const c = (child as { props?: { children?: unknown } }).props?.children;
+    if (typeof c === 'string') return c;
+    if (Array.isArray(c)) return c.map((x) => (typeof x === 'string' ? x : '')).join('');
   }
   return '';
 }
@@ -93,8 +118,9 @@ function buildComponents(streaming: boolean, depth: number): Components {
     code: ({ className, children }) => {
       const lang = /language-([\w-]+)/.exec(className ?? '')?.[1];
       const raw = String(children ?? '');
-      if (lang && depth < MAX_BLOCK_DEPTH) {
-        if (lang === 'mermaid') return <MermaidBlock code={raw} streaming={streaming} />;
+      if (depth < MAX_BLOCK_DEPTH) {
+        if (lang === 'mermaid' || detectFenceLang(raw) === 'mermaid')
+          return <MermaidBlock code={raw} streaming={streaming} />;
         if (lang === 'jude-step') return <JudeStep raw={raw} depth={depth} />;
         if (lang === 'jude-tabs') return <JudeTabs raw={raw} depth={depth} />;
       }
@@ -106,7 +132,10 @@ function buildComponents(streaming: boolean, depth: number): Components {
     },
     pre: ({ children }) => {
       // Custom blocks render themselves — strip the <pre> chrome around them.
-      if (CUSTOM_LANGS.test(classOf(children))) {
+      // This also covers an untagged ``` fence whose content is a mermaid diagram.
+      const isMermaid =
+        depth < MAX_BLOCK_DEPTH && detectFenceLang(rawOf(children)) === 'mermaid';
+      if (CUSTOM_LANGS.test(classOf(children)) || isMermaid) {
         return <>{children}</>;
       }
       return (
