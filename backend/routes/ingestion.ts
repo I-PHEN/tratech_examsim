@@ -1,15 +1,17 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { z } from 'zod';
 import { supabase } from '../lib/supabase';
 import { ApiError, asyncHandler } from '../lib/errors';
 import { requireAdmin } from '../lib/auth';
 import { parse } from '../lib/validate';
-import { IdParam } from '../schemas/common';
+import { IdParam, uuid } from '../schemas/common';
 import {
   DraftUpdate,
   FileJobMeta,
   FormatTextInput,
   JobListQuery,
+  PublishInput,
   ReviewedTextUpdate,
   SegmentsCreate,
   TextJobCreate,
@@ -27,6 +29,8 @@ import {
   classifySegmentsJob,
   formatText,
   matchMarkschemeAnswers,
+  splitDraft,
+  mergeGroup,
 } from '../services/ingestionService';
 
 const router = Router();
@@ -273,6 +277,27 @@ router.delete(
 );
 
 router.post(
+  '/drafts/:id/split',
+  asyncHandler(async (req, res) => {
+    const { id } = parse(IdParam, req.params);
+    const result = await splitDraft(id);
+    res.json(result);
+  })
+);
+
+router.post(
+  '/jobs/:id/groups/:groupKey/merge',
+  asyncHandler(async (req, res) => {
+    const { id, groupKey } = parse(
+      z.object({ id: uuid, groupKey: uuid }),
+      req.params
+    );
+    const result = await mergeGroup(id, groupKey);
+    res.json(result);
+  })
+);
+
+router.post(
   '/jobs/:id/extract',
   asyncHandler(async (req, res) => {
     const { id } = parse(IdParam, req.params);
@@ -391,7 +416,8 @@ router.post(
   '/jobs/:id/publish',
   asyncHandler(async (req, res) => {
     const { id } = parse(IdParam, req.params);
-    const result = await publishJob(id);
+    const body = parse(PublishInput, req.body ?? {});
+    const result = await publishJob(id, body.draft_ids);
     res.json(result);
   })
 );

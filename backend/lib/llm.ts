@@ -134,6 +134,10 @@ export async function streamingFetch(opts: CompletionOptions): Promise<Response>
     model: opts.model || DEFAULT_MODEL,
     messages: opts.messages,
     stream: true,
+    // gpt-oss is a reasoning model: at the default effort it burns many seconds
+    // (and tokens) on hidden reasoning before emitting a single content token,
+    // which looks like a hung tutor. 'low' keeps replies fast and on-point.
+    reasoning_effort: 'low',
     // (prompt + max_tokens) must stay under Groq's on-demand TPM cap.
     max_tokens: opts.maxTokens ?? DEFAULT_MAX_TOKENS,
   };

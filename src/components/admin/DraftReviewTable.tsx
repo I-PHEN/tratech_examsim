@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Eye, EyeOff, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, X, Keyboard, KeyRound } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Eye, EyeOff, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, X, Keyboard, KeyRound, Split, Layers, Combine } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { RichText } from '../ui/RichText';
@@ -12,7 +12,7 @@ interface DraftData {
   exam_scope?: 'midsem' | 'final' | 'both';
   options?: Array<{ text: string; is_correct: boolean }>;
   correct_answer?: string;
-  answer_type?: 'exact' | 'range';
+  answer_type?: 'exact' | 'range' | 'written';
   answer_tolerance?: number;
   unit?: string;
   explanation?: string;
@@ -21,6 +21,12 @@ interface DraftData {
   solution_image_mime?: string;
   /** Review-only: fields pre-filled from an uploaded markscheme. */
   ai_matched?: { correct_answer?: boolean; explanation?: boolean };
+  /** A not-yet-split draft whose prompt holds several sub-parts (e.g. ["a","b"]). */
+  part_labels?: string[];
+  /** Multi-part grouping — sub-parts of one source question share a group_key. */
+  group_key?: string;
+  part_label?: string;
+  part_index?: number;
 }
 
 interface Draft {
@@ -68,6 +74,7 @@ const SCOPE_OPTS = [
 const ANSWER_TYPE_OPTS = [
   { key: 'E', value: 'exact' as const, label: 'Exact' },
   { key: 'R', value: 'range' as const, label: 'Range' },
+  { key: 'W', value: 'written' as const, label: 'Written' },
 ];
 
 /** Inline shortcut-keyed pill group — replaces a metadata <select>. */
@@ -150,7 +157,10 @@ const LEGEND_ROWS: { label: string; items: { k: string; desc: string }[] }[] = [
     label: 'Exam scope',
     items: [{ k: 'S', desc: 'Midsem' }, { k: 'F', desc: 'Final' }, { k: 'B', desc: 'Both' }],
   },
-  { label: 'Answer type', items: [{ k: 'E', desc: 'Exact' }, { k: 'R', desc: 'Range' }] },
+  {
+    label: 'Answer type',
+    items: [{ k: 'E', desc: 'Exact' }, { k: 'R', desc: 'Range' }, { k: 'W', desc: 'Written' }],
+  },
   {
     label: 'Actions',
     items: [
@@ -225,15 +235,24 @@ interface DraftRowProps {
   onSave: () => Promise<void>;
   onReject: () => Promise<void>;
   onExpand?: () => void;
+  /** Provided only for ungrouped drafts — splits the draft into sub-parts. */
+  onSplit?: () => void;
+  splitting?: boolean;
+  /** Provided only for standalone drafts — grouped parts publish via the group. */
+  onPublish?: () => void;
+  publishing?: boolean;
   focused?: boolean;
 }
 
-const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, focused }) => {
+const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, onSplit, splitting, onPublish, publishing, focused }) => {
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | 'unit' | null>(null);
   const [preview, setPreview] = useState<Set<'prompt' | 'explanation'>>(new Set());
   const d = draft.draft_data;
+  const [showMore, setShowMore] = useState<boolean>(() => !!d.explanation?.trim());
+  const multipartHint = (d.part_labels?.length ?? 0) >= 2;
+  const showSecondary = focused || showMore;
 
   const togglePreview = (k: 'prompt' | 'explanation') =>
     setPreview((prev) => {
@@ -334,13 +353,45 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
   };
 
   return (
-    <div className="border border-border-subtle rounded-2xl p-5 bg-bg-surface space-y-4">
+    <div
+      className={cn(
+        'border border-border-subtle rounded-2xl p-5 bg-bg-surface space-y-4',
+        d.group_key && 'border-l-4 border-l-primary/40'
+      )}
+    >
       <div className="flex items-center justify-between text-xs text-text-secondary">
-        <span>
-          {draft.source_page != null ? `Page ${draft.source_page}` : 'Source: n/a'}
-          {draft.ai_confidence != null && ` • confidence ${(draft.ai_confidence * 100).toFixed(0)}%`}
+        <span className="flex items-center gap-2">
+          {d.group_key && (
+            <span className="px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/30 text-[10px] font-bold uppercase tracking-wide">
+              Multi-part · Part {d.part_label ?? '?'}
+            </span>
+          )}
+          <span>
+            {draft.source_page != null ? `Page ${draft.source_page}` : 'Source: n/a'}
+            {draft.ai_confidence != null && ` • confidence ${(draft.ai_confidence * 100).toFixed(0)}%`}
+          </span>
         </span>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          {onSplit && (
+            <button
+              onClick={onSplit}
+              disabled={splitting}
+              title="Split this multi-part question into one card per sub-part"
+              className={cn(
+                'flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold border disabled:opacity-50',
+                multipartHint
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-500 hover:bg-amber-500/20'
+                  : 'bg-bg-raised border-border-subtle text-text-primary hover:bg-bg-sunken'
+              )}
+            >
+              {splitting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Split className="w-3 h-3" />
+              )}
+              Split into parts
+            </button>
+          )}
           {onExpand && (
             <button
               onClick={onExpand}
@@ -359,6 +410,21 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
             {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
             Save
           </button>
+          {onPublish && (
+            <button
+              onClick={onPublish}
+              disabled={publishing}
+              title="Publish this question now"
+              className="flex items-center gap-1.5 text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {publishing ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Send className="w-3 h-3" />
+              )}
+              Publish
+            </button>
+          )}
           <button
             onClick={onReject}
             className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg font-bold hover:bg-red-500/20"
@@ -368,6 +434,17 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           </button>
         </div>
       </div>
+
+      {onSplit && multipartHint && (
+        <div className="flex items-start gap-2 text-[11px] text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          <Split className="w-3.5 h-3.5 shrink-0 mt-px" />
+          <span>
+            Looks multi-part (parts {d.part_labels!.join(', ')}). Use{' '}
+            <b>Split into parts</b> so each sub-part gets its own answer and worked
+            solution.
+          </span>
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-end gap-3 text-text-secondary">
@@ -491,60 +568,63 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label className="text-xs md:col-span-2">
-            <span className="flex items-center gap-2 mb-1">
-              <span className="text-text-secondary font-bold uppercase tracking-wider">
-                Correct Answer
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <label className="text-xs md:col-span-2">
+              <span className="flex items-center gap-2 mb-1">
+                <span className="text-text-secondary font-bold uppercase tracking-wider">
+                  {d.answer_type === 'written' ? 'Model Answer' : 'Correct Answer'}
+                </span>
+                {d.ai_matched?.correct_answer && <AiMatchedBadge />}
               </span>
-              {d.ai_matched?.correct_answer && <AiMatchedBadge />}
-            </span>
-            <input
-              data-cycle
-              value={d.correct_answer ?? ''}
-              onChange={(e) => editField('correct_answer', e.target.value)}
-              className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-            />
-          </label>
-          <ShortcutPills
-            label="Answer Type"
-            value={d.answer_type ?? 'exact'}
-            options={ANSWER_TYPE_OPTS}
-            onChange={(v) => update({ answer_type: v })}
-          />
-          <label className="text-xs">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-text-secondary font-bold uppercase tracking-wider block">
-                {d.answer_type === 'range' ? 'Tolerance' : 'Unit'}
-              </span>
-              {d.answer_type !== 'range' && (
-                <button
-                  type="button"
-                  onClick={() => formatField('unit')}
-                  disabled={fmtBusy !== null || !d.unit?.trim()}
-                  title="AI clean-up to KaTeX (e.g. m^3 → $\mathrm{m^{3}}$)"
-                  className="flex items-center gap-1 text-[10px] text-text-secondary hover:text-primary disabled:opacity-40"
-                >
-                  {fmtBusy === 'unit' ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3 h-3" />
-                  )}
-                  Format
-                </button>
+              {d.answer_type === 'written' ? (
+                <textarea
+                  data-cycle
+                  value={d.correct_answer ?? ''}
+                  onChange={(e) => editField('correct_answer', e.target.value)}
+                  placeholder="The worded model answer students are AI-graded against…"
+                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary min-h-[60px]"
+                />
+              ) : (
+                <input
+                  data-cycle
+                  value={d.correct_answer ?? ''}
+                  onChange={(e) => editField('correct_answer', e.target.value)}
+                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
+                />
               )}
-            </div>
-            {d.answer_type === 'range' ? (
-              <input
-                data-cycle
-                type="number"
-                step="any"
-                value={d.answer_tolerance ?? ''}
-                onChange={(e) => update({ answer_tolerance: parseFloat(e.target.value) || undefined })}
-                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-              />
-            ) : (
-              <>
+            </label>
+            <ShortcutPills
+              label="Answer Type"
+              value={d.answer_type ?? 'exact'}
+              options={ANSWER_TYPE_OPTS}
+              onChange={(v) => update({ answer_type: v })}
+            />
+          </div>
+
+          {/* A numeric answer keeps its unit whether it is exact OR a range. */}
+          {d.answer_type !== 'written' && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <label className={cn('text-xs', d.answer_type !== 'range' && 'md:col-span-2')}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-text-secondary font-bold uppercase tracking-wider block">
+                    Unit
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => formatField('unit')}
+                    disabled={fmtBusy !== null || !d.unit?.trim()}
+                    title="AI clean-up to KaTeX (e.g. m^3 → $\mathrm{m^{3}}$)"
+                    className="flex items-center gap-1 text-[10px] text-text-secondary hover:text-primary disabled:opacity-40"
+                  >
+                    {fmtBusy === 'unit' ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3 h-3" />
+                    )}
+                    Format
+                  </button>
+                </div>
                 <input
                   data-cycle
                   value={d.unit ?? ''}
@@ -560,12 +640,50 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
                     </span>
                   </div>
                 )}
-              </>
-            )}
-          </label>
+              </label>
+
+              {d.answer_type === 'range' && (
+                <label className="text-xs">
+                  <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
+                    Tolerance (±)
+                  </span>
+                  <input
+                    data-cycle
+                    type="number"
+                    step="any"
+                    value={d.answer_tolerance ?? ''}
+                    onChange={(e) =>
+                      update({ answer_tolerance: parseFloat(e.target.value) || undefined })
+                    }
+                    placeholder="e.g. 0.5"
+                    className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
+                  />
+                </label>
+              )}
+            </div>
+          )}
         </div>
       )}
 
+      {!focused && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setShowMore((v) => !v)}
+            className="flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-text-secondary hover:text-text-primary"
+          >
+            {showSecondary ? (
+              <ChevronUp className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+            {showSecondary ? 'Fewer details' : 'Worked solution & source'}
+          </button>
+        </div>
+      )}
+
+      {showSecondary && (
+      <>
       <div className="text-xs block">
         <div className="flex items-center justify-between mb-1">
           <span className="flex items-center gap-2">
@@ -669,16 +787,159 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           </p>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 };
+
+interface QuestionGroupCardProps {
+  groupKey: string;
+  parts: Draft[];
+  topics: Topic[];
+  jobId: string;
+  onChange: (next: Draft) => void;
+  onSave: (d: Draft) => Promise<void>;
+  onReject: (d: Draft) => Promise<void>;
+  onExpand: (id: string) => void;
+  onMerge: (groupKey: string) => Promise<void>;
+  merging: boolean;
+  onPublish: (groupKey: string, draftIds: string[]) => void;
+  publishing: boolean;
+}
+
+/** Container for a multi-part question — `[a][b][c]` tabs over a shared group. */
+const QuestionGroupCard: React.FC<QuestionGroupCardProps> = ({
+  groupKey,
+  parts,
+  topics,
+  jobId,
+  onChange,
+  onSave,
+  onReject,
+  onExpand,
+  onMerge,
+  merging,
+  onPublish,
+  publishing,
+}) => {
+  const [activeId, setActiveId] = useState<string>(parts[0]?.id);
+  const active = parts.find((p) => p.id === activeId) ?? parts[0];
+  const pendingPartIds = parts.filter((p) => p.status === 'pending').map((p) => p.id);
+
+  return (
+    <div className="border border-primary/30 rounded-2xl bg-primary/[0.03] overflow-hidden">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-primary/20 bg-primary/[0.06]">
+        <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary">
+          <Layers className="w-4 h-4" />
+          Multi-part question · {parts.length} {parts.length === 1 ? 'part' : 'parts'}
+        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => onMerge(groupKey)}
+            disabled={merging || publishing}
+            title="Merge the parts back into one question (e.g. to re-split)"
+            className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken disabled:opacity-50"
+          >
+            {merging ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Combine className="w-3 h-3" />
+            )}
+            Merge back
+          </button>
+          <button
+            onClick={() => onPublish(groupKey, pendingPartIds)}
+            disabled={publishing || merging || pendingPartIds.length === 0}
+            title="Publish all parts of this question now"
+            className="flex items-center gap-1.5 text-xs bg-emerald-600 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-emerald-500 disabled:opacity-50"
+          >
+            {publishing ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <Send className="w-3 h-3" />
+            )}
+            Publish question
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-1 px-5 pt-3">
+        {parts.map((p) => {
+          const isActive = p.id === active?.id;
+          const rejected = p.status !== 'pending';
+          return (
+            <button
+              key={p.id}
+              onClick={() => setActiveId(p.id)}
+              className={cn(
+                'px-3 py-1.5 rounded-lg border text-xs font-bold transition-all',
+                isActive
+                  ? 'bg-bg-raised border-primary/40 text-primary'
+                  : 'bg-bg-sunken border-border-subtle text-text-secondary hover:bg-bg-raised',
+                rejected && 'line-through opacity-50'
+              )}
+            >
+              Part {p.draft_data.part_label ?? '?'}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="px-5 pb-5 pt-3">
+        {active && (
+          <DraftRow
+            key={active.id}
+            draft={active}
+            topics={topics}
+            jobId={jobId}
+            onChange={onChange}
+            onSave={() => onSave(active)}
+            onReject={() => onReject(active)}
+            onExpand={active.status === 'pending' ? () => onExpand(active.id) : undefined}
+          />
+        )}
+      </div>
+    </div>
+  );
+};
+
+/** A draft list item — either a standalone draft or a multi-part group. */
+type ReviewItem =
+  | { kind: 'single'; draft: Draft }
+  | { kind: 'group'; groupKey: string; parts: Draft[] };
+
+/** Collapse drafts sharing a `group_key` into one ordered group item. */
+function buildReviewItems(drafts: Draft[]): ReviewItem[] {
+  const items: ReviewItem[] = [];
+  const seen = new Set<string>();
+  for (const d of drafts) {
+    const gk = d.draft_data.group_key;
+    if (gk) {
+      if (seen.has(gk)) continue;
+      seen.add(gk);
+      const parts = drafts
+        .filter((x) => x.draft_data.group_key === gk)
+        .sort(
+          (a, b) => (a.draft_data.part_index ?? 0) - (b.draft_data.part_index ?? 0)
+        );
+      items.push({ kind: 'group', groupKey: gk, parts });
+    } else {
+      items.push({ kind: 'single', draft: d });
+    }
+  }
+  return items;
+}
 
 export function DraftReviewTable({ jobId }: { jobId: string }) {
   const [job, setJob] = useState<Job | null>(null);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [loading, setLoading] = useState(true);
-  const [publishing, setPublishing] = useState(false);
+  // null = idle; otherwise the key of the publish in flight ('all', a draft id,
+  // or a group key) — drives which Publish button shows a spinner.
+  const [publishingKey, setPublishingKey] = useState<string | null>(null);
+  const publishing = publishingKey !== null;
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [bulkApplying, setBulkApplying] = useState<'midsem' | 'final' | 'both' | null>(null);
   const [bulkMsg, setBulkMsg] = useState<string | null>(null);
@@ -689,6 +950,8 @@ export function DraftReviewTable({ jobId }: { jobId: string }) {
   const [verifying, setVerifying] = useState(false);
   const [matching, setMatching] = useState(false);
   const [focusedId, setFocusedId] = useState<string | null>(null);
+  const [splittingId, setSplittingId] = useState<string | null>(null);
+  const [mergingKey, setMergingKey] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -835,14 +1098,65 @@ export function DraftReviewTable({ jobId }: { jobId: string }) {
     }
   };
 
-  const publishAll = async () => {
-    setPublishing(true);
+  // Split one multi-part draft into a group of sub-part drafts.
+  const splitDraft = async (draft: Draft) => {
+    setSplittingId(draft.id);
+    setBulkMsg(null);
+    try {
+      // Persist edits first so the split runs against the current prompt.
+      await apiPatch(`/api/ingestion/drafts/${draft.id}`, { draft_data: draft.draft_data });
+      const result = await apiPost<{ parts: number }>(
+        `/api/ingestion/drafts/${draft.id}/split`,
+        {}
+      );
+      await load();
+      setBulkMsg(`Split into ${result.parts} parts.`);
+    } catch (err) {
+      setBulkMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSplittingId(null);
+    }
+  };
+
+  // Merge a multi-part group back into one draft.
+  const mergeGroup = async (groupKey: string) => {
+    setMergingKey(groupKey);
+    setBulkMsg(null);
+    try {
+      // Persist edits on every part first.
+      const parts = drafts.filter(
+        (d) => d.status === 'pending' && d.draft_data.group_key === groupKey
+      );
+      for (const p of parts) {
+        await apiPatch(`/api/ingestion/drafts/${p.id}`, { draft_data: p.draft_data });
+      }
+      await apiPost(`/api/ingestion/jobs/${jobId}/groups/${groupKey}/merge`, {});
+      await load();
+      setBulkMsg('Merged the parts back into one question.');
+    } catch (err) {
+      setBulkMsg(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMergingKey(null);
+    }
+  };
+
+  // Publish drafts as real questions. `key` marks which button is busy;
+  // `draftIds` limits the publish to specific drafts (omit = all pending).
+  const publish = async (key: string, draftIds?: string[]) => {
+    setPublishingKey(key);
     setPublishResult(null);
     try {
-      for (const d of drafts.filter((x) => x.status === 'pending')) {
+      // Persist edits on the drafts being published so they go in current.
+      const toSave = drafts.filter(
+        (x) => x.status === 'pending' && (draftIds ? draftIds.includes(x.id) : true)
+      );
+      for (const d of toSave) {
         await apiPatch(`/api/ingestion/drafts/${d.id}`, { draft_data: d.draft_data });
       }
-      const result = await apiPost<PublishResult>(`/api/ingestion/jobs/${jobId}/publish`, {});
+      const result = await apiPost<PublishResult>(
+        `/api/ingestion/jobs/${jobId}/publish`,
+        draftIds ? { draft_ids: draftIds } : {}
+      );
       setPublishResult(result);
       await load();
     } catch (err) {
@@ -851,7 +1165,7 @@ export function DraftReviewTable({ jobId }: { jobId: string }) {
         skipped: [{ draft_id: '', reason: err instanceof Error ? err.message : String(err) }],
       });
     } finally {
-      setPublishing(false);
+      setPublishingKey(null);
     }
   };
 
@@ -900,12 +1214,17 @@ export function DraftReviewTable({ jobId }: { jobId: string }) {
             Let AI fill details
           </button>
           <button
-            onClick={publishAll}
+            onClick={() => publish('all')}
             disabled={matching || publishing || pendingCount === 0}
             className="flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-xl font-bold disabled:opacity-50"
+            title="Publish every pending question"
           >
-            {publishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Publish {pendingCount} pending
+            {publishingKey === 'all' ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <Send className="w-4 h-4" />
+            )}
+            Publish all ({pendingCount})
           </button>
         </div>
       </div>
@@ -1010,18 +1329,52 @@ export function DraftReviewTable({ jobId }: { jobId: string }) {
         </div>
       ) : (
         <div className="space-y-4">
-          {drafts.map((d) => (
-            <DraftRow
-              key={d.id}
-              draft={d}
-              topics={topics}
-              jobId={jobId}
-              onChange={updateDraft}
-              onSave={() => saveDraft(d)}
-              onReject={() => rejectDraft(d)}
-              onExpand={d.status === 'pending' ? () => setFocusedId(d.id) : undefined}
-            />
-          ))}
+          {buildReviewItems(drafts).map((item) =>
+            item.kind === 'group' ? (
+              <QuestionGroupCard
+                key={item.groupKey}
+                groupKey={item.groupKey}
+                parts={item.parts}
+                topics={topics}
+                jobId={jobId}
+                onChange={updateDraft}
+                onSave={saveDraft}
+                onReject={rejectDraft}
+                onExpand={setFocusedId}
+                onMerge={mergeGroup}
+                merging={mergingKey === item.groupKey}
+                onPublish={publish}
+                publishing={publishingKey === item.groupKey}
+              />
+            ) : (
+              <DraftRow
+                key={item.draft.id}
+                draft={item.draft}
+                topics={topics}
+                jobId={jobId}
+                onChange={updateDraft}
+                onSave={() => saveDraft(item.draft)}
+                onReject={() => rejectDraft(item.draft)}
+                onExpand={
+                  item.draft.status === 'pending'
+                    ? () => setFocusedId(item.draft.id)
+                    : undefined
+                }
+                onSplit={
+                  item.draft.status === 'pending'
+                    ? () => splitDraft(item.draft)
+                    : undefined
+                }
+                splitting={splittingId === item.draft.id}
+                onPublish={
+                  item.draft.status === 'pending'
+                    ? () => publish(item.draft.id, [item.draft.id])
+                    : undefined
+                }
+                publishing={publishingKey === item.draft.id}
+              />
+            )
+          )}
         </div>
       )}
 
@@ -1158,6 +1511,7 @@ const DraftFocusModal: React.FC<DraftFocusModalProps> = ({
       else if (k === 'b') patch = { exam_scope: 'both' };
       else if (k === 'e' && cd.type === 'calc') patch = { answer_type: 'exact' };
       else if (k === 'r' && cd.type === 'calc') patch = { answer_type: 'range' };
+      else if (k === 'w' && cd.type === 'calc') patch = { answer_type: 'written' };
 
       if (patch) {
         e.preventDefault();

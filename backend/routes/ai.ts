@@ -32,9 +32,11 @@ router.post(
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const chunk = decoder.decode(value);
-      res.write(chunk);
+      // `stream: true` so a multi-byte char split across chunks is not corrupted.
+      res.write(decoder.decode(value, { stream: true }));
     }
+    const tail = decoder.decode();
+    if (tail) res.write(tail);
     res.end();
   })
 );

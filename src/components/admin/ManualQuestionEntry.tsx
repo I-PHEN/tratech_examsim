@@ -8,7 +8,7 @@ import { CourseSelect } from './CourseSelect';
 type QType = 'mcq' | 'calc';
 type Difficulty = 'easy' | 'medium' | 'hard';
 type ExamScope = 'midsem' | 'final' | 'both';
-type AnswerType = 'exact' | 'range';
+type AnswerType = 'exact' | 'range' | 'written';
 
 interface Topic {
   id: string;
@@ -668,15 +668,25 @@ export function ManualQuestionEntry({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-2">
               <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
-                Correct Answer
+                {answerType === 'written' ? 'Model Answer' : 'Correct Answer'}
               </label>
-              <input
-                value={correctAnswer}
-                onChange={(e) => setCorrectAnswer(e.target.value)}
-                placeholder="e.g. 0.0231"
-                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
-              />
+              {answerType === 'written' ? (
+                <textarea
+                  value={correctAnswer}
+                  onChange={(e) => setCorrectAnswer(e.target.value)}
+                  placeholder="The worded model answer students are AI-graded against…"
+                  className="w-full min-h-[72px] bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
+                />
+              ) : (
+                <input
+                  value={correctAnswer}
+                  onChange={(e) => setCorrectAnswer(e.target.value)}
+                  placeholder="e.g. 0.0231"
+                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
+                />
+              )}
             </div>
+            {answerType !== 'written' && (
             <div>
               <div className="flex items-center justify-between mb-1">
                 <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
@@ -712,6 +722,7 @@ export function ManualQuestionEntry({
                 </div>
               )}
             </div>
+            )}
             <div>
               <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
                 Answer Type
@@ -723,6 +734,7 @@ export function ManualQuestionEntry({
               >
                 <option value="exact">Exact</option>
                 <option value="range">Range</option>
+                <option value="written">Written</option>
               </select>
             </div>
             {answerType === 'range' && (

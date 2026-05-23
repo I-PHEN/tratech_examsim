@@ -22,16 +22,22 @@ const SYSTEM_PROMPT = `You match exam questions to their answers in a marking sc
 
 You receive the full text of a marking scheme and a numbered list of questions.
 For EACH question, locate its answer in the marking scheme and return:
-  - "final_answer": the final numeric/symbolic answer (with unit if shown). For an
-    MCQ, the answer letter or the correct option's text.
-  - "worked_solution": the step-by-step working from the marking scheme, copied
-    faithfully — do NOT invent steps the scheme does not show.
+  - "final_answer": the concise final answer. For a numeric calculation, the
+    value with its unit. For an MCQ, the correct option's text. For a question
+    answered in words, a one- or two-sentence statement of the answer.
+  - "worked_solution": the COMPLETE step-by-step solution for this question,
+    copied faithfully from the marking scheme — EVERY step, all reasoning and
+    intermediate results, nothing summarised, abbreviated or omitted. It MUST
+    end with the final answer stated as a clear sentence (e.g. "Therefore, the
+    rate constant k = 0.046 min^-1."). This is what a student reads to learn —
+    preserve the whole solution. Do NOT invent steps the scheme does not show.
   - "correct_option": for an MCQ only, the verbatim text of the correct option.
   - "found": true only if the marking scheme actually contains this answer.
 
 FORMATTING — "final_answer" and "worked_solution" MUST be valid Markdown + LaTeX
 (rendered with KaTeX): inline math in $...$, display math in $$...$$, chemistry
-with proper sub/superscripts. Format only — never change the content.
+with proper sub/superscripts, Markdown lists for the steps. Format only — never
+change numbers, wording or meaning.
 
 If a question's answer is not in the marking scheme, return "found": false and
 omit the other fields. NEVER guess.
@@ -49,7 +55,7 @@ async function matchChunk(
   model?: string
 ): Promise<AnswerMatch[]> {
   const questionList = questions
-    .map((q) => `  [${q.index}] (${q.type}) ${q.prompt.slice(0, 1200)}`)
+    .map((q) => `  [${q.index}] (${q.type}) ${q.prompt.slice(0, 4000)}`)
     .join('\n\n');
 
   const result = await completion({

@@ -60,7 +60,7 @@ export const DraftData = z.object({
   exam_scope: ExamScope.optional(),
   options: z.array(McqOption).optional(),
   correct_answer: z.string().optional(),
-  answer_type: z.enum(['exact', 'range']).optional(),
+  answer_type: z.enum(['exact', 'range', 'written']).optional(),
   answer_tolerance: z.number().positive().optional(),
   unit: z.string().optional(),
   explanation: z.string().optional(),
@@ -68,6 +68,14 @@ export const DraftData = z.object({
   source_reference: z.string().max(500).optional(),
   solution_image_path: z.string().optional(),
   solution_image_mime: z.string().optional(),
+  // Multi-part: a not-yet-split draft whose prompt holds several sub-parts
+  // carries part_labels (e.g. ["a","b","c"]) so the review UI can offer a split.
+  part_labels: z.array(z.string().max(8)).max(20).optional(),
+  // Multi-part grouping: drafts sharing a group_key are sub-parts of one
+  // source question; at publish they get a shared question_group_id.
+  group_key: z.string().max(120).optional(),
+  part_label: z.string().max(8).optional(),
+  part_index: z.number().int().min(0).optional(),
   // Review-only: which fields were pre-filled from an uploaded markscheme.
   // Cleared per-field when a reviewer edits that field. Ignored at publish.
   ai_matched: z
@@ -84,6 +92,11 @@ export const DraftUpdate = z.object({
 });
 
 export type DraftDataInput = z.infer<typeof DraftData>;
+
+/** Publish payload — omit `draft_ids` to publish all pending drafts. */
+export const PublishInput = z.object({
+  draft_ids: z.array(uuid).optional(),
+});
 
 /** Global metadata applied to every manually-structured segment (per-question overridable). */
 export const SegmentGlobal = z.object({

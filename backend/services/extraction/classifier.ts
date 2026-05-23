@@ -7,12 +7,17 @@ export interface ExtractedDraft {
   topic_id?: string;
   options?: Array<{ text: string; is_correct: boolean }>;
   correct_answer?: string;
-  answer_type?: 'exact' | 'range';
+  answer_type?: 'exact' | 'range' | 'written';
   answer_tolerance?: number;
   unit?: string;
   explanation?: string;
   confidence?: number;
   source_page?: number;
+  /**
+   * Sub-part labels (e.g. ["a","b","c"]) when this is a multi-part question.
+   * The question stays ONE draft here — a later split pass divides it.
+   */
+  part_labels?: string[];
 }
 
 export interface TopicHint {
@@ -21,7 +26,7 @@ export interface TopicHint {
   description?: string | null;
 }
 
-const FEW_SHOT = `EXAMPLE — multi-part question, split per sub-part:
+const FEW_SHOT = `EXAMPLE — a multi-part question stays ONE record:
 
 Source transcript:
   Q3. A first-order reaction A → B is carried out isothermally in a batch reactor.
@@ -29,20 +34,14 @@ Source transcript:
        (a) Determine the rate constant k.
        (b) Calculate the time required for 90% conversion of A.
 
-Output:
+Output (ONE record — the whole question; "part_labels" lists its sub-parts):
   {
     "questions": [
       {
         "type": "calc",
-        "prompt": "Q3(a). A first-order reaction $A \\rightarrow B$ is carried out isothermally in a batch reactor. Initial concentration is $2.0\\ \\mathrm{mol/L}$. After 30 minutes, the concentration of $A$ is $0.5\\ \\mathrm{mol/L}$. Determine the rate constant $k$.",
+        "prompt": "Q3. A first-order reaction $A \\rightarrow B$ is carried out isothermally in a batch reactor. Initial concentration is $2.0\\ \\mathrm{mol/L}$. After 30 minutes, the concentration of $A$ is $0.5\\ \\mathrm{mol/L}$.\\n\\n(a) Determine the rate constant $k$.\\n\\n(b) Calculate the time required for 90% conversion of $A$.",
         "difficulty": "medium",
-        "confidence": 0.95,
-        "source_page": 1
-      },
-      {
-        "type": "calc",
-        "prompt": "Q3(b). A first-order reaction $A \\rightarrow B$ is carried out isothermally in a batch reactor. Initial concentration is $2.0\\ \\mathrm{mol/L}$. After 30 minutes, the concentration of $A$ is $0.5\\ \\mathrm{mol/L}$. Calculate the time required for 90% conversion of $A$.",
-        "difficulty": "medium",
+        "part_labels": ["a", "b"],
         "confidence": 0.95,
         "source_page": 1
       }
@@ -71,10 +70,11 @@ OUTPUT FORMAT — return ONLY a JSON object, no markdown fences, no commentary:
       "difficulty": "easy" | "medium" | "hard",
       "options": [{"text": "...", "is_correct": true | false}],
       "correct_answer": "<only if explicitly shown in source>",
-      "answer_type": "exact" | "range",
+      "answer_type": "exact" | "range" | "written",
       "answer_tolerance": <number>,
       "unit": "<unit for calc answer, omit if none>",
-      "explanation": "<any worked solution in source, else omit>",
+      "explanation": "<the COMPLETE worked solution if the source shows one — see Rule 4b>",
+      "part_labels": ["<sub-part labels e.g. a, b, c — ONLY for multi-part questions, see Rule 2>"],
       "confidence": <0.0-1.0>,
       "source_page": <integer>
     }
@@ -85,7 +85,7 @@ RULES — these are absolute:
 
 1. COMPLETENESS. The "prompt" field MUST be VERBATIM from the source — every number, unit, condition, equation, given datum, and clause the student needs to solve it. Do NOT summarise, paraphrase, abbreviate, or omit anything. Treat each prompt as if the student has NO access to the source document.
 
-2. MULTI-PART SPLIT. When a question has sub-parts (a), (b), (c), (i), (ii), etc., emit ONE record per sub-part. Prepend the shared setup/given-data paragraph to each sub-part's prompt so it reads standalone. Label sub-parts: "Q4(b). ...".
+2. MULTI-PART. When a question has sub-parts (a), (b), (c), (i), (ii), etc., keep it as ONE record — do NOT split it. The "prompt" field MUST contain the COMPLETE question: the shared setup / given-data paragraph followed by EVERY sub-part verbatim, in order. List the sub-part labels in "part_labels" (e.g. ["a","b","c"]), exactly as they appear in the source. A later step splits the parts apart and assigns each its own answer — your only job here is to capture the whole question intact and flag it. A standalone question with NO sub-parts MUST omit "part_labels" entirely.
 
 2b. FORMATTING. The "prompt", "options[].text" and "explanation" fields MUST be valid Markdown + LaTeX (rendered with KaTeX), WITHOUT changing any content:
    - Inline math in single $...$, standalone equations in $$...$$ (e.g. x^2 → $x^{2}$, fractions, integrals, Greek letters).
@@ -95,11 +95,16 @@ RULES — these are absolute:
 
 3. MCQ. Requires "options" array with 2–6 entries, exactly ONE is_correct: true (only if the source states the answer). NEVER guess the correct option.
 
-4. CALC. "prompt" required. "correct_answer" OPTIONAL — only include if the source explicitly shows it.
+4. CALC. "prompt" required. "correct_answer" OPTIONAL — only include if the source explicitly shows it. Set "answer_type":
+   - "exact"  — the answer is a single value matched exactly.
+   - "range"  — the answer is a number accepted within a tolerance (also set "answer_tolerance").
+   - "written" — the expected answer is a worded statement / explanation / interpretation rather than a single value (e.g. "state and justify…", "explain what this implies…", or a calculation that must be CONCLUDED in words). For "written", put the model answer (the worded answer) in "correct_answer".
+
+4b. EXPLANATION / WORKED SOLUTION. If the source shows a worked solution for a question, copy it into "explanation" IN FULL and faithfully — every step, all reasoning, nothing summarised or omitted — and make it end with the final answer stated as a clear sentence. This solution belongs to the question; it is NOT an "example" to skip (see Rule 6).
 
 5. DIFFICULTY. Estimate. Default "medium" when unsure.
 
-6. SKIP. Skip: definitions, theory, lecture notes, worked examples that show the full solution, instructions, and anything not posed as a student question to solve.
+6. SKIP. Skip only material that is NOT a student question to solve: definitions, theory blurbs, lecture notes, standalone fully-worked teaching examples, and instructions. Do NOT discard a worked solution that accompanies a real question — that goes in this question's "explanation" (Rule 4b).
 
 7. CONFIDENCE. Your confidence in the full record (0.0–1.0).
 

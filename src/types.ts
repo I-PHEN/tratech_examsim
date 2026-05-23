@@ -18,6 +18,13 @@ export interface Question {
   correctAnswer?: string;
   unit?: string;
   assets?: { id: string; url: string }[];
+  /** 'written' → free-text answer graded by AI; otherwise numeric. */
+  answerType?: 'exact' | 'range' | 'written';
+  /** Multi-part grouping — sub-parts of one source question. */
+  groupId?: string;
+  partLabel?: string;
+  partIndex?: number;
+  groupSize?: number;
 }
 
 export interface Topic {

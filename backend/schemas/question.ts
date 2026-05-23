@@ -6,12 +6,20 @@ const McqOption = z.object({
   is_correct: z.boolean(),
 });
 
+/** Links sub-parts (a, b, c) of one source question. Optional on every question. */
+const GroupFields = {
+  question_group_id: uuid.optional(),
+  part_label: z.string().max(8).optional(),
+  part_index: z.number().int().min(0).optional(),
+};
+
 const McqCreate = z.object({
   program_course_id: uuid,
   topic_id: uuid,
   type: z.literal('mcq'),
   difficulty: Difficulty,
   exam_scope: ExamScope,
+  ...GroupFields,
   content: z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
@@ -27,9 +35,11 @@ const CalcCreate = z.object({
   difficulty: Difficulty,
   exam_scope: ExamScope,
   answer_type: AnswerType,
+  ...GroupFields,
   content: z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
+    // For answer_type 'written' this holds the worded model answer.
     correct_answer: z.string().min(1),
     answer_tolerance: z.number().positive().optional(),
     unit: z.string().optional(),

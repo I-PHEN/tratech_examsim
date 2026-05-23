@@ -25,7 +25,7 @@ export const SessionAnswerSubmit = z
     question_id: uuid,
     position: z.coerce.number().int().min(0),
     picked_option_id: uuid.optional(),
-    picked_text: z.string().max(500).optional(),
+    picked_text: z.string().max(8000).optional(),
     time_ms: z.coerce.number().int().min(0).optional(),
   })
   .refine((d) => d.picked_option_id !== undefined || d.picked_text !== undefined, {

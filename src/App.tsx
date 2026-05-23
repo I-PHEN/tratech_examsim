@@ -32,7 +32,6 @@ import {
   Activity,
   Check,
   Flag,
-  User,
   Sun,
   Moon,
   Eye,
@@ -122,7 +121,10 @@ interface ApiQuestion {
   difficulty: 'easy' | 'medium' | 'hard';
   exam_scope: 'midsem' | 'final' | 'both';
   topic_id: string;
-  answer_type: 'exact' | 'range' | null;
+  answer_type: 'exact' | 'range' | 'written' | null;
+  question_group_id: string | null;
+  part_label: string | null;
+  part_index: number | null;
   content: ApiContent;
   options?: ApiOption[];
   assets: ApiAsset[];
@@ -153,7 +155,14 @@ function apiToMode(m: 'practice' | 'diagnostic' | 'midsem' | 'full_exam'): Study
   return 'FULL_EXAM';
 }
 
-function apiQuestionToFrontend(q: ApiQuestion, idx: number): Question {
+function apiQuestionToFrontend(q: ApiQuestion): Question {
+  const group = q.question_group_id
+    ? {
+        groupId: q.question_group_id,
+        partLabel: q.part_label ?? undefined,
+        partIndex: q.part_index ?? undefined,
+      }
+    : {};
   if (q.type === 'mcq') {
     return {
       id: q.id,
@@ -164,6 +173,7 @@ function apiQuestionToFrontend(q: ApiQuestion, idx: number): Question {
       correctOptionId: (q.options ?? []).find((o) => o.is_correct)?.id,
       marks: 1,
       assets: q.assets,
+      ...group,
     };
   }
   return {
@@ -172,9 +182,26 @@ function apiQuestionToFrontend(q: ApiQuestion, idx: number): Question {
     prompt: q.content.prompt,
     correctAnswer: q.content.correct_answer ?? undefined,
     unit: q.content.unit ?? undefined,
+    answerType: q.answer_type ?? undefined,
     marks: 1,
     assets: q.assets,
+    ...group,
   };
+}
+
+/** Map a picked-question list, filling groupSize from group membership counts. */
+function apiQuestionsToFrontend(qs: ApiQuestion[]): Question[] {
+  const groupCounts = new Map<string, number>();
+  for (const q of qs) {
+    if (q.question_group_id) {
+      groupCounts.set(q.question_group_id, (groupCounts.get(q.question_group_id) ?? 0) + 1);
+    }
+  }
+  return qs.map((q) => {
+    const fe = apiQuestionToFrontend(q);
+    if (fe.groupId) fe.groupSize = groupCounts.get(fe.groupId);
+    return fe;
+  });
 }
 
 async function* streamOpenRouter(
@@ -196,21 +223,40 @@ async function* streamOpenRouter(
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
+  let buffer = '';
+
+  // Robust SSE parsing: a `data:` line can be split across two network reads.
+  // Buffer everything and only ever parse COMPLETE lines, keeping the trailing
+  // partial line for the next read — otherwise split chunks are silently lost
+  // and the tutor reply comes back garbled or empty.
+  const lineToText = (line: string): string | null => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return null;
+    const data = trimmed.slice(5).trim();
+    if (!data || data === '[DONE]') return null;
+    try {
+      return JSON.parse(data).choices?.[0]?.delta?.content || '';
+    } catch {
+      return null;
+    }
+  };
 
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
-    const lines = decoder.decode(value).split('\n');
-    for (const line of lines) {
-      if (!line.startsWith('data: ')) continue;
-      const data = line.slice(6).trim();
-      if (data === '[DONE]') return;
-      try {
-        const text = JSON.parse(data).choices?.[0]?.delta?.content || '';
-        if (text) yield text;
-      } catch {}
+    buffer += decoder.decode(value, { stream: true });
+    let nl: number;
+    while ((nl = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, nl);
+      buffer = buffer.slice(nl + 1);
+      if (line.trim() === 'data: [DONE]') return;
+      const text = lineToText(line);
+      if (text) yield text;
     }
   }
+  // Flush any final line with no trailing newline.
+  const text = lineToText(buffer);
+  if (text) yield text;
 }
 
 const ACCENT_COLORS: Record<string, { light: any, dark: any }> = {
@@ -579,7 +625,7 @@ export default function App() {
         ...(state.selectedTopic?.id ? { topic_id: state.selectedTopic.id } : {}),
         ...(state.mode === 'PRACTICE' ? { count: state.questionCount } : {}),
       });
-      const questions = res.picked.map((q, i) => apiQuestionToFrontend(q, i));
+      const questions = apiQuestionsToFrontend(res.picked);
       setActiveSession({ sessionId: res.session_id, questions });
       setState(prev => ({ ...prev, step: 'EXAM' }));
     } catch (e) {
@@ -970,7 +1016,7 @@ export default function App() {
                           }>;
                         }>(`/api/sessions/${pending.id}/resume`);
 
-                        const questions = data.picked_questions.map((q, i) => apiQuestionToFrontend(q, i));
+                        const questions = apiQuestionsToFrontend(data.picked_questions);
                         if (questions.length === 0) {
                           // Legacy row from before we persisted question_ids; nothing
                           // to rehydrate. Surface the situation instead of dropping
@@ -1557,12 +1603,17 @@ interface ReviewSessionData {
     picked_option_id: string | null;
     picked_text: string | null;
     is_correct: boolean | null;
+    points: number | null;
+    ai_feedback: string | null;
     time_ms: number | null;
   }>;
   questions: Array<{
     id: string;
     type: 'mcq' | 'calc';
-    answer_type: 'exact' | 'range' | null;
+    answer_type: 'exact' | 'range' | 'written' | null;
+    question_group_id: string | null;
+    part_label: string | null;
+    part_index: number | null;
     content: { prompt: string; explanation?: string | null; correct_answer?: string | null; unit?: string | null };
     options: Array<{ id: string; text: string; is_correct: boolean }>;
     assets: Array<{ id: string; url: string }>;
@@ -1574,6 +1625,12 @@ interface ReviewItem {
   position: number;
   prompt: string;
   type: 'mcq' | 'calc';
+  answerType: 'exact' | 'range' | 'written' | null;
+  groupId: string | null;
+  partLabel: string | null;
+  partIndex: number | null;
+  groupSize: number;
+  displayNumber: number;
   options: Array<{ id: string; text: string; is_correct: boolean }>;
   assets: Array<{ id: string; url: string }>;
   correctAnswer: string | null;
@@ -1582,6 +1639,8 @@ interface ReviewItem {
   pickedOptionId: string | null;
   pickedText: string | null;
   isCorrect: boolean | null;
+  points: number | null;
+  aiFeedback: string | null;
   isUnanswered: boolean;
 }
 
@@ -1600,6 +1659,27 @@ function gradeBand(percent: number): { label: string; tone: GradeTone } {
   if (percent >= 55) return { label: 'Good', tone: 'accent' };
   if (percent >= 40) return { label: 'Pass', tone: 'neutral' };
   return { label: 'Needs Work', tone: 'danger' };
+}
+
+/**
+ * Assign a display number to each question so multi-part sub-parts read as ONE
+ * numbered question. The counter advances only when leaving a group — every
+ * sub-part of a group shares its number. Returns the per-index numbers and the
+ * total count of distinct questions (groups counted once).
+ */
+function computeQuestionNumbers(
+  list: { groupId: string | null | undefined }[]
+): { numbers: number[]; total: number } {
+  const numbers: number[] = [];
+  let counter = 0;
+  list.forEach((item, i) => {
+    const prev = i > 0 ? list[i - 1] : null;
+    const sameGroup =
+      item.groupId != null && prev != null && prev.groupId === item.groupId;
+    if (!sameGroup) counter++;
+    numbers.push(counter);
+  });
+  return { numbers, total: counter };
 }
 
 function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; onBack: () => void; courseName: string }) {
@@ -1632,25 +1712,47 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
 
   const items: ReviewItem[] = useMemo(() => {
     if (!data) return [];
-    const qById = new Map<string, ReviewSessionData['questions'][number]>(
-      data.questions.map((q) => [q.id, q])
+    // Iterate QUESTIONS, not answers — every question in the session must show
+    // in review (skipped multi-part parts, a fully blank submit). The answer, if
+    // any, is joined in by question id.
+    const answerByQid = new Map(data.answers.map((a) => [a.question_id, a]));
+    const groupCounts = new Map<string, number>();
+    for (const q of data.questions) {
+      if (q.question_group_id) {
+        groupCounts.set(
+          q.question_group_id,
+          (groupCounts.get(q.question_group_id) ?? 0) + 1
+        );
+      }
+    }
+    const numbering = computeQuestionNumbers(
+      data.questions.map((q) => ({ groupId: q.question_group_id }))
     );
-    return data.answers.map((a) => {
-      const q = qById.get(a.question_id);
-      const isUnanswered = a.picked_option_id == null && (a.picked_text == null || a.picked_text === '');
+    return data.questions.map((q, idx) => {
+      const a = answerByQid.get(q.id);
+      const isUnanswered =
+        !a || (a.picked_option_id == null && (a.picked_text == null || a.picked_text === ''));
       return {
-        id: q?.id ?? a.question_id,
-        position: a.position,
-        prompt: q?.content.prompt ?? '(question removed)',
-        type: q?.type ?? 'mcq',
-        options: q?.options ?? [],
-        assets: q?.assets ?? [],
-        correctAnswer: q?.content.correct_answer ?? null,
-        unit: q?.content.unit ?? null,
-        explanation: q?.content.explanation ?? null,
-        pickedOptionId: a.picked_option_id,
-        pickedText: a.picked_text,
-        isCorrect: isUnanswered ? null : a.is_correct,
+        id: q.id,
+        position: idx,
+        prompt: q.content?.prompt ?? '(question removed)',
+        type: q.type,
+        answerType: q.answer_type ?? null,
+        groupId: q.question_group_id ?? null,
+        partLabel: q.part_label ?? null,
+        partIndex: q.part_index ?? null,
+        groupSize: q.question_group_id ? groupCounts.get(q.question_group_id) ?? 1 : 1,
+        displayNumber: numbering.numbers[idx] ?? idx + 1,
+        options: q.options ?? [],
+        assets: q.assets ?? [],
+        correctAnswer: q.content?.correct_answer ?? null,
+        unit: q.content?.unit ?? null,
+        explanation: q.content?.explanation ?? null,
+        pickedOptionId: a?.picked_option_id ?? null,
+        pickedText: a?.picked_text ?? null,
+        isCorrect: isUnanswered ? null : a?.is_correct ?? null,
+        points: a?.points ?? null,
+        aiFeedback: a?.ai_feedback ?? null,
         isUnanswered,
       };
     });
@@ -1666,15 +1768,18 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
       else incorrect++;
     });
     const total = items.length;
+    // The authoritative score is the finished session's (fractional, with
+    // partial credit for AI-graded written answers); fall back to the count.
+    const rawScore = data?.session.score ?? correct;
     return {
       correct,
       incorrect,
       unanswered,
       total,
-      score: correct,
-      percent: total > 0 ? Math.round((correct / total) * 100) : 0,
+      score: Math.round(rawScore * 10) / 10,
+      percent: total > 0 ? Math.round((rawScore / total) * 100) : 0,
     };
-  }, [items]);
+  }, [items, data]);
 
   const filteredQuestions = useMemo(() => {
     return items.filter((it) => {
@@ -1747,7 +1852,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
       </header>
 
       <div className="flex-1 overflow-y-auto no-scrollbar relative">
-        <div className="max-w-4xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
+        <div className="max-w-5xl mx-auto px-4 md:px-6 py-6 md:py-8 space-y-6">
           {/* Layer 1: Results Summary */}
           <section className="bg-bg-surface border border-border-subtle rounded-2xl p-5 md:p-6 shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 w-48 h-48 bg-accent/5 blur-3xl rounded-full translate-x-1/2 -translate-y-1/2" />
@@ -1811,6 +1916,9 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
             ) : (
               filteredQuestions.map((it) => {
                 const isOpen = expandedId === it.id;
+                const qLabel = it.groupId
+                  ? `Q${it.displayNumber} · Part ${it.partLabel ?? '?'}`
+                  : `Q${it.displayNumber}`;
                 return (
                   <div
                     key={it.id}
@@ -1824,10 +1932,16 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
                         onClick={() => setExpandedId(isOpen ? null : it.id)}
                         className="flex items-center gap-3 flex-1 min-w-0 text-left"
                       >
-                        <span className="text-xs font-black text-text-tertiary shrink-0 w-6">Q{it.position + 1}</span>
-                        <p className="text-sm font-medium text-text-primary flex-1 min-w-0 truncate">
-                          {it.prompt}
-                        </p>
+                        <span className="text-xs font-black text-text-tertiary shrink-0 whitespace-nowrap">{qLabel}</span>
+                        {isOpen ? (
+                          <span className="flex-1" />
+                        ) : (
+                          <div className="flex-1 min-w-0 truncate text-sm font-medium text-text-primary [&_.katex]:text-[0.95em]">
+                            {/* Render Markdown + math so the preview matches the
+                                expanded view; $$…$$ → $…$ keeps it on one line. */}
+                            <RichText inline>{it.prompt.replace(/\$\$/g, '$')}</RichText>
+                          </div>
+                        )}
                         <div className={cn(
                           "shrink-0 px-2 md:px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest",
                           it.isUnanswered ? "bg-bg-raised text-text-tertiary" : it.isCorrect ? "bg-success-bg text-success-text" : "bg-danger-bg text-danger-text"
@@ -1978,6 +2092,35 @@ function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
             );
           })}
         </div>
+      ) : it.answerType === 'written' ? (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest">Your Answer</span>
+            <div className="p-3.5 bg-bg-surface border border-border-subtle rounded-xl text-sm leading-relaxed">
+              {studentAnswerText ? <RichText>{studentAnswerText}</RichText> : 'No response provided'}
+            </div>
+          </div>
+          {it.points != null && (
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-black text-accent-text uppercase tracking-widest">AI Score</span>
+              <span className="px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-xs font-black text-accent-text">
+                {Math.round(it.points * 100)}%
+              </span>
+            </div>
+          )}
+          {it.aiFeedback && (
+            <div className="p-3.5 bg-bg-sunken border border-border-subtle rounded-xl text-sm text-text-secondary leading-relaxed">
+              <span className="text-[10px] font-black text-text-tertiary uppercase tracking-widest block mb-1">Examiner Feedback</span>
+              <RichText>{it.aiFeedback}</RichText>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
+            <div className="p-3.5 bg-success-bg/10 border border-success-border rounded-xl text-sm text-success-text leading-relaxed">
+              {it.correctAnswer ? <RichText>{it.correctAnswer}</RichText> : '—'}
+            </div>
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div className="space-y-1.5">
@@ -2079,7 +2222,9 @@ function ReviewFocusModal({
         <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-5 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
-              <span className="text-sm font-black text-text-tertiary">Q{it.position + 1}</span>
+              <span className="text-sm font-black text-text-tertiary whitespace-nowrap">
+                {it.groupId ? `Q${it.displayNumber} · Part ${it.partLabel ?? '?'}` : `Q${it.displayNumber}`}
+              </span>
               <div
                 className={cn(
                   'px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest',
@@ -2252,7 +2397,10 @@ Stay strictly on THIS question — politely decline unrelated requests.
         }
       }
       if (!aliveRef.current) return;
-      setMessages([...newMessages, { role: 'jude', content: buffer }]);
+      const reply = buffer.trim()
+        ? buffer
+        : "I couldn't generate a response just then — please try asking again.";
+      setMessages([...newMessages, { role: 'jude', content: reply }]);
       setIsStreaming(false);
       setStreamedText("");
     } catch (err) {
@@ -2476,6 +2624,7 @@ function ExamSimulation({
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>(() => prefilledAnswers ?? {});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
+  const [navFilter, setNavFilter] = useState<'All' | 'Flagged' | 'Unanswered'>('All');
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
@@ -2562,6 +2711,23 @@ function ExamSimulation({
   const timerText = formatTime(timeLeftSeconds);
 
   const currentQuestion = questions[currentIdx];
+
+  // Multi-part sub-parts share ONE display number so the student reads them as
+  // a single question; the counter only advances when leaving a group.
+  const numbering = useMemo(
+    () => computeQuestionNumbers(questions.map((q) => ({ groupId: q.groupId ?? null }))),
+    [questions]
+  );
+  const currentNumber = numbering.numbers[currentIdx] ?? currentIdx + 1;
+  // Session indices of every sub-part in the current question's group, in order.
+  const groupSiblings = useMemo(() => {
+    const gid = currentQuestion?.groupId;
+    if (!gid) return [] as number[];
+    return questions.reduce<number[]>((acc, q, i) => {
+      if (q.groupId === gid) acc.push(i);
+      return acc;
+    }, []);
+  }, [questions, currentQuestion]);
 
   // Hydrate timer state from the server on mount. This is the ONLY place that
   // sets startedAt / totalPausedMs from authoritative state — auto-finish is
@@ -2737,20 +2903,41 @@ function ExamSimulation({
       </div>
 
       <div className="flex items-center gap-1 text-[9px] font-black uppercase tracking-widest bg-surface-container-low p-1 rounded-xl">
-        <button className="flex-1 py-1.5 bg-bg-surface text-text-primary rounded-lg shadow-sm border border-outline-variant/10 transition-[transform,opacity,box-shadow]">All</button>
-        <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Flagged</button>
-        <button className="flex-1 py-1.5 text-text-secondary hover:text-text-primary transition-colors">Unanswered <span className="opacity-50 ml-1">{totalQuestions - answeredCount}</span></button>
+        {(['All', 'Flagged', 'Unanswered'] as const).map((f) => {
+          const count =
+            f === 'All' ? totalQuestions : f === 'Flagged' ? flagged.size : totalQuestions - answeredCount;
+          const active = navFilter === f;
+          return (
+            <button
+              key={f}
+              onClick={() => setNavFilter(f)}
+              className={cn(
+                "flex-1 py-1.5 rounded-lg transition-colors",
+                active
+                  ? "bg-bg-surface text-text-primary shadow-sm border border-outline-variant/10"
+                  : "text-text-secondary hover:text-text-primary"
+              )}
+            >
+              {f} <span className="opacity-50 ml-0.5">{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="grid grid-cols-5 gap-1.5 lg:gap-2">
-         {questions.map((_, i) => {
-            const num = i + 1;
+         {questions.map((q, i) => {
+            // Grouped sub-parts read as "3a / 3b"; standalone questions as "3".
+            const dnum = numbering.numbers[i] ?? i + 1;
+            const label = q.groupId ? `${dnum}${q.partLabel ?? ''}` : `${dnum}`;
             const isActive = currentIdx === i;
             const isDone = !!answers[i];
             const isFlagged = flagged.has(i);
-            
+
+            if (navFilter === 'Flagged' && !isFlagged) return null;
+            if (navFilter === 'Unanswered' && isDone) return null;
+
             return (
-              <button 
+              <button
                 key={i}
                 onClick={() => {
                   setCurrentIdx(i);
@@ -2758,8 +2945,8 @@ function ExamSimulation({
                 }}
                 className={cn(
                   "w-full aspect-square border transition-[transform,opacity,box-shadow] transform active:scale-95 flex items-center justify-center text-[11px] font-black rounded-[0.85rem] relative overflow-hidden",
-                  isActive 
-                    ? "border-accent bg-accent text-bg-page shadow-[0_0_20px_var(--accent-muted)] z-10 scale-105" 
+                  isActive
+                    ? "border-accent bg-accent text-bg-page shadow-[0_0_20px_var(--accent-muted)] z-10 scale-105"
                     : isFlagged
                       ? "border-yellow-400 bg-yellow-400 text-slate-900 shadow-[0_0_12px_rgba(250,204,21,0.5)] scale-105"
                       : isDone
@@ -2767,23 +2954,18 @@ function ExamSimulation({
                         : "border-border-subtle bg-surface-container-low text-text-tertiary hover:border-border-medium hover:bg-surface-container-high hover:text-text-primary"
                 )}
               >
-                {num}
+                {label}
               </button>
             );
          })}
       </div>
 
-      <div className="flex items-center justify-between text-[9px] uppercase tracking-widest font-black text-text-secondary pt-4 border-t border-border-subtle mt-6">
-        <div className="flex items-center gap-1.5">
-           <div className="w-2 h-2 rounded-full bg-accent" /> Current
-        </div>
-        <div className="flex items-center gap-1.5">
-           <div className="w-2 h-2 rounded-full bg-success-border" /> Answered
-        </div>
-        <div className="flex items-center gap-1.5">
-           <div className="w-2 h-2 rounded-full bg-yellow-400" /> Flagged
-        </div>
-      </div>
+      {navFilter === 'Flagged' && flagged.size === 0 && (
+        <p className="text-[10px] text-text-tertiary text-center py-1">No flagged questions yet.</p>
+      )}
+      {navFilter === 'Unanswered' && totalQuestions - answeredCount === 0 && (
+        <p className="text-[10px] text-text-tertiary text-center py-1">Every question is answered.</p>
+      )}
 
       <button onClick={() => { setIsMobileNavOpen(false); handleFinish(); }} className="w-full py-3.5 mt-2 bg-primary hover:bg-primary/90 text-slate-950 font-black text-xs uppercase tracking-widest rounded-[1rem] shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow]">
         Submit Exam
@@ -2842,20 +3024,20 @@ function ExamSimulation({
             <div className="w-24 h-24 bg-accent/10 border border-accent/20 rounded-3xl flex items-center justify-center mb-8 animate-pulse">
               <Pause className="w-10 h-10 text-accent fill-accent" />
             </div>
-            <h2 className="text-5xl font-black text-text-primary uppercase tracking-tighter italic mb-4">Neural Link Suspended</h2>
+            <h2 className="text-5xl font-black text-text-primary uppercase tracking-tighter italic mb-4">Paused</h2>
             <p className="text-text-secondary max-w-md mb-12 text-sm uppercase tracking-widest leading-relaxed">
-              Active simulation parameters are masked. Evaluation integrity protocols are active.
+              Your timer is stopped and your answers are saved.
               <br/><br/>
               <span className="text-accent font-black">
-                PAUSE CAPACITY: {session.pauseCount} / 3
+                Pauses used: {session.pauseCount} / 3
               </span>
             </p>
-            <button 
+            <button
               onClick={togglePause}
               disabled={session.pauseCount >= 3 && !session.pausedAt}
               className="px-12 py-5 bg-accent text-bg-page text-sm font-black uppercase tracking-[0.2em] rounded-2xl shadow-[0_20px_40px_var(--accent-muted)] hover:scale-105 active:scale-95 transition-[transform,opacity,box-shadow] flex items-center gap-4 group"
             >
-              Resume Simulation <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />
+              Resume <Play className="w-4 h-4 fill-current group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
         )}
@@ -2960,11 +3142,10 @@ function ExamSimulation({
           onClick={() => setShowTimer(!showTimer)}
           >
            <div className={cn(
-             "hidden md:flex items-center gap-2",
+             "hidden md:flex items-center",
              isUrgent ? "text-danger-text" : "text-text-secondary"
            )}>
               <Timer className={cn("w-4 h-4", isUrgent && "animate-spin-slow")} />
-              <span className="text-[10px] font-black uppercase tracking-widest">Temporal</span>
            </div>
            
            <span className={cn(
@@ -2983,17 +3164,12 @@ function ExamSimulation({
 
         <div className="flex items-center gap-4">
            {/* Mobile Navigator Trigger */}
-           <button 
+           <button
              onClick={() => setIsMobileNavOpen(true)}
              className="lg:hidden p-2 text-text-secondary hover:text-text-primary focus:outline-none transition-colors rounded-lg hover:bg-bg-raised"
            >
              <Menu className="w-5 h-5" />
            </button>
-
-           <ThemeToggle />
-           <div className="hidden md:flex w-8 h-8 rounded-lg bg-bg-sunken border border-border-subtle items-center justify-center">
-              <User className="w-4 h-4 text-accent" />
-           </div>
         </div>
       </header>
 
@@ -3013,38 +3189,20 @@ function ExamSimulation({
             <div className="col-span-12 lg:col-span-9 flex flex-col min-h-0 h-full overflow-hidden">
 
                {/* Question Arena */}
-               <div className="bg-bg-surface p-4 md:p-6 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
+               <div className="bg-bg-surface p-3 md:p-5 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
                   <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50 pointer-events-none" />
                   
-                  {flagged.has(currentIdx) && (
-                    <div 
-                      className="absolute top-0 left-0 right-0 bg-amber-500/10 border-b border-amber-500/20 py-1.5 px-4 md:px-6 flex items-center gap-2 z-20 backdrop-blur-sm"
-                    >
-                      <Flag className="w-3 h-3 text-amber-500 fill-amber-500" />
-                      <span className="text-[9px] font-black text-amber-500 uppercase tracking-widest">Flagged for Verification</span>
-                    </div>
-                  )}
-
-                  {isUrgent && (
-                    <div 
-                      className="absolute top-3 right-3 bg-danger-bg/80 border border-danger-border py-0.5 px-2.5 flex items-center gap-1.5 z-30 rounded-full backdrop-blur-md animate-pulse shadow-lg pointer-events-none"
-                    >
-                      <Timer className="w-2.5 h-2.5 text-danger-text" />
-                      <span className="text-[8px] font-black text-danger-text uppercase tracking-widest">Time Critical</span>
-                    </div>
-                  )}
-
-                  <div className={cn("relative z-10 flex flex-col flex-1 overflow-y-auto no-scrollbar", flagged.has(currentIdx) ? "mt-5" : "mt-0")}>
-                    <div className="flex items-center justify-between border-b border-border-subtle pb-2 shrink-0 mt-3 md:mt-0">
+                  {/* Header zone — pinned; never scrolls away */}
+                  <div className="relative z-10 shrink-0 space-y-2 border-b border-border-subtle pb-2.5">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black text-text-primary">Q{currentIdx + 1}</span>
-                        <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest">/ {questions.length}</span>
+                        <span className="text-xl font-black text-text-primary">Q{currentNumber}</span>
+                        <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest">/ {numbering.total}</span>
                       </div>
-                      
                       <button
                         onClick={toggleFlag}
                         className={cn(
-                          "flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border",
+                          "flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
                           flagged.has(currentIdx) ? "bg-amber-500 border-amber-500 text-white" : "border-border-subtle hover:border-border-medium hover:bg-bg-raised text-text-tertiary hover:text-text-primary"
                         )}
                       >
@@ -3052,8 +3210,41 @@ function ExamSimulation({
                         {flagged.has(currentIdx) ? "Flagged" : "Flag"}
                       </button>
                     </div>
+                    {currentQuestion.groupId && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[9px] font-black uppercase tracking-widest text-accent-text">
+                          Multi-part question · {groupSiblings.length} parts
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {groupSiblings.map((sibIdx, n) => {
+                            const sib = questions[sibIdx];
+                            const isCurrent = sibIdx === currentIdx;
+                            const partText = sib.partLabel ?? String.fromCharCode(65 + n);
+                            return (
+                              <button
+                                key={sibIdx}
+                                onClick={() => setCurrentIdx(sibIdx)}
+                                title={`Go to Part ${partText}`}
+                                className={cn(
+                                  "min-w-[1.75rem] h-7 px-1.5 rounded-lg text-[10px] font-black uppercase transition-colors border flex items-center justify-center",
+                                  isCurrent
+                                    ? "bg-accent border-accent text-bg-page"
+                                    : answers[sibIdx]
+                                      ? "bg-success-bg/80 border-success-border text-success-text"
+                                      : "bg-bg-raised border-border-subtle text-text-tertiary hover:text-text-primary hover:border-border-medium"
+                                )}
+                              >
+                                {partText}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
-                    <div className="py-4 space-y-4">
+                  {/* Scroll zone — ONLY the question text + diagrams scroll */}
+                  <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-3 space-y-4">
                       <RichText className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
                         {currentQuestion.prompt}
                       </RichText>
@@ -3071,7 +3262,10 @@ function ExamSimulation({
                           ))}
                         </div>
                       )}
+                  </div>
 
+                  {/* Answer zone — pinned above the nav buttons */}
+                  <div className="relative z-10 shrink-0 max-h-[45vh] overflow-y-auto no-scrollbar pt-3 mt-1 border-t border-border-subtle">
                       {currentQuestion.type === 'MCQ' ? (
                         <div className="grid grid-cols-1 gap-2.5">
                           {currentQuestion.options?.map((opt, i) => {
@@ -3088,6 +3282,20 @@ function ExamSimulation({
                             );
                           })}
                         </div>
+                      ) : currentQuestion.answerType === 'written' ? (
+                        <div className="space-y-3">
+                          <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Written Response</label>
+                          <textarea
+                            value={answers[currentIdx] || ''}
+                            onChange={(e) => handleAnswer(e.target.value)}
+                            placeholder="Write your full answer here — show your reasoning…"
+                            rows={5}
+                            className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] resize-y leading-relaxed"
+                          />
+                          <p className="text-[9px] text-text-tertiary italic">
+                            Explain your reasoning in full — this answer is marked by AI on its substance, with partial credit.
+                          </p>
+                        </div>
                       ) : (
                         <div className="space-y-3">
                           <div className="flex items-end gap-3">
@@ -3097,7 +3305,6 @@ function ExamSimulation({
                                 type="text"
                                 value={answers[currentIdx] || ''}
                                 onChange={(e) => handleAnswer(e.target.value)}
-                                onBlur={() => window.scrollTo(0, 0)}
                                 placeholder={currentQuestion.unit ? 'Numeric value only…' : 'Type your final result here…'}
                                 className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] font-mono"
                               />
@@ -3118,9 +3325,8 @@ function ExamSimulation({
                           </p>
                         </div>
                       )}
-                    </div>
                   </div>
-                  
+
                   <div className="flex items-center justify-between gap-3 shrink-0 pt-4 pb-1 border-t border-border-subtle relative z-10 bg-bg-surface">
                     <button 
                      onClick={prevQuestion}
@@ -3135,7 +3341,7 @@ function ExamSimulation({
                      onClick={nextQuestion}
                      className="flex-[1.5] sm:flex-none flex items-center justify-center gap-2.5 px-6 py-3 bg-accent hover:bg-accent-hover text-bg-page text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-all hover:scale-[1.02] active:scale-95"
                    >
-                     {currentIdx === questions.length - 1 ? 'Commit Verdict' : 'Next'}
+                     {currentIdx === questions.length - 1 ? 'Submit' : 'Next'}
                      <ArrowRight className="w-5 h-5" />
                    </button>
                   </div>

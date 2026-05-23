@@ -15,6 +15,8 @@ interface PoolRow {
   id: string;
   topic_id: string;
   difficulty: 'easy' | 'medium' | 'hard';
+  question_group_id: string | null;
+  part_index: number | null;
 }
 
 const DEFAULT_COUNT: Record<SessionPickInput['mode'], number> = {
@@ -103,7 +105,7 @@ export async function pickSessionQuestions(
 
   let q = supabase
     .from('questions')
-    .select('id, topic_id, difficulty')
+    .select('id, topic_id, difficulty, question_group_id, part_index')
     .eq('program_course_id', input.program_course_id)
     .in('exam_scope', scopes);
 
@@ -133,11 +135,61 @@ export async function pickSessionQuestions(
     selected = roundRobinByTopic(typedPool, count);
   }
 
-  const ids = selected.map((s) => s.id);
+  // === Complete + order multi-part groups ===
+  // A picked sub-part pulls in ALL its siblings, kept contiguous and ordered by
+  // part_index. Groups are atomic — never split — so the final count may vary
+  // by ±(group size). The real length is stored in sessions.total_questions.
+  const groupIds = Array.from(
+    new Set(selected.map((s) => s.question_group_id).filter((g): g is string => Boolean(g)))
+  );
+  const membersByGroup = new Map<string, string[]>();
+  if (groupIds.length > 0) {
+    const { data: members, error: mErr } = await supabase
+      .from('questions')
+      .select('id, question_group_id, part_index')
+      .in('question_group_id', groupIds);
+    if (mErr) throw mErr;
+    const memberRows = (members ?? []) as Array<{
+      id: string;
+      question_group_id: string;
+      part_index: number | null;
+    }>;
+    for (const g of groupIds) {
+      membersByGroup.set(
+        g,
+        memberRows
+          .filter((r) => r.question_group_id === g)
+          .sort((a, b) => (a.part_index ?? 0) - (b.part_index ?? 0))
+          .map((r) => r.id)
+      );
+    }
+  }
+
+  const ids: string[] = [];
+  const seen = new Set<string>();
+  const emittedGroups = new Set<string>();
+  for (const row of selected) {
+    if (ids.length >= count) break;
+    if (row.question_group_id) {
+      if (emittedGroups.has(row.question_group_id)) continue;
+      emittedGroups.add(row.question_group_id);
+      for (const memberId of membersByGroup.get(row.question_group_id) ?? [row.id]) {
+        if (!seen.has(memberId)) {
+          seen.add(memberId);
+          ids.push(memberId);
+        }
+      }
+    } else if (!seen.has(row.id)) {
+      seen.add(row.id);
+      ids.push(row.id);
+    }
+  }
+
   const { data: full, error: fullErr } = await supabase
     .from('questions')
     .select(
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
+        'question_group_id, part_label, part_index, ' +
         'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
         'mcq_options(id, text, is_correct), ' +
         'question_assets(id, storage_path, mime_type, position)'
@@ -166,6 +218,9 @@ export async function pickSessionQuestions(
         difficulty: row.difficulty,
         exam_scope: row.exam_scope,
         answer_type: row.answer_type,
+        question_group_id: row.question_group_id,
+        part_label: row.part_label,
+        part_index: row.part_index,
         content: contentArr[0],
         options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
         assets: mapAssetsForRouting(row.question_assets),

@@ -3,6 +3,7 @@ import { ApiError } from '../../lib/errors';
 import { parallelMap } from '../../lib/concurrency';
 import { ocrPdf, ocrImage, type OcrPage } from '../../lib/mistralOcr';
 import { classifyPage, classifyPageWithRetry, type ExtractedDraft, type TopicHint } from './classifier';
+import { expandMultipartRows } from './questionSplitter';
 import { matchTopics } from './topicMatcher';
 import { verifyQuestion } from './verifier';
 import { downloadFile, listFiles } from '../storage';
@@ -90,6 +91,8 @@ export function toDraftData(
     if (d.unit) draft.unit = d.unit;
   }
   if (d.explanation) draft.explanation = d.explanation;
+  // Multi-part questions stay one draft here; the split pass divides them later.
+  if (d.part_labels && d.part_labels.length > 0) draft.part_labels = d.part_labels;
   return draft;
 }
 
@@ -262,13 +265,16 @@ export async function runPipeline(jobId: string): Promise<void> {
     );
 
     // === PERSIST ===
-    const rows = allDrafts.map((d, i) => ({
+    const rawRows = allDrafts.map((d, i) => ({
       job_id: jobId,
       draft_data: toDraftData(d, job.default_exam_scope, validTopicIds),
       source_page: d.source_page ?? null,
       ai_confidence: d.confidence ?? null,
       verification_warnings: verificationWarnings[i] ?? null,
     }));
+
+    // Split multi-part questions into one draft per sub-part.
+    const rows = await expandMultipartRows(rawRows, { model: job.model ?? undefined });
 
     if (rows.length > 0) {
       const { error: insertErr } = await supabase.from('ingestion_drafts').insert(rows);

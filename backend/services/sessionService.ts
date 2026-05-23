@@ -3,6 +3,8 @@ import { ApiError } from '../lib/errors';
 import { pickSessionQuestions } from './routingService';
 import { mapAssets, type QuestionAsset, type QuestionContent, type McqOption } from './questionService';
 import { shuffle } from '../lib/shuffle';
+import { parallelMap } from '../lib/concurrency';
+import { gradeWrittenAnswer } from './gradingService';
 import type {
   SessionAnswerSubmitInput,
   SessionCreateInput,
@@ -41,6 +43,8 @@ export interface SessionAnswerRow {
   picked_option_id: string | null;
   picked_text: string | null;
   is_correct: boolean | null;
+  points: number | null;
+  ai_feedback: string | null;
   time_ms: number | null;
   answered_at: string;
 }
@@ -51,7 +55,10 @@ interface ReviewQuestion {
   difficulty: 'easy' | 'medium' | 'hard';
   exam_scope: 'midsem' | 'final' | 'both';
   topic_id: string;
-  answer_type: 'exact' | 'range' | null;
+  answer_type: 'exact' | 'range' | 'written' | null;
+  question_group_id: string | null;
+  part_label: string | null;
+  part_index: number | null;
   content: QuestionContent;
   options: McqOption[];
   assets: QuestionAsset[];
@@ -118,6 +125,9 @@ async function evaluateAnswer(
     if (opt.question_id !== questionId) return false;
     return opt.is_correct;
   }
+
+  // Written answers are AI-graded later, at finishSession — not at submit time.
+  if (question.answer_type === 'written') return null;
 
   if (!pickedText || pickedText.trim().length === 0) return null;
   const { data: content, error: cErr } = await supabase
@@ -203,11 +213,92 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
 
   const { data: answers, error: aErr } = await supabase
     .from('session_answers')
-    .select('is_correct')
+    .select('id, question_id, picked_text, is_correct')
     .eq('session_id', sessionId);
   if (aErr) throw aErr;
+  const answerRows = (answers ?? []) as Array<{
+    id: string;
+    question_id: string;
+    picked_text: string | null;
+    is_correct: boolean | null;
+  }>;
 
-  const score = (answers ?? []).filter((a) => a.is_correct === true).length;
+  // Grading metadata for each answered question (model answer + solution).
+  const gradedQuestionIds = Array.from(new Set(answerRows.map((a) => a.question_id)));
+  const qMeta = new Map<
+    string,
+    { answer_type: string | null; prompt: string; correct_answer: string; explanation: string | null }
+  >();
+  if (gradedQuestionIds.length > 0) {
+    const { data: qRows, error: qErr } = await supabase
+      .from('questions')
+      .select('id, answer_type, question_content(prompt, correct_answer, explanation)')
+      .in('id', gradedQuestionIds);
+    if (qErr) throw qErr;
+    for (const row of qRows ?? []) {
+      const r = row as unknown as {
+        id: string;
+        answer_type: string | null;
+        question_content:
+          | { prompt: string; correct_answer: string; explanation: string | null }
+          | { prompt: string; correct_answer: string; explanation: string | null }[]
+          | null;
+      };
+      const c = Array.isArray(r.question_content) ? r.question_content[0] : r.question_content;
+      qMeta.set(r.id, {
+        answer_type: r.answer_type,
+        prompt: c?.prompt ?? '',
+        correct_answer: c?.correct_answer ?? '',
+        explanation: c?.explanation ?? null,
+      });
+    }
+  }
+
+  // Written answers are AI-graded now (concurrently); mcq/calc mirror is_correct.
+  // `points` is 0–1 per answer and the session score is their sum (fractional).
+  let scoreSum = 0;
+  await parallelMap(answerRows, 4, async (a) => {
+    const meta = qMeta.get(a.question_id);
+    let pts = 0;
+    if (meta?.answer_type === 'written') {
+      const studentText = (a.picked_text ?? '').trim();
+      if (!studentText) {
+        await supabase
+          .from('session_answers')
+          .update({ points: 0, is_correct: false })
+          .eq('id', a.id);
+      } else {
+        try {
+          const grade = await gradeWrittenAnswer(
+            meta.prompt,
+            meta.correct_answer,
+            meta.explanation,
+            studentText
+          );
+          pts = grade.points;
+          await supabase
+            .from('session_answers')
+            .update({ points: pts, ai_feedback: grade.feedback, is_correct: pts >= 0.5 })
+            .eq('id', a.id);
+        } catch {
+          await supabase
+            .from('session_answers')
+            .update({
+              points: 0,
+              ai_feedback:
+                'Automatic grading was unavailable — please review this answer manually.',
+            })
+            .eq('id', a.id);
+        }
+      }
+    } else {
+      pts = a.is_correct === true ? 1 : 0;
+      await supabase.from('session_answers').update({ points: pts }).eq('id', a.id);
+    }
+    scoreSum += pts;
+  });
+
+  const score = Math.round(scoreSum * 100) / 100;
   const finishedAt = new Date();
   const durationMs =
     input.duration_ms ?? finishedAt.getTime() - new Date(session.started_at).getTime();
@@ -275,13 +366,14 @@ export async function getSessionById(uid: string, sessionId: string) {
   const { data: session, error: sErr } = await supabase
     .from('sessions')
     .select(
-      `${SESSION_COLUMNS}, program_courses!inner(courses(name)), topics(name)`
+      `${SESSION_COLUMNS}, question_ids, program_courses!inner(courses(name)), topics(name)`
     )
     .eq('id', sessionId)
     .maybeSingle();
   if (sErr) throw sErr;
   if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
   const s = session as unknown as SessionRow & {
+    question_ids: string[] | null;
     program_courses: { courses: { name: string } | null } | null;
     topics: { name: string } | null;
   };
@@ -289,24 +381,35 @@ export async function getSessionById(uid: string, sessionId: string) {
 
   const { data: answers, error: aErr } = await supabase
     .from('session_answers')
-    .select('id, session_id, question_id, position, picked_option_id, picked_text, is_correct, time_ms, answered_at')
+    .select(
+      'id, session_id, question_id, position, picked_option_id, picked_text, is_correct, points, ai_feedback, time_ms, answered_at'
+    )
     .eq('session_id', sessionId)
     .order('position', { ascending: true });
   if (aErr) throw aErr;
 
-  const questionIds = Array.from(new Set((answers ?? []).map((a) => a.question_id)));
+  // Review must show EVERY question in the session — answered or not — so an
+  // unanswered question (e.g. a skipped multi-part sub-part, or a blank submit)
+  // still appears with its solution. Use the session's persisted question order;
+  // fall back to answered ids for legacy sessions created before we stored it.
+  const answeredIds = Array.from(new Set((answers ?? []).map((a) => a.question_id)));
+  const orderedIds =
+    Array.isArray(s.question_ids) && s.question_ids.length > 0
+      ? s.question_ids
+      : answeredIds;
 
   let questions: ReviewQuestion[] = [];
-  if (questionIds.length > 0) {
+  if (orderedIds.length > 0) {
     const { data: full, error: qErr } = await supabase
       .from('questions')
       .select(
         'id, type, difficulty, exam_scope, topic_id, answer_type, ' +
+          'question_group_id, part_label, part_index, ' +
           'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
           'mcq_options(id, text, is_correct), ' +
           'question_assets(id, storage_path, mime_type, position)'
       )
-      .in('id', questionIds);
+      .in('id', orderedIds);
     if (qErr) throw qErr;
 
     questions = (full ?? []).map((row) => {
@@ -316,7 +419,10 @@ export async function getSessionById(uid: string, sessionId: string) {
         difficulty: 'easy' | 'medium' | 'hard';
         exam_scope: 'midsem' | 'final' | 'both';
         topic_id: string;
-        answer_type: 'exact' | 'range' | null;
+        answer_type: 'exact' | 'range' | 'written' | null;
+        question_group_id: string | null;
+        part_label: string | null;
+        part_index: number | null;
         question_content: QuestionContent | QuestionContent[] | null;
         mcq_options: McqOption[] | null;
         question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
@@ -334,11 +440,21 @@ export async function getSessionById(uid: string, sessionId: string) {
         exam_scope: r.exam_scope,
         topic_id: r.topic_id,
         answer_type: r.answer_type,
+        question_group_id: r.question_group_id,
+        part_label: r.part_label,
+        part_index: r.part_index,
         content: contentArr[0],
         options: mcqOptions,
         assets: mapAssets(r.question_assets),
       };
     });
+
+    // `.in()` does not preserve order — restore the exam order so the review
+    // (and grouped multi-part numbering) renders questions as they were sat.
+    const orderIndex = new Map(orderedIds.map((id, i) => [id, i]));
+    questions.sort(
+      (a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0)
+    );
   }
 
   const accuracy =
@@ -412,7 +528,10 @@ export async function getSessionResume(uid: string, sessionId: string) {
     difficulty: 'easy' | 'medium' | 'hard';
     exam_scope: 'midsem' | 'final' | 'both';
     topic_id: string;
-    answer_type: 'exact' | 'range' | null;
+    answer_type: 'exact' | 'range' | 'written' | null;
+    question_group_id: string | null;
+    part_label: string | null;
+    part_index: number | null;
     content: QuestionContent;
     options?: McqOption[];
     assets: QuestionAsset[];
@@ -423,6 +542,7 @@ export async function getSessionResume(uid: string, sessionId: string) {
       .from('questions')
       .select(
         'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
+          'question_group_id, part_label, part_index, ' +
           'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
           'mcq_options(id, text, is_correct), ' +
           'question_assets(id, storage_path, mime_type, position)'
@@ -443,7 +563,10 @@ export async function getSessionResume(uid: string, sessionId: string) {
           difficulty: 'easy' | 'medium' | 'hard';
           exam_scope: 'midsem' | 'final' | 'both';
           topic_id: string;
-          answer_type: 'exact' | 'range' | null;
+          answer_type: 'exact' | 'range' | 'written' | null;
+          question_group_id: string | null;
+          part_label: string | null;
+          part_index: number | null;
           question_content: QuestionContent | QuestionContent[] | null;
           mcq_options: McqOption[] | null;
           question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
@@ -460,6 +583,9 @@ export async function getSessionResume(uid: string, sessionId: string) {
           exam_scope: r.exam_scope,
           topic_id: r.topic_id,
           answer_type: r.answer_type,
+          question_group_id: r.question_group_id,
+          part_label: r.part_label,
+          part_index: r.part_index,
           content: contentArr[0],
           options: r.type === 'mcq' ? r.mcq_options ?? [] : undefined,
           assets: mapAssets(r.question_assets),

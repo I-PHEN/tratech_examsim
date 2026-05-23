@@ -7,6 +7,7 @@ import {
   performOcr,
   performClassify,
   toDraftData,
+  type JobRow,
 } from './extraction/pipeline';
 import type { OcrPage } from '../lib/mistralOcr';
 import { ocrImage, ocrPdf, decodeOcrImage } from '../lib/mistralOcr';
@@ -14,6 +15,11 @@ import { parallelMap } from '../lib/concurrency';
 import { verifyQuestion } from './extraction/verifier';
 import { classifyPage, classifyPageWithRetry } from './extraction/classifier';
 import { matchAnswers } from './extraction/answerMatcher';
+import {
+  splitMultipartQuestion,
+  expandMultipartRows,
+  partsToRows,
+} from './extraction/questionSplitter';
 import { splitIntoQuestions, normalizeFormatting } from './extraction/textFormatter';
 import { createQuestion, addQuestionAsset } from './questionService';
 import { downloadFile, uploadFile } from './storage';
@@ -34,7 +40,20 @@ export async function runExtraction(jobId: string): Promise<void> {
 }
 
 function errMsg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object') {
+    const o = err as Record<string, unknown>;
+    if (typeof o.message === 'string' && o.message) {
+      // Supabase / Postgres errors are plain objects, not Error instances —
+      // String(err) would mangle them to "[object Object]". Surface the real
+      // message plus any details / hint / code.
+      const extra = [o.details, o.hint, o.code]
+        .filter((x): x is string => typeof x === 'string' && x.length > 0)
+        .join(' · ');
+      return extra ? `${o.message} (${extra})` : o.message;
+    }
+  }
+  return String(err);
 }
 
 export interface OcrAssetRef {
@@ -74,6 +93,23 @@ async function persistOcrImages(
     }
   }
   return manifest;
+}
+
+/** OCR-and-cache a job's marking scheme, returning its text ('' when none). */
+async function resolveMarkschemeText(job: JobRow): Promise<string> {
+  if (!job.markscheme_path) return '';
+  if (job.markscheme_text && job.markscheme_text.trim()) return job.markscheme_text;
+  try {
+    const text = await ocrMarkscheme(job.markscheme_path);
+    if (text.trim()) {
+      await updateJob(job.id, { markscheme_text: text });
+      job.markscheme_text = text; // keep the in-memory job consistent
+    }
+    return text;
+  } catch (err) {
+    console.warn(`[ingestion] markscheme OCR failed for job ${job.id}: ${errMsg(err)}`);
+    return '';
+  }
 }
 
 /** OCR an uploaded marking scheme (PDF or image) into a single text blob. */
@@ -161,13 +197,22 @@ export async function classifyJob(jobId: string): Promise<void> {
     // Re-classify replaces any prior drafts for this job (idempotent retry).
     await supabase.from('ingestion_drafts').delete().eq('job_id', jobId);
 
-    const rows = allDrafts.map((d, i) => ({
+    const rawRows = allDrafts.map((d, i) => ({
       job_id: jobId,
       draft_data: toDraftData(d, job.default_exam_scope, validTopicIds),
       source_page: d.source_page ?? null,
       ai_confidence: d.confidence ?? null,
       verification_warnings: verificationWarnings[i] ?? null,
     }));
+
+    // Split multi-part questions into one draft per sub-part. With a markscheme
+    // uploaded, the split pass places each part's answer + worked solution.
+    const markschemeText = await resolveMarkschemeText(job);
+    const rows = await expandMultipartRows(rawRows, {
+      markschemeText,
+      model: job.model ?? undefined,
+    });
+
     if (rows.length > 0) {
       const { error: insertErr } = await supabase.from('ingestion_drafts').insert(rows);
       if (insertErr) throw insertErr;
@@ -216,7 +261,13 @@ export async function verifyJob(jobId: string): Promise<void> {
     .eq('status', 'pending');
   if (error) throw error;
 
-  await parallelMap(drafts ?? [], 3, async (draft) => {
+  // Grouped (multi-part) drafts have split-pass-generated prompts — verifying
+  // them against the full source text is meaningless, so skip them.
+  const verifiable = (drafts ?? []).filter(
+    (dr) => !(dr.draft_data as DraftDataInput).group_key
+  );
+
+  await parallelMap(verifiable, 3, async (draft) => {
     const d = draft.draft_data as DraftDataInput;
     const { complete, missing } = await verifyQuestion(d.prompt, sourceText, job.model ?? undefined);
     if (complete || missing.length === 0) return;
@@ -276,8 +327,14 @@ export async function matchMarkschemeAnswers(jobId: string): Promise<{ matched: 
   if (error) throw error;
   if (!drafts || drafts.length === 0) return { matched: 0 };
 
+  // Grouped (multi-part) drafts get their answers from the split pass — the
+  // per-question matcher can't tell which markscheme slice belongs to which
+  // part. Match only standalone drafts here.
+  const matchable = drafts.filter((dr) => !(dr.draft_data as DraftDataInput).group_key);
+  if (matchable.length === 0) return { matched: 0 };
+
   const matches = await matchAnswers(
-    drafts.map((dr) => {
+    matchable.map((dr) => {
       const d = dr.draft_data as DraftDataInput;
       return { prompt: d.prompt, type: d.type };
     }),
@@ -288,7 +345,7 @@ export async function matchMarkschemeAnswers(jobId: string): Promise<{ matched: 
   let matched = 0;
   for (const m of matches) {
     if (!m.found || m.question_index == null) continue;
-    const draftRow = drafts[m.question_index];
+    const draftRow = matchable[m.question_index];
     if (!draftRow) continue;
 
     const d = { ...(draftRow.draft_data as DraftDataInput) };
@@ -335,6 +392,126 @@ export async function matchMarkschemeAnswers(jobId: string): Promise<{ matched: 
   }
 
   return { matched };
+}
+
+/**
+ * Manually split one pending draft into its sub-parts — for a multi-part
+ * question the auto-split missed, or one a reviewer merged and wants to retry.
+ * Hard-replaces the draft with one row per sub-part sharing a question group.
+ */
+export async function splitDraft(draftId: string): Promise<{ parts: number }> {
+  const { data: draft, error } = await supabase
+    .from('ingestion_drafts')
+    .select('id, job_id, draft_data, source_page, ai_confidence, status')
+    .eq('id', draftId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!draft) throw new ApiError(404, 'NOT_FOUND', 'Draft not found');
+  if (draft.status !== 'pending') {
+    throw new ApiError(409, 'NOT_PENDING', 'Only a pending draft can be split.');
+  }
+
+  const d = draft.draft_data as DraftDataInput;
+  const job = await loadJob(draft.job_id);
+  const solutionSource = (await resolveMarkschemeText(job)) || d.explanation;
+
+  const { parts } = await splitMultipartQuestion(
+    d.prompt,
+    solutionSource,
+    job.model ?? undefined
+  );
+  if (parts.length < 2) {
+    throw new ApiError(
+      422,
+      'SPLIT_FAILED',
+      'Could not split this question into multiple parts. Check the prompt lists each sub-part clearly, then try again.'
+    );
+  }
+
+  const newRows = partsToRows(
+    {
+      job_id: draft.job_id,
+      draft_data: d,
+      source_page: draft.source_page,
+      ai_confidence: draft.ai_confidence,
+    },
+    parts
+  );
+
+  const { error: delErr } = await supabase
+    .from('ingestion_drafts')
+    .delete()
+    .eq('id', draftId);
+  if (delErr) throw delErr;
+
+  const { error: insErr } = await supabase.from('ingestion_drafts').insert(newRows);
+  if (insErr) throw insErr;
+
+  return { parts: newRows.length };
+}
+
+/**
+ * Merge a multi-part draft group back into a single draft. Restores the
+ * original whole-question prompt (from any part's `raw_text`); per-part answers
+ * are dropped — they belong to the parts. The merged draft keeps `part_labels`
+ * so the review UI still offers a re-split.
+ */
+export async function mergeGroup(
+  jobId: string,
+  groupKey: string
+): Promise<{ ok: true }> {
+  const { data: drafts, error } = await supabase
+    .from('ingestion_drafts')
+    .select('id, draft_data, source_page, ai_confidence')
+    .eq('job_id', jobId)
+    .eq('status', 'pending');
+  if (error) throw error;
+
+  const parts = (drafts ?? [])
+    .filter((dr) => (dr.draft_data as DraftDataInput).group_key === groupKey)
+    .sort(
+      (a, b) =>
+        ((a.draft_data as DraftDataInput).part_index ?? 0) -
+        ((b.draft_data as DraftDataInput).part_index ?? 0)
+    );
+  if (parts.length === 0) throw new ApiError(404, 'NOT_FOUND', 'Question group not found.');
+
+  const first = parts[0];
+  const partDatas = parts.map((p) => p.draft_data as DraftDataInput);
+  const firstData = partDatas[0];
+
+  const mergedPrompt =
+    firstData.raw_text?.trim() ||
+    partDatas.map((d) => `(${d.part_label ?? '?'}) ${d.prompt}`).join('\n\n');
+
+  const mergedData: DraftDataInput = {
+    type: firstData.type,
+    prompt: mergedPrompt,
+    part_labels: partDatas.map((d) => d.part_label ?? '').filter((l) => l.length > 0),
+  };
+  if (firstData.difficulty) mergedData.difficulty = firstData.difficulty;
+  if (firstData.topic_id) mergedData.topic_id = firstData.topic_id;
+  if (firstData.exam_scope) mergedData.exam_scope = firstData.exam_scope;
+  if (firstData.source_reference) mergedData.source_reference = firstData.source_reference;
+
+  const { error: delErr } = await supabase
+    .from('ingestion_drafts')
+    .delete()
+    .in(
+      'id',
+      parts.map((p) => p.id)
+    );
+  if (delErr) throw delErr;
+
+  const { error: insErr } = await supabase.from('ingestion_drafts').insert({
+    job_id: jobId,
+    draft_data: mergedData,
+    source_page: first.source_page,
+    ai_confidence: first.ai_confidence,
+  });
+  if (insErr) throw insErr;
+
+  return { ok: true };
 }
 
 /** Joined source text for a job: human-corrected text wins, else OCR transcripts. */
@@ -456,7 +633,14 @@ export async function classifySegmentsJob(
       });
     });
 
-    const rows = perSegment.flat();
+    const rawRows = perSegment.flat();
+
+    // Split multi-part questions into one draft per sub-part.
+    const markschemeText = await resolveMarkschemeText(job);
+    const rows = await expandMultipartRows(rawRows, {
+      markschemeText,
+      model: job.model ?? undefined,
+    });
 
     await supabase.from('ingestion_drafts').delete().eq('job_id', jobId);
     const { error: insertErr } = await supabase.from('ingestion_drafts').insert(rows);
@@ -568,7 +752,16 @@ export interface PublishResult {
   skipped: Array<{ draft_id: string; reason: string }>;
 }
 
-export async function publishJob(jobId: string): Promise<PublishResult> {
+/**
+ * Publish a job's pending drafts as real questions. With `draftIds` only those
+ * drafts are published (publish one question at a time); without it, all
+ * pending drafts publish together. Sub-parts of a multi-part group should
+ * always be passed together so they share one `question_group_id`.
+ */
+export async function publishJob(
+  jobId: string,
+  draftIds?: string[]
+): Promise<PublishResult> {
   const { data: job, error: jobErr } = await supabase
     .from('ingestion_jobs')
     .select('id, program_course_id, status, ocr_assets')
@@ -581,15 +774,27 @@ export async function publishJob(jobId: string): Promise<PublishResult> {
   }
   const ocrAssets: OcrAssetRef[] = Array.isArray(job.ocr_assets) ? job.ocr_assets : [];
 
-  const { data: drafts, error: draftsErr } = await supabase
+  let draftsQuery = supabase
     .from('ingestion_drafts')
     .select('id, draft_data, source_page')
     .eq('job_id', jobId)
     .eq('status', 'pending');
+  if (draftIds && draftIds.length > 0) {
+    draftsQuery = draftsQuery.in('id', draftIds);
+  }
+  const { data: drafts, error: draftsErr } = await draftsQuery;
   if (draftsErr) throw draftsErr;
 
   const skipped: Array<{ draft_id: string; reason: string }> = [];
   let publishedCount = 0;
+
+  // Sub-parts of one source question share a draft_data.group_key — give each
+  // distinct group_key one freshly-generated question_group_id.
+  const groupIdByKey = new Map<string, string>();
+  for (const draft of drafts ?? []) {
+    const gk = (draft.draft_data as DraftDataInput).group_key;
+    if (gk && !groupIdByKey.has(gk)) groupIdByKey.set(gk, randomUUID());
+  }
 
   for (const draft of drafts ?? []) {
     const data = draft.draft_data as DraftDataInput;
@@ -637,6 +842,13 @@ export async function publishJob(jobId: string): Promise<PublishResult> {
       ...(data.type === 'mcq'
         ? { options: data.options ?? [] }
         : { answer_type: data.answer_type ?? 'exact' }),
+      ...(data.group_key
+        ? {
+            question_group_id: groupIdByKey.get(data.group_key),
+            part_label: data.part_label,
+            part_index: data.part_index,
+          }
+        : {}),
     };
 
     const parsed = QuestionCreate.safeParse(createInput);
@@ -695,12 +907,18 @@ export async function publishJob(jobId: string): Promise<PublishResult> {
       if (updErr) throw updErr;
       publishedCount += 1;
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      skipped.push({ draft_id: draft.id, reason: msg });
+      skipped.push({ draft_id: draft.id, reason: errMsg(err) });
     }
   }
 
-  if (publishedCount > 0 && skipped.length === 0) {
+  // Mark the job published only once no pending drafts remain — supports
+  // publishing one question at a time without prematurely closing the job.
+  const { count: remaining } = await supabase
+    .from('ingestion_drafts')
+    .select('id', { count: 'exact', head: true })
+    .eq('job_id', jobId)
+    .eq('status', 'pending');
+  if ((remaining ?? 0) === 0 && publishedCount > 0) {
     await updateJob(jobId, { status: 'published' });
   }
 
