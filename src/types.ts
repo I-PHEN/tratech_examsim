@@ -25,6 +25,8 @@ export interface Question {
   partLabel?: string;
   partIndex?: number;
   groupSize?: number;
+  /** Setup shared by every sibling part — rendered ONCE above the part's prompt. */
+  sharedStem?: string;
 }
 
 export interface Topic {

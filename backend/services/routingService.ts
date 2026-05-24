@@ -99,30 +99,52 @@ function pickDiagnostic(pool: PoolRow[], count: number): PoolRow[] {
 
 export async function pickSessionQuestions(
   input: SessionPickInput
-): Promise<{ mode: SessionPickInput['mode']; count: number; picked: QuestionWithContent[] }> {
+): Promise<{
+  mode: SessionPickInput['mode'];
+  count: number;
+  picked: QuestionWithContent[];
+  difficulty_fallback: boolean;
+}> {
   const count = input.count ?? DEFAULT_COUNT[input.mode];
   const scopes = scopesForMode(input.mode);
 
-  let q = supabase
-    .from('questions')
-    .select('id, topic_id, difficulty, question_group_id, part_index')
-    .eq('program_course_id', input.program_course_id)
-    .in('exam_scope', scopes);
+  const baseQuery = () => {
+    let q = supabase
+      .from('questions')
+      .select('id, topic_id, difficulty, question_group_id, part_index')
+      .eq('program_course_id', input.program_course_id)
+      .in('exam_scope', scopes);
+    if (input.mode === 'practice' && input.topic_id) {
+      q = q.eq('topic_id', input.topic_id);
+    }
+    return q;
+  };
 
-  if (input.mode === 'practice' && input.topic_id) {
-    q = q.eq('topic_id', input.topic_id);
-  }
+  let q = baseQuery();
   if (input.difficulty && input.mode !== 'diagnostic') {
     q = q.eq('difficulty', input.difficulty);
   }
 
   const { data: pool, error } = await q;
   if (error) throw error;
-  if (!pool || pool.length === 0) {
-    return { mode: input.mode, count, picked: [] };
+
+  let typedPool = (pool ?? []) as PoolRow[];
+  let difficultyFallback = false;
+
+  // Silent-ish fallback: if the requested difficulty has no questions, try the
+  // same query without the difficulty filter so the student still gets to
+  // practise. Caller surfaces a banner. The "no questions at all" case below
+  // still keeps `picked: []` and lets the route emit NO_QUESTIONS.
+  if (typedPool.length === 0 && input.difficulty && input.mode !== 'diagnostic') {
+    const { data: relaxed, error: relaxedErr } = await baseQuery();
+    if (relaxedErr) throw relaxedErr;
+    typedPool = (relaxed ?? []) as PoolRow[];
+    if (typedPool.length > 0) difficultyFallback = true;
   }
 
-  const typedPool = pool as PoolRow[];
+  if (typedPool.length === 0) {
+    return { mode: input.mode, count, picked: [], difficulty_fallback: false };
+  }
 
   let selected: PoolRow[];
   if (typedPool.length <= count) {
@@ -190,7 +212,7 @@ export async function pickSessionQuestions(
     .select(
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
         'question_group_id, part_label, part_index, ' +
-        'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
+        'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
         'mcq_options(id, text, is_correct), ' +
         'question_assets(id, storage_path, mime_type, position)'
     )
@@ -227,5 +249,5 @@ export async function pickSessionQuestions(
       });
     });
 
-  return { mode: input.mode, count, picked };
+  return { mode: input.mode, count, picked, difficulty_fallback: difficultyFallback };
 }

@@ -740,14 +740,20 @@ export function ManualQuestionEntry({
             {answerType === 'range' && (
               <div className="md:col-span-2">
                 <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
-                  Tolerance (±)
+                  Tolerance (± absolute)
                 </label>
                 <input
+                  type="number"
+                  step="any"
+                  min="0"
                   value={answerTolerance}
                   onChange={(e) => setAnswerTolerance(e.target.value)}
-                  placeholder="e.g. 0.05"
+                  placeholder="0.05"
                   className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
                 />
+                <p className="mt-1 text-[10px] text-text-tertiary leading-snug">
+                  Correct when |answer − model| ≤ tolerance. e.g. model 12.4, tolerance 0.5 → accepts 11.9 to 12.9.
+                </p>
               </div>
             )}
           </div>

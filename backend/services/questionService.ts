@@ -3,7 +3,11 @@ import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
 import { shuffle } from '../lib/shuffle';
 import { uploadFile, removeFile } from './storage';
-import type { QuestionCreateInput, QuestionUpdateInput } from '../schemas/question';
+import type {
+  QuestionCreateInput,
+  QuestionUpdateInput,
+  QuestionGroupUpdateInput,
+} from '../schemas/question';
 
 const STORAGE_BUCKET = 'ingestion-uploads';
 
@@ -35,6 +39,7 @@ export interface QuestionContent {
   correct_answer: string;
   answer_tolerance: number | null;
   unit: string | null;
+  shared_stem: string | null;
 }
 
 export interface McqOption {
@@ -88,6 +93,7 @@ export async function listQuestions(filters: QuestionListFilters) {
     .from('questions')
     .select(
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, created_at, ' +
+        'question_group_id, part_label, part_index, ' +
         'question_content(prompt)'
     )
     .order('created_at', { ascending: false });
@@ -155,7 +161,7 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
     .select(
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
         'question_group_id, part_label, part_index, ' +
-        'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
+        'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
         'mcq_options(id, text, is_correct), ' +
         'question_assets(id, storage_path, mime_type, position, kind)'
     )
@@ -240,6 +246,7 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
             answer_tolerance: null,
             unit: null,
             source_reference: input.content.source_reference ?? null,
+            shared_stem: input.content.shared_stem ?? null,
           }
         : {
             question_id: questionId,
@@ -249,6 +256,7 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
             answer_tolerance: input.content.answer_tolerance ?? null,
             unit: input.content.unit ?? null,
             source_reference: input.content.source_reference ?? null,
+            shared_stem: input.content.shared_stem ?? null,
           };
 
     const { error: contentErr } = await supabase.from('question_content').insert(contentRow);
@@ -326,6 +334,7 @@ export async function updateQuestion(
           answer_tolerance: null,
           unit: null,
           source_reference: input.content.source_reference ?? null,
+          shared_stem: input.content.shared_stem ?? null,
         }
       : {
           question_id: id,
@@ -335,6 +344,7 @@ export async function updateQuestion(
           answer_tolerance: input.content.answer_tolerance ?? null,
           unit: input.content.unit ?? null,
           source_reference: input.content.source_reference ?? null,
+          shared_stem: input.content.shared_stem ?? null,
         };
 
   const { error: contentErr } = await supabase.from('question_content').insert(contentRow);
@@ -411,6 +421,65 @@ export async function addQuestionAsset(
   }
 
   return { ...(data as AssetRow), url: publicUrlFor(data.storage_path) };
+}
+
+/**
+ * Load every sibling part of a multi-part question in `part_index` order. Throws
+ * 404 when no rows carry the given group id.
+ */
+export async function getQuestionsByGroup(
+  groupId: string
+): Promise<QuestionWithContent[]> {
+  const { data, error } = await supabase
+    .from('questions')
+    .select('id, part_index')
+    .eq('question_group_id', groupId)
+    .order('part_index', { ascending: true });
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new ApiError(404, 'NOT_FOUND', 'Question group not found');
+  }
+  const parts = await Promise.all(data.map((r) => getQuestionById(r.id)));
+  return parts;
+}
+
+/**
+ * Patch every sibling in a multi-part group atomically (best-effort: we issue
+ * the writes sequentially, and rely on Postgres + the shared-stem invariant to
+ * keep them consistent). `shared` fields write the same value to every part;
+ * `parts[]` carries the per-part edits (each must include `id`).
+ */
+export async function updateQuestionGroup(
+  groupId: string,
+  input: QuestionGroupUpdateInput
+): Promise<QuestionWithContent[]> {
+  const existing = await getQuestionsByGroup(groupId);
+  const byId = new Map(existing.map((q) => [q.id, q]));
+
+  const sharedStem = input.shared?.shared_stem;
+  for (const part of input.parts) {
+    const current = byId.get(part.id);
+    if (!current) {
+      throw new ApiError(
+        400,
+        'INVALID_GROUP',
+        `Part ${part.id} does not belong to group ${groupId}`
+      );
+    }
+    const merged: QuestionUpdateInput = {
+      ...part,
+      topic_id: input.shared?.topic_id ?? part.topic_id,
+      difficulty: input.shared?.difficulty ?? part.difficulty,
+      exam_scope: input.shared?.exam_scope ?? part.exam_scope,
+      content: {
+        ...part.content,
+        ...(sharedStem !== undefined ? { shared_stem: sharedStem } : {}),
+      },
+    } as QuestionUpdateInput;
+    await updateQuestion(part.id, merged);
+  }
+
+  return await getQuestionsByGroup(groupId);
 }
 
 export async function removeQuestionAsset(questionId: string, assetId: string): Promise<void> {

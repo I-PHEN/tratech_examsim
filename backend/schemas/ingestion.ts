@@ -76,6 +76,9 @@ export const DraftData = z.object({
   group_key: z.string().max(120).optional(),
   part_label: z.string().max(8).optional(),
   part_index: z.number().int().min(0).optional(),
+  // The setup / given data shared by every sibling part of the same group.
+  // Identical on every part; the exam UI renders it once.
+  shared_stem: z.string().optional(),
   // Review-only: which fields were pre-filled from an uploaded markscheme.
   // Cleared per-field when a reviewer edits that field. Ignored at publish.
   ai_matched: z

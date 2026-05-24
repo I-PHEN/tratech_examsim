@@ -242,9 +242,12 @@ interface DraftRowProps {
   onPublish?: () => void;
   publishing?: boolean;
   focused?: boolean;
+  /** Hide topic / difficulty / exam_scope when the parent already shows them
+   *  at group level. Keeps only part-specific fields (type, answer_type, …). */
+  hideClassification?: boolean;
 }
 
-const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, onSplit, splitting, onPublish, publishing, focused }) => {
+const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, onSplit, splitting, onPublish, publishing, focused, hideClassification }) => {
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | 'unit' | null>(null);
@@ -502,33 +505,37 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           options={TYPE_OPTS}
           onChange={(v) => update({ type: v })}
         />
-        <ShortcutPills
-          label="Difficulty"
-          value={d.difficulty}
-          options={DIFFICULTY_OPTS}
-          onChange={(v) => update({ difficulty: v })}
-        />
-        <ShortcutPills
-          label="Exam Scope"
-          value={d.exam_scope}
-          options={SCOPE_OPTS}
-          onChange={(v) => update({ exam_scope: v })}
-        />
-        <label className="text-xs self-start">
-          <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">Topic</span>
-          <select
-            value={d.topic_id ?? ''}
-            onChange={(e) => update({ topic_id: e.target.value || undefined })}
-            className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-          >
-            <option value="">—</option>
-            {topics.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        {!hideClassification && (
+          <>
+            <ShortcutPills
+              label="Difficulty"
+              value={d.difficulty}
+              options={DIFFICULTY_OPTS}
+              onChange={(v) => update({ difficulty: v })}
+            />
+            <ShortcutPills
+              label="Exam Scope"
+              value={d.exam_scope}
+              options={SCOPE_OPTS}
+              onChange={(v) => update({ exam_scope: v })}
+            />
+            <label className="text-xs self-start">
+              <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">Topic</span>
+              <select
+                value={d.topic_id ?? ''}
+                onChange={(e) => update({ topic_id: e.target.value || undefined })}
+                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
+              >
+                <option value="">—</option>
+                {topics.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        )}
       </div>
 
       {d.type === 'mcq' ? (
@@ -645,19 +652,23 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
               {d.answer_type === 'range' && (
                 <label className="text-xs">
                   <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
-                    Tolerance (±)
+                    Tolerance (± absolute)
                   </span>
                   <input
                     data-cycle
                     type="number"
                     step="any"
+                    min="0"
                     value={d.answer_tolerance ?? ''}
                     onChange={(e) =>
                       update({ answer_tolerance: parseFloat(e.target.value) || undefined })
                     }
-                    placeholder="e.g. 0.5"
+                    placeholder="0.05"
                     className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
                   />
+                  <p className="mt-1 text-[10px] text-text-tertiary leading-snug">
+                    Correct when |answer − model| ≤ tolerance. e.g. model 12.4, tolerance 0.5 → accepts 11.9 to 12.9.
+                  </p>
                 </label>
               )}
             </div>
@@ -827,6 +838,15 @@ const QuestionGroupCard: React.FC<QuestionGroupCardProps> = ({
   const active = parts.find((p) => p.id === activeId) ?? parts[0];
   const pendingPartIds = parts.filter((p) => p.status === 'pending').map((p) => p.id);
 
+  // Group-level metadata — sub-parts share topic / difficulty / exam_scope.
+  // First part is the source of truth; changes propagate to every sibling.
+  const firstData = parts[0]?.draft_data;
+  const updateAll = (patch: Partial<DraftData>) => {
+    for (const p of parts) {
+      onChange({ ...p, draft_data: { ...p.draft_data, ...patch } });
+    }
+  };
+
   return (
     <div className="border border-primary/30 rounded-2xl bg-primary/[0.03] overflow-hidden">
       <div className="flex items-center justify-between px-5 py-3 border-b border-primary/20 bg-primary/[0.06]">
@@ -864,6 +884,41 @@ const QuestionGroupCard: React.FC<QuestionGroupCardProps> = ({
         </div>
       </div>
 
+      {/* Group-level classification — set once, applies to every sub-part. */}
+      {firstData && (
+        <div className="px-5 pt-4 pb-3 border-b border-primary/15 grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
+          <ShortcutPills
+            label="Difficulty"
+            value={firstData.difficulty}
+            options={DIFFICULTY_OPTS}
+            onChange={(v) => updateAll({ difficulty: v })}
+          />
+          <ShortcutPills
+            label="Exam Scope"
+            value={firstData.exam_scope}
+            options={SCOPE_OPTS}
+            onChange={(v) => updateAll({ exam_scope: v })}
+          />
+          <label className="text-xs self-start">
+            <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
+              Topic
+            </span>
+            <select
+              value={firstData.topic_id ?? ''}
+              onChange={(e) => updateAll({ topic_id: e.target.value || undefined })}
+              className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
+            >
+              <option value="">—</option>
+              {topics.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      )}
+
       <div className="flex flex-wrap gap-1 px-5 pt-3">
         {parts.map((p) => {
           const isActive = p.id === active?.id;
@@ -897,6 +952,7 @@ const QuestionGroupCard: React.FC<QuestionGroupCardProps> = ({
             onSave={() => onSave(active)}
             onReject={() => onReject(active)}
             onExpand={active.status === 'pending' ? () => onExpand(active.id) : undefined}
+            hideClassification
           />
         )}
       </div>

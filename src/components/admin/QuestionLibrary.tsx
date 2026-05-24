@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
+import { Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, FileText, Layers } from 'lucide-react';
 import { apiDelete, apiGet } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { CourseSelect } from './CourseSelect';
 import { ManualQuestionEntry } from './ManualQuestionEntry';
+import { QuestionGroupEditor } from './QuestionGroupEditor';
 
 interface Topic {
   id: string;
@@ -24,6 +25,31 @@ interface QuestionRow {
   exam_scope: 'midsem' | 'final' | 'both';
   prompt: string;
   created_at: string;
+  question_group_id: string | null;
+  part_label: string | null;
+  part_index: number | null;
+}
+
+type LibraryItem =
+  | { kind: 'single'; row: QuestionRow }
+  | { kind: 'group'; groupId: string; parts: QuestionRow[] };
+
+function buildItems(rows: QuestionRow[]): LibraryItem[] {
+  const items: LibraryItem[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    if (r.question_group_id) {
+      if (seen.has(r.question_group_id)) continue;
+      seen.add(r.question_group_id);
+      const parts = rows
+        .filter((x) => x.question_group_id === r.question_group_id)
+        .sort((a, b) => (a.part_index ?? 0) - (b.part_index ?? 0));
+      items.push({ kind: 'group', groupId: r.question_group_id, parts });
+    } else {
+      items.push({ kind: 'single', row: r });
+    }
+  }
+  return items;
 }
 
 const PAGE_SIZE = 25;
@@ -42,6 +68,7 @@ export function QuestionLibrary() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
   useEffect(() => {
     setTopicId('');
@@ -102,6 +129,21 @@ export function QuestionLibrary() {
     }
   };
 
+  if (editingGroupId) {
+    return (
+      <QuestionGroupEditor
+        groupId={editingGroupId}
+        topics={topics}
+        courseLabel={courseLabel || undefined}
+        onCancel={() => setEditingGroupId(null)}
+        onDone={() => {
+          setEditingGroupId(null);
+          fetchList();
+        }}
+      />
+    );
+  }
+
   if (editingId) {
     const editingRow = rows.find((r) => r.id === editingId);
     const editingTopic = editingRow ? topics.find((t) => t.id === editingRow.topic_id)?.name : undefined;
@@ -118,6 +160,8 @@ export function QuestionLibrary() {
       />
     );
   }
+
+  const items = buildItems(rows);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 animate-in fade-in duration-200">
@@ -192,49 +236,91 @@ export function QuestionLibrary() {
           </div>
         ) : (
           <>
-            {rows.map((r) => (
-              <div
-                key={r.id}
-                className="bg-surface-container-low border border-border-subtle rounded-2xl px-4 py-3 flex items-start gap-3"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm text-text-primary line-clamp-2 break-words">
-                    {r.prompt || <em className="text-text-tertiary">(no prompt text)</em>}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
-                    <Badge>{r.type === 'mcq' ? 'MCQ' : 'Calc'}</Badge>
-                    <Badge tone="diff">{r.difficulty}</Badge>
-                    <Badge tone="scope">{r.exam_scope}</Badge>
-                    {topics.find((t) => t.id === r.topic_id)?.name && (
-                      <Badge tone="topic">
-                        {topics.find((t) => t.id === r.topic_id)?.name}
-                      </Badge>
-                    )}
+            {items.map((item) =>
+              item.kind === 'group' ? (
+                <div
+                  key={item.groupId}
+                  className="bg-surface-container-low border border-primary/30 rounded-2xl px-4 py-3 flex items-start gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-primary bg-primary/10 border border-primary/30 rounded px-1.5 py-0.5">
+                        <Layers className="w-3 h-3" />
+                        Multi-part · {item.parts.length} parts
+                      </span>
+                      <span className="text-[10px] text-text-secondary">
+                        Parts: {item.parts.map((p) => p.part_label ?? '?').join(', ')}
+                      </span>
+                    </div>
+                    <p className="text-sm text-text-primary line-clamp-2 break-words">
+                      {item.parts[0].prompt || (
+                        <em className="text-text-tertiary">(no prompt text)</em>
+                      )}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
+                      <Badge tone="diff">{item.parts[0].difficulty}</Badge>
+                      <Badge tone="scope">{item.parts[0].exam_scope}</Badge>
+                      {topics.find((t) => t.id === item.parts[0].topic_id)?.name && (
+                        <Badge tone="topic">
+                          {topics.find((t) => t.id === item.parts[0].topic_id)?.name}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => setEditingGroupId(item.groupId)}
+                      className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit group
+                    </button>
                   </div>
                 </div>
-                <div className="flex gap-2 shrink-0">
-                  <button
-                    onClick={() => setEditingId(r.id)}
-                    className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => handleDelete(r.id)}
-                    disabled={deleting === r.id}
-                    className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg font-bold hover:bg-red-500/20 disabled:opacity-50"
-                  >
-                    {deleting === r.id ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    ) : (
-                      <Trash2 className="w-3.5 h-3.5" />
-                    )}
-                    Delete
-                  </button>
+              ) : (
+                <div
+                  key={item.row.id}
+                  className="bg-surface-container-low border border-border-subtle rounded-2xl px-4 py-3 flex items-start gap-3"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm text-text-primary line-clamp-2 break-words">
+                      {item.row.prompt || <em className="text-text-tertiary">(no prompt text)</em>}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
+                      <Badge>{item.row.type === 'mcq' ? 'MCQ' : 'Calc'}</Badge>
+                      <Badge tone="diff">{item.row.difficulty}</Badge>
+                      <Badge tone="scope">{item.row.exam_scope}</Badge>
+                      {topics.find((t) => t.id === item.row.topic_id)?.name && (
+                        <Badge tone="topic">
+                          {topics.find((t) => t.id === item.row.topic_id)?.name}
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    <button
+                      onClick={() => setEditingId(item.row.id)}
+                      className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => handleDelete(item.row.id)}
+                      disabled={deleting === item.row.id}
+                      className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg font-bold hover:bg-red-500/20 disabled:opacity-50"
+                    >
+                      {deleting === item.row.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                      Delete
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            )}
 
             <div className="flex items-center justify-between pt-2">
               <span className="text-xs text-text-secondary">

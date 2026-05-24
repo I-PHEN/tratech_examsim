@@ -24,6 +24,9 @@ const McqCreate = z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
     source_reference: z.string().max(500).optional(),
+    // The shared setup for a multi-part question — identical on every sibling
+    // part, so the exam UI renders it once + each part's task underneath.
+    shared_stem: z.string().optional(),
   }),
   options: z.array(McqOption).min(2).max(6),
 });
@@ -44,6 +47,7 @@ const CalcCreate = z.object({
     answer_tolerance: z.number().positive().optional(),
     unit: z.string().optional(),
     source_reference: z.string().max(500).optional(),
+    shared_stem: z.string().optional(),
   }),
 });
 
@@ -59,6 +63,7 @@ const McqUpdate = z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
     source_reference: z.string().max(500).optional(),
+    shared_stem: z.string().optional(),
   }),
   options: z.array(McqOption).min(2).max(6),
 });
@@ -76,11 +81,26 @@ const CalcUpdate = z.object({
     answer_tolerance: z.number().positive().optional(),
     unit: z.string().optional(),
     source_reference: z.string().max(500).optional(),
+    shared_stem: z.string().optional(),
   }),
 });
 
 export const QuestionUpdate = z.discriminatedUnion('type', [McqUpdate, CalcUpdate]);
 export type QuestionUpdateInput = z.infer<typeof QuestionUpdate>;
+
+/** Apply edits to every sibling of a multi-part group in one call. */
+export const QuestionGroupUpdate = z.object({
+  shared: z
+    .object({
+      topic_id: uuid.optional(),
+      difficulty: Difficulty.optional(),
+      exam_scope: ExamScope.optional(),
+      shared_stem: z.string().optional(),
+    })
+    .optional(),
+  parts: z.array(z.intersection(QuestionUpdate, z.object({ id: uuid }))).min(1),
+});
+export type QuestionGroupUpdateInput = z.infer<typeof QuestionGroupUpdate>;
 
 export const QuestionListQuery = z.object({
   program_course_id: uuid.optional(),

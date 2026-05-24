@@ -17,7 +17,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
   const [programCourseId, setProgramCourseId] = useState<string>('');
 
   const [mode, setMode] = useState<Mode>('pdf');
-  const [runMode, setRunMode] = useState<'autonomous' | 'stepwise'>('autonomous');
+  const [runMode, setRunMode] = useState<'autonomous' | 'stepwise'>('stepwise');
   const [docType, setDocType] = useState<DocType>('past_paper');
   const [file, setFile] = useState<File | null>(null);
   const [markschemeFile, setMarkschemeFile] = useState<File | null>(null);
@@ -223,49 +223,55 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
           </div>
           <p className="text-[10px] text-text-secondary mt-2 leading-relaxed">
             {runMode === 'autonomous'
-              ? 'The AI extracts, classifies and fills details automatically — you review the result.'
-              : 'After each stage you see the result, correct it, then choose to hand the next stage to the AI or do it yourself.'}
+              ? 'The AI extracts, classifies and fills details end-to-end. Switch to Step-by-step if quality is poor.'
+              : 'Recommended on the current model. Pauses after each stage so you correct it before the AI continues.'}
           </p>
         </div>
 
         <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-4">
-          <h4 className="font-bold uppercase tracking-widest text-xs text-text-primary mb-2">
-            Source Type
-          </h4>
-          <div className="grid grid-cols-3 gap-1.5">
-            {DOC_TYPES.map((dt) => (
-              <button
-                key={dt.value}
-                onClick={() => setDocType(dt.value)}
-                title={dt.hint}
-                className={cn(
-                  'px-2 py-1.5 rounded-lg border text-xs font-bold transition-all text-center',
-                  docType === dt.value
-                    ? 'bg-bg-raised border-primary/30 text-primary'
-                    : 'bg-bg-sunken border-border-subtle text-text-secondary hover:bg-bg-raised'
-                )}
-              >
-                {dt.label}
-              </button>
-            ))}
-          </div>
-
           <button
             type="button"
             onClick={() => setAdvancedOpen((v) => !v)}
-            className="mt-3 w-full flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-text-secondary hover:text-text-primary transition-colors"
+            className="w-full flex items-center justify-between text-[11px] font-bold uppercase tracking-widest text-text-secondary hover:text-text-primary transition-colors"
           >
             <span>Advanced</span>
             <span>{advancedOpen ? '–' : '+'}</span>
           </button>
           {advancedOpen && (
-            <div className="mt-2">
-              <input
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                placeholder="model override (e.g. anthropic/claude-sonnet-4-5)"
-                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary focus:border-primary focus:outline-none"
-              />
+            <div className="mt-3 space-y-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-secondary mb-1.5">
+                  Source Type
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {DOC_TYPES.map((dt) => (
+                    <button
+                      key={dt.value}
+                      onClick={() => setDocType(dt.value)}
+                      title={dt.hint}
+                      className={cn(
+                        'px-2 py-1.5 rounded-lg border text-xs font-bold transition-all text-center',
+                        docType === dt.value
+                          ? 'bg-bg-raised border-primary/30 text-primary'
+                          : 'bg-bg-sunken border-border-subtle text-text-secondary hover:bg-bg-raised'
+                      )}
+                    >
+                      {dt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-text-secondary mb-1.5">
+                  Model override
+                </label>
+                <input
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  placeholder="e.g. anthropic/claude-sonnet-4-5"
+                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2.5 py-1.5 text-xs text-text-primary focus:border-primary focus:outline-none"
+                />
+              </div>
             </div>
           )}
         </div>

@@ -4,15 +4,23 @@ import { ApiError, asyncHandler } from '../lib/errors';
 import { requireAdmin } from '../lib/auth';
 import { parse } from '../lib/validate';
 import { IdParam } from '../schemas/common';
-import { QuestionCreate, QuestionListQuery, QuestionUpdate } from '../schemas/question';
+import {
+  QuestionCreate,
+  QuestionGroupUpdate,
+  QuestionListQuery,
+  QuestionUpdate,
+} from '../schemas/question';
+import { z } from 'zod';
 import {
   addQuestionAsset,
   createQuestion,
   deleteQuestion,
   getQuestionById,
+  getQuestionsByGroup,
   listQuestions,
   removeQuestionAsset,
   updateQuestion,
+  updateQuestionGroup,
 } from '../services/questionService';
 import { ocrImage } from '../lib/mistralOcr';
 
@@ -28,6 +36,26 @@ router.get(
   asyncHandler(async (req, res) => {
     const query = parse(QuestionListQuery, req.query);
     const data = await listQuestions(query);
+    res.json(data);
+  })
+);
+
+router.get(
+  '/by-group/:groupId',
+  asyncHandler(async (req, res) => {
+    const { groupId } = parse(z.object({ groupId: z.string().uuid() }), req.params);
+    const data = await getQuestionsByGroup(groupId);
+    res.json(data);
+  })
+);
+
+router.patch(
+  '/by-group/:groupId',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { groupId } = parse(z.object({ groupId: z.string().uuid() }), req.params);
+    const body = parse(QuestionGroupUpdate, req.body);
+    const data = await updateQuestionGroup(groupId, body);
     res.json(data);
   })
 );

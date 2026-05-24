@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode } from 'react';
+import { Fragment, useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
@@ -73,6 +73,64 @@ function rawOf(node: ReactNode): string {
   return '';
 }
 
+function ZoomableImage({ src, alt }: { src: string; alt: string }) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="block my-2 cursor-zoom-in"
+        aria-label="Click to zoom"
+      >
+        <img
+          src={src}
+          alt={alt}
+          loading="lazy"
+          className="max-h-[60vh] w-auto rounded-xl border border-border-subtle"
+        />
+      </button>
+      {open && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setOpen(false)}
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 cursor-zoom-out"
+        >
+          <img
+            src={src}
+            alt={alt}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[92vh] max-w-[92vw] rounded-xl shadow-2xl cursor-default"
+          />
+          <button
+            type="button"
+            onClick={() => setOpen(false)}
+            aria-label="Close"
+            className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center"
+          >
+            ×
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 // Tailwind-styled element overrides so markdown matches the surrounding UI
 // instead of pulling in default browser styles. `streaming`/`depth` drive the
 // custom fenced-block dispatch (mermaid + interactive Jude blocks).
@@ -106,14 +164,7 @@ function buildComponents(streaming: boolean, depth: number): Components {
           </span>
         );
       }
-      return (
-        <img
-          src={src}
-          alt={alt ?? ''}
-          loading="lazy"
-          className="my-2 max-h-80 rounded-xl border border-border-subtle"
-        />
-      );
+      return <ZoomableImage src={src} alt={alt ?? ''} />;
     },
     code: ({ className, children }) => {
       const lang = /language-([\w-]+)/.exec(className ?? '')?.[1];

@@ -113,6 +113,7 @@ interface ApiContent {
   correct_answer?: string | null;
   answer_tolerance?: number | null;
   unit?: string | null;
+  shared_stem?: string | null;
 }
 
 interface ApiQuestion {
@@ -133,6 +134,7 @@ interface ApiQuestion {
 interface ApiSessionCreated {
   session_id: string;
   picked: ApiQuestion[];
+  difficulty_fallback?: boolean;
 }
 
 function yearStringToNumber(y: string): number {
@@ -163,6 +165,7 @@ function apiQuestionToFrontend(q: ApiQuestion): Question {
         partIndex: q.part_index ?? undefined,
       }
     : {};
+  const sharedStem = q.content.shared_stem?.trim() || undefined;
   if (q.type === 'mcq') {
     return {
       id: q.id,
@@ -173,6 +176,7 @@ function apiQuestionToFrontend(q: ApiQuestion): Question {
       correctOptionId: (q.options ?? []).find((o) => o.is_correct)?.id,
       marks: 1,
       assets: q.assets,
+      sharedStem,
       ...group,
     };
   }
@@ -185,6 +189,7 @@ function apiQuestionToFrontend(q: ApiQuestion): Question {
     answerType: q.answer_type ?? undefined,
     marks: 1,
     assets: q.assets,
+    sharedStem,
     ...group,
   };
 }
@@ -388,7 +393,7 @@ export default function App() {
   const [practiceTimeUserSet, setPracticeTimeUserSet] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[]; prefilledAnswers?: Record<number, string> } | null>(null);
+  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[]; prefilledAnswers?: Record<number, string>; difficultyFallback?: boolean } | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
 
@@ -619,14 +624,24 @@ export default function App() {
     setStartError(null);
     setStartingExam(true);
     try {
+      const apiDifficulty =
+        state.difficulty === 'Easy' ? 'easy'
+        : state.difficulty === 'Medium' ? 'medium'
+        : state.difficulty === 'Hard' ? 'hard'
+        : null;
       const res = await apiPost<ApiSessionCreated>('/api/sessions', {
         program_course_id: state.selectedCourse.id,
         mode: modeToApi(state.mode),
         ...(state.selectedTopic?.id ? { topic_id: state.selectedTopic.id } : {}),
         ...(state.mode === 'PRACTICE' ? { count: state.questionCount } : {}),
+        ...(apiDifficulty ? { difficulty: apiDifficulty } : {}),
       });
       const questions = apiQuestionsToFrontend(res.picked);
-      setActiveSession({ sessionId: res.session_id, questions });
+      setActiveSession({
+        sessionId: res.session_id,
+        questions,
+        difficultyFallback: res.difficulty_fallback,
+      });
       setState(prev => ({ ...prev, step: 'EXAM' }));
     } catch (e) {
       if (e instanceof ApiError && e.code === 'NO_QUESTIONS') {
@@ -851,6 +866,8 @@ export default function App() {
               questions={activeSession.questions}
               practiceTimeLimit={state.practiceTimeLimit}
               prefilledAnswers={activeSession.prefilledAnswers}
+              difficultyFallback={activeSession.difficultyFallback}
+              requestedDifficulty={state.difficulty}
             />
           ) : null
         ) : state.step === 'REVIEW' && state.reviewSessionId ? (
@@ -1614,7 +1631,7 @@ interface ReviewSessionData {
     question_group_id: string | null;
     part_label: string | null;
     part_index: number | null;
-    content: { prompt: string; explanation?: string | null; correct_answer?: string | null; unit?: string | null };
+    content: { prompt: string; explanation?: string | null; correct_answer?: string | null; unit?: string | null; shared_stem?: string | null };
     options: Array<{ id: string; text: string; is_correct: boolean }>;
     assets: Array<{ id: string; url: string }>;
   }>;
@@ -1636,6 +1653,7 @@ interface ReviewItem {
   correctAnswer: string | null;
   unit: string | null;
   explanation: string | null;
+  sharedStem: string | null;
   pickedOptionId: string | null;
   pickedText: string | null;
   isCorrect: boolean | null;
@@ -1748,6 +1766,7 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
         correctAnswer: q.content?.correct_answer ?? null,
         unit: q.content?.unit ?? null,
         explanation: q.content?.explanation ?? null,
+        sharedStem: q.content?.shared_stem ?? null,
         pickedOptionId: a?.picked_option_id ?? null,
         pickedText: a?.picked_text ?? null,
         isCorrect: isUnanswered ? null : a?.is_correct ?? null,
@@ -2036,6 +2055,16 @@ function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
 
   return (
     <div className="space-y-3">
+      {it.sharedStem && (
+        <div className="bg-bg-sunken/40 border-l-2 border-accent/40 rounded-r-lg px-3 py-2">
+          <span className="block text-[9px] font-black uppercase tracking-widest text-accent-text mb-1">
+            Setup
+          </span>
+          <RichText className="text-sm text-text-primary leading-relaxed">
+            {it.sharedStem}
+          </RichText>
+        </div>
+      )}
       <RichText className="text-sm text-text-primary leading-relaxed font-medium">
         {it.prompt}
       </RichText>
@@ -2610,6 +2639,8 @@ function ExamSimulation({
   questions,
   practiceTimeLimit,
   prefilledAnswers,
+  difficultyFallback,
+  requestedDifficulty,
 }: {
   onBack: () => void;
   onFinish: (sessionId: string) => void;
@@ -2620,10 +2651,30 @@ function ExamSimulation({
   questions: Question[];
   practiceTimeLimit: number;
   prefilledAnswers?: Record<number, string>;
+  difficultyFallback?: boolean;
+  requestedDifficulty?: 'Easy' | 'Medium' | 'Hard' | 'All';
 }) {
+  const [fallbackBannerDismissed, setFallbackBannerDismissed] = useState(false);
+  const showFallbackBanner =
+    difficultyFallback && !fallbackBannerDismissed && requestedDifficulty && requestedDifficulty !== 'All';
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>(() => prefilledAnswers ?? {});
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
+  const [navOpen, setNavOpen] = useState(true);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  useEffect(() => {
+    if (!lightboxSrc) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightboxSrc(null);
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [lightboxSrc]);
   const [navFilter, setNavFilter] = useState<'All' | 'Flagged' | 'Unanswered'>('All');
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -2999,6 +3050,29 @@ function ExamSimulation({
     <div
       className="flex flex-col h-full flex-1 bg-bg-page text-text-primary font-sans overflow-hidden"
     >
+        {lightboxSrc && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setLightboxSrc(null)}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-sm p-4 cursor-zoom-out"
+          >
+            <img
+              src={lightboxSrc}
+              alt="diagram"
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-[92vh] max-w-[92vw] rounded-xl shadow-2xl cursor-default"
+            />
+            <button
+              type="button"
+              onClick={() => setLightboxSrc(null)}
+              aria-label="Close"
+              className="absolute top-4 right-4 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white text-xl leading-none flex items-center justify-center"
+            >
+              ×
+            </button>
+          </div>
+        )}
         {isMobileNavOpen && (
           <div
             className="fixed inset-0 z-[160] lg:hidden animate-in fade-in duration-200"
@@ -3184,16 +3258,48 @@ function ExamSimulation({
       {/* Main Container */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="max-w-7xl mx-auto w-full px-3 md:px-6 py-2 md:py-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+          {showFallbackBanner && (
+            <div className="mb-2 flex items-start gap-3 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/30 text-xs">
+              <span className="font-bold uppercase tracking-wider shrink-0">Heads up</span>
+              <span className="flex-1">
+                No <b>{requestedDifficulty?.toLowerCase()}</b> questions yet for this course — this
+                set is mixed difficulty.
+              </span>
+              <button
+                onClick={() => setFallbackBannerDismissed(true)}
+                className="text-amber-500/80 hover:text-amber-500"
+                aria-label="Dismiss"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
           <div className="grid grid-cols-12 gap-4 md:gap-5 flex-1 min-h-0 overflow-hidden">
             {/* Left/Middle: Question Core */}
-            <div className="col-span-12 lg:col-span-9 flex flex-col min-h-0 h-full overflow-hidden">
+            <div
+              className={cn(
+                'col-span-12 flex flex-col min-h-0 h-full overflow-hidden relative',
+                navOpen ? 'lg:col-span-9' : 'lg:col-span-12'
+              )}
+            >
+
+               {/* Floating navigator toggle (desktop only when collapsed) */}
+               {!navOpen && (
+                 <button
+                   onClick={() => setNavOpen(true)}
+                   className="hidden lg:flex absolute top-3 right-3 z-20 items-center gap-1.5 px-3 py-1.5 rounded-full bg-bg-surface/95 border border-border-subtle text-xs font-bold text-text-secondary hover:text-text-primary shadow-md"
+                 >
+                   <Menu className="w-3.5 h-3.5" />
+                   Show navigator
+                 </button>
+               )}
 
                {/* Question Arena */}
-               <div className="bg-bg-surface p-3 md:p-5 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
+               <div className="bg-bg-surface p-3 md:p-4 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
                   <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50 pointer-events-none" />
-                  
+
                   {/* Header zone — pinned; never scrolls away */}
-                  <div className="relative z-10 shrink-0 space-y-2 border-b border-border-subtle pb-2.5">
+                  <div className="relative z-10 shrink-0 space-y-1.5 border-b border-border-subtle pb-2">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-baseline gap-2">
                         <span className="text-xl font-black text-text-primary">Q{currentNumber}</span>
@@ -3244,7 +3350,17 @@ function ExamSimulation({
                   </div>
 
                   {/* Scroll zone — ONLY the question text + diagrams scroll */}
-                  <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-3 space-y-4">
+                  <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-2 space-y-3">
+                      {currentQuestion.sharedStem && (
+                        <div className="bg-bg-sunken/40 border-l-2 border-accent/40 rounded-r-lg px-3 py-2">
+                          <span className="block text-[9px] font-black uppercase tracking-widest text-accent-text mb-1">
+                            Setup
+                          </span>
+                          <RichText className="text-sm text-text-primary leading-relaxed">
+                            {currentQuestion.sharedStem}
+                          </RichText>
+                        </div>
+                      )}
                       <RichText className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
                         {currentQuestion.prompt}
                       </RichText>
@@ -3252,20 +3368,27 @@ function ExamSimulation({
                       {currentQuestion.assets && currentQuestion.assets.length > 0 && (
                         <div className="flex flex-col gap-3">
                           {currentQuestion.assets.map((a) => (
-                            <img
+                            <button
                               key={a.id}
-                              src={a.url}
-                              alt="diagram"
-                              loading="lazy"
-                              className="rounded-xl border border-border-subtle max-h-80 mx-auto"
-                            />
+                              type="button"
+                              onClick={() => setLightboxSrc(a.url)}
+                              className="block mx-auto cursor-zoom-in"
+                              aria-label="Click to zoom"
+                            >
+                              <img
+                                src={a.url}
+                                alt="diagram"
+                                loading="lazy"
+                                className="rounded-xl border border-border-subtle max-h-[60vh] w-auto"
+                              />
+                            </button>
                           ))}
                         </div>
                       )}
                   </div>
 
                   {/* Answer zone — pinned above the nav buttons */}
-                  <div className="relative z-10 shrink-0 max-h-[45vh] overflow-y-auto no-scrollbar pt-3 mt-1 border-t border-border-subtle">
+                  <div className="relative z-10 shrink-0 max-h-[35vh] overflow-y-auto no-scrollbar pt-2.5 border-t border-border-subtle">
                       {currentQuestion.type === 'MCQ' ? (
                         <div className="grid grid-cols-1 gap-2.5">
                           {currentQuestion.options?.map((opt, i) => {
@@ -3349,8 +3472,21 @@ function ExamSimulation({
             </div>
 
             {/* Right Coast: Navigation HUD (Desktop) */}
-            <aside className="hidden lg:flex lg:col-span-3 flex-col h-full min-h-0">
-               <div className="bg-bg-surface border border-border-subtle rounded-3xl p-4 md:p-5 shadow-xl flex-1 overflow-y-auto no-scrollbar">
+            <aside
+              className={cn(
+                'lg:flex lg:col-span-3 flex-col h-full min-h-0',
+                navOpen ? 'hidden lg:flex' : 'hidden'
+              )}
+            >
+               <div className="bg-bg-surface border border-border-subtle rounded-3xl p-4 md:p-5 shadow-xl flex-1 overflow-y-auto no-scrollbar relative">
+                  <button
+                    onClick={() => setNavOpen(false)}
+                    className="absolute top-3 right-3 p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-raised"
+                    aria-label="Hide navigator"
+                    title="Hide navigator"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                   {navigatorJSX}
                </div>
             </aside>

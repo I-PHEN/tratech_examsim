@@ -17,39 +17,47 @@ export interface SplitPart {
 }
 
 export interface SplitResult {
+  /** The setup / given data shared by every sub-part. Empty when the source has
+   *  no shared preamble (each part is genuinely standalone). */
+  shared_stem?: string;
   parts: SplitPart[];
 }
 
-const MAX_SOLUTION_CHARS = 12000;
+const MAX_SOLUTION_CHARS = 32000;
 const SPLIT_CONCURRENCY_PAID = 3;
 const SPLIT_CONCURRENCY_FREE = 1;
 
-const SYSTEM_PROMPT = `You split ONE exam question that has multiple sub-parts into one standalone record per sub-part.
+const SYSTEM_PROMPT = `You split ONE exam question that has multiple sub-parts into one record per sub-part — PLUS the shared setup as a separate field.
 
 You receive:
   - QUESTION: the full text of a single exam question — a shared setup / given data followed by sub-parts (a), (b), (c), (i), (ii)...
   - SOLUTION (optional): the worked solution or marking scheme for that question.
 
-For EACH sub-part, return one record:
+Return TWO things:
+  - "shared_stem": the setup / given data shared by every sub-part, copied VERBATIM from the source — every sentence, every number, every reaction equation, every given value. This is the context a student needs to read ONCE before tackling any of the sub-parts. If the source genuinely has no shared preamble, leave it empty.
+  - "parts": an array of records, ONE per sub-part.
+
+For EACH sub-part record:
   - "part_label": the sub-part label exactly as in the source ("a", "b", "ii", ...).
   - "type": "mcq" if the sub-part offers answer options, otherwise "calc".
-  - "prompt": the COMPLETE standalone question for this sub-part — the shared setup / given data, then this sub-part's specific task, copied verbatim. A student MUST be able to solve it with NO access to the other parts.
+  - "prompt": the sub-part's SPECIFIC TASK only. Do NOT repeat the shared setup here — that already lives in "shared_stem". Start the prompt at the sub-part's actual instruction (e.g. "Calculate the conversion of A.", "Determine the rate constant.", "Sketch the concentration profile."). Copy verbatim.
   - "options": for an mcq sub-part only — the answer options [{ "text": "...", "is_correct": true|false }].
   - "answer_type": "exact" | "range" | "written". Use "written" when the expected answer is a worded statement / explanation / interpretation rather than a single value.
-  - "correct_answer": for a calc sub-part — its final answer (value with unit, or the worded model answer when "written"). Take it ONLY from the SOLUTION. Omit it when the SOLUTION does not give this sub-part's answer.
+  - "correct_answer": for a calc sub-part — the NUMERIC VALUE ONLY (no unit text). e.g. "12.4" not "12.4 dm^3". For a "written" sub-part this is the full sentence model answer. Take it ONLY from the SOLUTION. Omit it when the SOLUTION does not give this sub-part's answer.
   - "answer_tolerance": a number, for "range" answers only.
-  - "unit": the unit of a numeric answer, if any.
-  - "explanation": the COMPLETE step-by-step worked solution for THIS sub-part, copied faithfully from the SOLUTION — every step and all reasoning, ending with the final answer stated as a clear sentence. Take it ONLY from the SOLUTION.
+  - "unit": the unit on its own (e.g. "dm^3", "mol/L", "%"). Empty for "written" answers or when the answer is dimensionless.
+  - "explanation": the COMPLETE step-by-step worked solution for THIS sub-part. Copy the markscheme VERBATIM — every sentence, every intermediate result, every aside, every line of working. DO NOT paraphrase, abbreviate, condense, or skip prose between math steps. If the markscheme has a sentence explaining WHY a step is taken, that sentence MUST appear in your output. End with the final answer stated as a clear sentence. Take it ONLY from the SOLUTION.
 
 CRITICAL — distribute, never duplicate:
   - Each part gets ONLY its own answer and ONLY its own worked-solution slice.
   - NEVER put part (b)'s answer or solution onto part (a).
   - When the SOLUTION has no content for a sub-part, leave "correct_answer" and "explanation" empty for that part. NEVER guess.
+  - The shared setup goes in "shared_stem" ONCE — not also inside each part's "prompt".
 
-FORMATTING: "prompt", "options[].text", "correct_answer" and "explanation" MUST be valid Markdown + LaTeX (rendered with KaTeX) — inline math in $...$, display math in $$...$$, chemistry with proper sub/superscripts. Format only — never change numbers, wording or meaning.
+FORMATTING: "shared_stem", "prompt", "options[].text", "correct_answer" and "explanation" MUST be valid Markdown + LaTeX (rendered with KaTeX) — inline math in $...$, display math in $$...$$, chemistry with proper sub/superscripts. Format only — never change numbers, wording or meaning.
 
 Return ONLY a JSON object, no markdown fences, no commentary:
-{ "parts": [ { "part_label": "...", "type": "...", "prompt": "...", "answer_type": "...", "correct_answer": "...", "explanation": "..." } ] }`;
+{ "shared_stem": "...", "parts": [ { "part_label": "...", "type": "...", "prompt": "...", "answer_type": "...", "correct_answer": "...", "unit": "...", "explanation": "..." } ] }`;
 
 function stripFences(s: string): string {
   return s.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
@@ -87,7 +95,7 @@ export async function splitMultipartQuestion(
     temperature: 0,
   });
 
-  let parsed: { parts?: SplitPart[] };
+  let parsed: { shared_stem?: string; parts?: SplitPart[] };
   try {
     parsed = JSON.parse(stripFences(result.content));
   } catch {
@@ -98,7 +106,8 @@ export async function splitMultipartQuestion(
   const parts = parsed.parts.filter(
     (p) => p && typeof p.prompt === 'string' && p.prompt.trim().length > 0
   );
-  return { parts };
+  const shared_stem = typeof parsed.shared_stem === 'string' ? parsed.shared_stem.trim() : '';
+  return { shared_stem: shared_stem || undefined, parts };
 }
 
 /**
@@ -106,13 +115,18 @@ export async function splitMultipartQuestion(
  * `part_index`, inherited metadata, and `raw_text` set to the original whole
  * question so a later merge can restore it exactly. Reused by both the
  * pipeline auto-split and the manual split endpoint.
+ *
+ * `sharedStem` (when set) is denormalised onto every sibling part — the exam
+ * UI relies on it being identical across the group.
  */
 export function partsToRows<T extends { draft_data: DraftDataInput }>(
   row: T,
-  parts: SplitPart[]
+  parts: SplitPart[],
+  sharedStem?: string
 ): T[] {
   const d = row.draft_data;
   const groupKey = randomUUID();
+  const stem = sharedStem?.trim() || undefined;
 
   return parts.map((p, i) => {
     const draft_data: DraftDataInput = {
@@ -122,6 +136,7 @@ export function partsToRows<T extends { draft_data: DraftDataInput }>(
       part_label: p.part_label?.trim() || String.fromCharCode(97 + i),
       part_index: i,
       raw_text: d.prompt, // the original whole question — for an exact merge round-trip
+      ...(stem ? { shared_stem: stem } : {}),
     };
 
     // Inherit shared metadata from the parent draft.
@@ -172,14 +187,15 @@ export async function expandMultipartRows<T extends { draft_data: DraftDataInput
 
     const solutionSource = opts.markschemeText?.trim() || d.explanation;
     let parts: SplitPart[];
+    let shared_stem: string | undefined;
     try {
-      ({ parts } = await splitMultipartQuestion(d.prompt, solutionSource, opts.model));
+      ({ parts, shared_stem } = await splitMultipartQuestion(d.prompt, solutionSource, opts.model));
     } catch {
       return [row];
     }
     if (parts.length < 2) return [row];
 
-    return partsToRows(row, parts);
+    return partsToRows(row, parts, shared_stem);
   });
   return expanded.flat();
 }

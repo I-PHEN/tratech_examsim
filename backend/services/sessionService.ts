@@ -97,7 +97,11 @@ export async function createSession(uid: string, input: SessionCreateInput) {
     .single();
   if (error) throw error;
 
-  return { session_id: row.id, picked: picked.picked };
+  return {
+    session_id: row.id,
+    picked: picked.picked,
+    difficulty_fallback: picked.difficulty_fallback,
+  };
 }
 
 async function evaluateAnswer(
@@ -405,7 +409,7 @@ export async function getSessionById(uid: string, sessionId: string) {
       .select(
         'id, type, difficulty, exam_scope, topic_id, answer_type, ' +
           'question_group_id, part_label, part_index, ' +
-          'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
+          'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
           'mcq_options(id, text, is_correct), ' +
           'question_assets(id, storage_path, mime_type, position)'
       )
@@ -543,7 +547,7 @@ export async function getSessionResume(uid: string, sessionId: string) {
       .select(
         'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
           'question_group_id, part_label, part_index, ' +
-          'question_content(prompt, explanation, correct_answer, answer_tolerance, unit), ' +
+          'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
           'mcq_options(id, text, is_correct), ' +
           'question_assets(id, storage_path, mime_type, position)'
       )

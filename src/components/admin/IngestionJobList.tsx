@@ -108,12 +108,12 @@ export function IngestionJobList({
       <h4 className="font-bold uppercase tracking-widest text-sm text-text-primary">
         {showArchived ? 'Archived Jobs' : 'Recent Jobs'}
       </h4>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
         <button
           onClick={() => setShowArchived((v) => !v)}
-          className="text-xs font-bold uppercase tracking-wider text-text-secondary hover:text-text-primary px-2 py-1 rounded-md border border-border-subtle hover:bg-bg-raised"
+          className="text-xs text-text-secondary hover:text-text-primary underline-offset-2 hover:underline"
         >
-          {showArchived ? 'Show active' : 'Show archived'}
+          {showArchived ? '← Back to active' : 'View archived'}
         </button>
         <button
           onClick={fetchJobs}

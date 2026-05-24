@@ -100,7 +100,7 @@ RULES — these are absolute:
    - "range"  — the answer is a number accepted within a tolerance (also set "answer_tolerance").
    - "written" — the expected answer is a worded statement / explanation / interpretation rather than a single value (e.g. "state and justify…", "explain what this implies…", or a calculation that must be CONCLUDED in words). For "written", put the model answer (the worded answer) in "correct_answer".
 
-4b. EXPLANATION / WORKED SOLUTION. If the source shows a worked solution for a question, copy it into "explanation" IN FULL and faithfully — every step, all reasoning, nothing summarised or omitted — and make it end with the final answer stated as a clear sentence. This solution belongs to the question; it is NOT an "example" to skip (see Rule 6).
+4b. EXPLANATION / WORKED SOLUTION. If the source shows a worked solution for a question, copy it into "explanation" VERBATIM — every sentence, every intermediate result, every aside, every line of working. DO NOT paraphrase, abbreviate, condense, or skip prose between math steps. If the source has a sentence explaining WHY a step is taken, that sentence MUST appear in your "explanation". End with the final answer stated as a clear sentence. This solution belongs to the question; it is NOT an "example" to skip (see Rule 6).
 
 5. DIFFICULTY. Estimate. Default "medium" when unsure.
 

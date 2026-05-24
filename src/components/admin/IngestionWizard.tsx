@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, ScanText, Wand2, RotateCcw, Check, Scissors } from 'lucide-react';
+import { ArrowLeft, Loader2, ScanText, Wand2, RotateCcw, Check } from 'lucide-react';
 import { apiGet, apiPatch, apiPost } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { DraftReviewTable } from './DraftReviewTable';
@@ -16,13 +16,13 @@ interface Job {
   error_message: string | null;
 }
 
-const STEPS = ['Extract', 'Review text', 'Structure', 'Review & publish'] as const;
+const STEPS = ['Extract', 'Review text', 'Review & publish'] as const;
 
 function stepIndex(status: string): number {
   if (status === 'uploaded' || status === 'extracting') return 0;
   if (status === 'text_review') return 1;
-  if (status === 'structuring') return 2;
-  return 3; // ready_for_review / published
+  if (status === 'structuring') return 1; // manual structuring kept as a fallback only
+  return 2; // ready_for_review / published
 }
 
 export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () => void }) {
@@ -108,20 +108,6 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
     }
   };
 
-  const goStructure = async () => {
-    setBusy('structure');
-    setErr(null);
-    try {
-      await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
-      await apiPost(`/api/ingestion/jobs/${jobId}/structure`, {});
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-      await load();
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[200px] text-text-secondary">
@@ -149,9 +135,6 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
         >
           <ArrowLeft className="w-4 h-4" /> Back to jobs
         </button>
-        <span className="text-xs font-bold uppercase tracking-widest px-2.5 py-1 rounded-md border border-border-subtle text-text-secondary">
-          {autonomous ? 'Autonomous' : 'Step-by-step'}
-        </span>
       </div>
 
       {/* Step strip */}
@@ -279,40 +262,15 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
               )}
               Save & let AI classify
             </button>
-            <button
-              onClick={goStructure}
-              disabled={busy !== null}
-              className="inline-flex items-center gap-2 bg-bg-raised border border-border-subtle text-text-primary px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-bg-sunken"
-              title="Split into questions yourself, then classify manually or with AI"
-            >
-              {busy === 'structure' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Scissors className="w-4 h-4" />
-              )}
-              Structure manually
-            </button>
-            <button
-              onClick={() => runStage('extract')}
-              disabled={busy !== null}
-              className="inline-flex items-center gap-2 text-text-secondary hover:text-text-primary px-3 py-2 rounded-xl text-sm"
-              title="Discard edits and re-run OCR"
-            >
-              <RotateCcw className="w-4 h-4" /> Re-extract
-            </button>
           </div>
-          <p className="text-[11px] text-text-secondary mt-2">
-            Tip: if you edit the text, classification runs on your corrected version (page
-            boundaries are ignored, which is fine).
-          </p>
         </div>
       )}
 
-      {/* STEP 2: Manual structuring into individual questions */}
-      {step === 2 && <StructureStep jobId={jobId} onDone={load} />}
+      {/* Legacy: a job still in `structuring` falls through to the manual step. */}
+      {job.status === 'structuring' && <StructureStep jobId={jobId} onDone={load} />}
 
-      {/* STEP 3: Review drafts & publish (reuse the existing table) */}
-      {step === 3 && <DraftReviewTable jobId={jobId} />}
+      {/* STEP 2: Review drafts & publish */}
+      {step === 2 && job.status !== 'structuring' && <DraftReviewTable jobId={jobId} />}
     </div>
   );
 }

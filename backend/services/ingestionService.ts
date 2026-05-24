@@ -367,6 +367,21 @@ export async function matchMarkschemeAnswers(jobId: string): Promise<{ matched: 
         aiMatched.correct_answer = true;
         touched = true;
       }
+      const unitFromMatch = m.final_unit?.trim();
+      if (unitFromMatch && (!d.unit?.trim() || aiMatched.correct_answer)) {
+        d.unit = unitFromMatch;
+        touched = true;
+      }
+      // Safety net: if the LLM ignored the "no units in answer" instruction and
+      // glued a unit onto `correct_answer` (e.g. "12.4 dm^3"), split it apart.
+      if (d.correct_answer && !d.unit) {
+        const m2 = /^([+-]?\d[\d.eE+\-]*)\s+(\S.*)$/.exec(d.correct_answer.trim());
+        if (m2) {
+          d.correct_answer = m2[1];
+          d.unit = m2[2].trim();
+          touched = true;
+        }
+      }
     } else if (d.type === 'mcq' && m.correct_option && Array.isArray(d.options)) {
       // Best-effort: mark the option whose text matches the markscheme answer,
       // but only when the reviewer/classifier hasn't already chosen one.
@@ -415,7 +430,7 @@ export async function splitDraft(draftId: string): Promise<{ parts: number }> {
   const job = await loadJob(draft.job_id);
   const solutionSource = (await resolveMarkschemeText(job)) || d.explanation;
 
-  const { parts } = await splitMultipartQuestion(
+  const { parts, shared_stem } = await splitMultipartQuestion(
     d.prompt,
     solutionSource,
     job.model ?? undefined
@@ -435,7 +450,8 @@ export async function splitDraft(draftId: string): Promise<{ parts: number }> {
       source_page: draft.source_page,
       ai_confidence: draft.ai_confidence,
     },
-    parts
+    parts,
+    shared_stem
   );
 
   const { error: delErr } = await supabase
@@ -830,6 +846,7 @@ export async function publishJob(
           promptDiag.cleaned ||
           (promptDiag.refs.length > 0 ? 'See the diagram below.' : data.prompt),
         explanation: explDiag.cleaned,
+        ...(data.shared_stem?.trim() ? { shared_stem: data.shared_stem.trim() } : {}),
         ...(data.source_reference ? { source_reference: data.source_reference } : {}),
         ...(data.type === 'calc'
           ? {
