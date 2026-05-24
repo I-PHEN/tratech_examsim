@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, ScanText, Wand2, RotateCcw, Check } from 'lucide-react';
+import { ArrowLeft, Loader2, ScanText, Wand2, RotateCcw, Check, Scissors } from 'lucide-react';
 import { apiGet, apiPatch, apiPost } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { DraftReviewTable } from './DraftReviewTable';
@@ -100,6 +100,20 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
     setErr(null);
     try {
       await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      await load();
+    }
+  };
+
+  const splitManually = async () => {
+    setBusy('structure');
+    setErr(null);
+    try {
+      await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
+      await apiPost(`/api/ingestion/jobs/${jobId}/structure`, {});
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -219,7 +233,7 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
       )}
 
       {/* STEP 1: Review extracted text */}
-      {step === 1 && (
+      {job.status === 'text_review' && (
         <div className="bg-surface-container-low border border-border-subtle rounded-3xl p-6">
           <div className="flex items-center justify-between mb-3">
             <h4 className="font-bold uppercase tracking-widest text-sm text-text-primary">
@@ -248,6 +262,19 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
               Save corrections
             </button>
             <button
+              onClick={splitManually}
+              disabled={busy !== null}
+              title="Split this text into individual questions yourself (---, Q#, or by cursor)"
+              className="inline-flex items-center gap-2 bg-bg-raised border border-border-subtle text-text-primary px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-bg-sunken"
+            >
+              {busy === 'structure' ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Scissors className="w-4 h-4" />
+              )}
+              Split manually
+            </button>
+            <button
               onClick={async () => {
                 await saveText();
                 await runStage('classify');
@@ -266,7 +293,7 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
         </div>
       )}
 
-      {/* Legacy: a job still in `structuring` falls through to the manual step. */}
+      {/* Manual split step — user picked "Split manually" from the text-review screen. */}
       {job.status === 'structuring' && <StructureStep jobId={jobId} onDone={load} />}
 
       {/* STEP 2: Review drafts & publish */}
