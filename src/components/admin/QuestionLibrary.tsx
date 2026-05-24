@@ -66,6 +66,7 @@ export function QuestionLibrary() {
   const [error, setError] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [deletingGroup, setDeletingGroup] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
@@ -126,6 +127,19 @@ export function QuestionLibrary() {
       alert(e instanceof Error ? e.message : String(e));
     } finally {
       setDeleting(null);
+    }
+  };
+
+  const handleDeleteGroup = async (groupId: string, partCount: number) => {
+    if (!confirm(`Delete all ${partCount} parts of this multi-part question? This also removes their options and any attached diagrams.`)) return;
+    setDeletingGroup(groupId);
+    try {
+      await apiDelete(`/api/questions/by-group/${groupId}`);
+      setRows((prev) => prev.filter((r) => r.question_group_id !== groupId));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingGroup(null);
     }
   };
 
@@ -274,6 +288,18 @@ export function QuestionLibrary() {
                     >
                       <Pencil className="w-3.5 h-3.5" />
                       Edit group
+                    </button>
+                    <button
+                      onClick={() => handleDeleteGroup(item.groupId, item.parts.length)}
+                      disabled={deletingGroup === item.groupId}
+                      className="flex items-center gap-1.5 text-xs bg-red-500/10 text-red-500 px-3 py-1.5 rounded-lg font-bold hover:bg-red-500/20 disabled:opacity-50"
+                    >
+                      {deletingGroup === item.groupId ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5" />
+                      )}
+                      Delete group
                     </button>
                   </div>
                 </div>
