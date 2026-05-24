@@ -18,6 +18,7 @@ export interface FormattedTextFieldProps {
   showPreview?: boolean;
   /** Adds `data-cycle` to the inner editor so DraftFocusModal's Tab cycle finds it. */
   dataCycle?: boolean;
+  inputClassName?: string;
   disabled?: boolean;
   className?: string;
   /** Forwarded to the inner editor's `onBlur`. Generic escape hatch for consumers that need to react when focus leaves the field. */
@@ -35,6 +36,7 @@ export function FormattedTextField({
   showFormat = true,
   showPreview = true,
   dataCycle = false,
+  inputClassName,
   disabled = false,
   className,
   onBlur,
@@ -65,7 +67,8 @@ export function FormattedTextField({
   const editorClass = cn(
     'w-full bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none',
     multiline && 'resize-y',
-    disabled && 'opacity-50 cursor-not-allowed'
+    disabled && 'opacity-50 cursor-not-allowed',
+    inputClassName
   );
 
   const onEditorChange = (v: string) => {

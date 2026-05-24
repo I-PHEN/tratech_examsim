@@ -584,6 +584,7 @@ export function ManualQuestionEntry({
                 onChange={setCorrectAnswer}
                 multiline={answerType === 'written'}
                 minHeight={answerType === 'written' ? '72px' : undefined}
+                inputClassName={answerType === 'written' ? undefined : 'rounded-lg'}
                 placeholder={answerType === 'written'
                   ? 'The worded model answer students are AI-graded against…'
                   : 'e.g. 0.0231'}
@@ -597,6 +598,7 @@ export function ManualQuestionEntry({
                 onChange={setUnit}
                 multiline={false}
                 inlinePreview
+                inputClassName="rounded-lg font-mono"
                 placeholder="e.g. mol/L or $\\mathrm{m^{3}}$"
               />
             </div>
