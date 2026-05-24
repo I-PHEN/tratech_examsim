@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, ImageUp, X, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, ImageUp, X } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
-import { RichText } from '../ui/RichText';
 import { CourseSelect } from './CourseSelect';
+import { FormattedTextField } from './FormattedTextField';
 
 type QType = 'mcq' | 'calc';
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -96,35 +96,6 @@ export function ManualQuestionEntry({
 
   const [prompt, setPrompt] = useState('');
   const [explanation, setExplanation] = useState('');
-  const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | null>(null);
-  const [preview, setPreview] = useState<Set<'prompt' | 'explanation'>>(new Set());
-
-  const togglePreview = (k: 'prompt' | 'explanation') =>
-    setPreview((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-
-  const formatField = async (
-    field: 'prompt' | 'explanation',
-    value: string,
-    setter: (v: string) => void
-  ) => {
-    if (!value.trim()) return;
-    setFmtBusy(field);
-    try {
-      const { formatted } = await apiPost<{ formatted: string }>('/api/ingestion/format', {
-        text: value,
-      });
-      setter(formatted);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setFmtBusy(null);
-    }
-  };
   const [sourceReference, setSourceReference] = useState('');
   const [solutionImage, setSolutionImage] = useState<File | null>(null);
   const [solutionOcrBusy, setSolutionOcrBusy] = useState(false);
@@ -135,26 +106,6 @@ export function ManualQuestionEntry({
   const [answerType, setAnswerType] = useState<AnswerType>('exact');
   const [answerTolerance, setAnswerTolerance] = useState('');
   const [unit, setUnit] = useState('');
-  const [unitFormatBusy, setUnitFormatBusy] = useState(false);
-
-  const formatUnit = async () => {
-    if (!unit.trim()) return;
-    setUnitFormatBusy(true);
-    try {
-      const { formatted } = await apiPost<{ formatted: string }>(
-        '/api/ingestion/format',
-        { text: unit }
-      );
-      setUnit(formatted.trim());
-    } catch (err) {
-      setMsg({
-        text: err instanceof Error ? err.message : String(err),
-        type: 'err',
-      });
-    } finally {
-      setUnitFormatBusy(false);
-    }
-  };
 
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [attachedDiagrams, setAttachedDiagrams] = useState<AttachedAsset[]>([]);
@@ -560,54 +511,14 @@ export function ManualQuestionEntry({
           ))}
         </div>
 
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
-              Question Prompt
-            </label>
-            <div className="flex items-center gap-3 text-text-secondary">
-              <button
-                type="button"
-                onClick={() => formatField('prompt', prompt, setPrompt)}
-                disabled={fmtBusy !== null || !prompt.trim()}
-                title="AI clean-up formatting (Markdown + LaTeX)"
-                className="flex items-center gap-1 text-[11px] hover:text-primary disabled:opacity-40"
-              >
-                {fmtBusy === 'prompt' ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" />
-                )}
-                Format
-              </button>
-              <button
-                type="button"
-                onClick={() => togglePreview('prompt')}
-                title="Toggle rendered preview"
-                className="flex items-center gap-1 text-[11px] hover:text-text-primary"
-              >
-                {preview.has('prompt') ? (
-                  <EyeOff className="w-3.5 h-3.5" />
-                ) : (
-                  <Eye className="w-3.5 h-3.5" />
-                )}
-                Preview
-              </button>
-            </div>
-          </div>
-          {preview.has('prompt') ? (
-            <div className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary">
-              <RichText>{prompt}</RichText>
-            </div>
-          ) : (
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Type the full question text here. Paste raw text and hit Format to auto-typeset math/units. For multi-part questions, create one entry per sub-part."
-              className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-y"
-            />
-          )}
-        </div>
+        <FormattedTextField
+          label="Question Prompt"
+          value={prompt}
+          onChange={setPrompt}
+          multiline
+          minHeight="120px"
+          placeholder="Type the full question text here. Paste raw text and hit Format to auto-typeset math/units. For multi-part questions, create one entry per sub-part."
+        />
 
         {type === 'mcq' ? (
           <div>
@@ -667,60 +578,27 @@ export function ManualQuestionEntry({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-2">
-              <label className="text-[10px] text-text-secondary font-bold mb-1 block uppercase tracking-wider">
-                {answerType === 'written' ? 'Model Answer' : 'Correct Answer'}
-              </label>
-              {answerType === 'written' ? (
-                <textarea
-                  value={correctAnswer}
-                  onChange={(e) => setCorrectAnswer(e.target.value)}
-                  placeholder="The worded model answer students are AI-graded against…"
-                  className="w-full min-h-[72px] bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
-                />
-              ) : (
-                <input
-                  value={correctAnswer}
-                  onChange={(e) => setCorrectAnswer(e.target.value)}
-                  placeholder="e.g. 0.0231"
-                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
-                />
-              )}
+              <FormattedTextField
+                label={answerType === 'written' ? 'Model Answer' : 'Correct Answer'}
+                value={correctAnswer}
+                onChange={setCorrectAnswer}
+                multiline={answerType === 'written'}
+                minHeight={answerType === 'written' ? '72px' : undefined}
+                placeholder={answerType === 'written'
+                  ? 'The worded model answer students are AI-graded against…'
+                  : 'e.g. 0.0231'}
+              />
             </div>
             {answerType !== 'written' && (
             <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
-                  Unit
-                </label>
-                <button
-                  type="button"
-                  onClick={formatUnit}
-                  disabled={unitFormatBusy || !unit.trim()}
-                  title="AI clean-up to KaTeX (e.g. m^3 → $\mathrm{m^{3}}$)"
-                  className="flex items-center gap-1 text-[10px] text-text-secondary hover:text-primary disabled:opacity-40"
-                >
-                  {unitFormatBusy ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="w-3 h-3" />
-                  )}
-                  Format
-                </button>
-              </div>
-              <input
+              <FormattedTextField
+                label="Unit"
                 value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                placeholder="e.g. mol/L or $\mathrm{m^{3}}$"
-                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none font-mono"
+                onChange={setUnit}
+                multiline={false}
+                inlinePreview
+                placeholder="e.g. mol/L or $\\mathrm{m^{3}}$"
               />
-              {unit.trim() && (
-                <div className="mt-1 text-[10px] text-text-tertiary flex items-baseline gap-1.5">
-                  <span className="uppercase tracking-wider font-bold">Preview:</span>
-                  <span className="text-text-primary normal-case tracking-normal font-semibold">
-                    <RichText inline>{unit}</RichText>
-                  </span>
-                </div>
-              )}
             </div>
             )}
             <div>
@@ -759,54 +637,14 @@ export function ManualQuestionEntry({
           </div>
         )}
 
-        <div>
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider">
-              Explanation (optional)
-            </label>
-            <div className="flex items-center gap-3 text-text-secondary">
-              <button
-                type="button"
-                onClick={() => formatField('explanation', explanation, setExplanation)}
-                disabled={fmtBusy !== null || !explanation.trim()}
-                title="AI clean-up formatting (Markdown + LaTeX)"
-                className="flex items-center gap-1 text-[11px] hover:text-primary disabled:opacity-40"
-              >
-                {fmtBusy === 'explanation' ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Sparkles className="w-3.5 h-3.5" />
-                )}
-                Format
-              </button>
-              <button
-                type="button"
-                onClick={() => togglePreview('explanation')}
-                title="Toggle rendered preview"
-                className="flex items-center gap-1 text-[11px] hover:text-text-primary"
-              >
-                {preview.has('explanation') ? (
-                  <EyeOff className="w-3.5 h-3.5" />
-                ) : (
-                  <Eye className="w-3.5 h-3.5" />
-                )}
-                Preview
-              </button>
-            </div>
-          </div>
-          {preview.has('explanation') ? (
-            <div className="w-full min-h-[70px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary">
-              <RichText>{explanation}</RichText>
-            </div>
-          ) : (
-            <textarea
-              value={explanation}
-              onChange={(e) => setExplanation(e.target.value)}
-              placeholder="Worked solution or hint shown after the student answers. Paste raw text and hit Format to auto-typeset."
-              className="w-full min-h-[70px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-y"
-            />
-          )}
-        </div>
+        <FormattedTextField
+          label="Explanation (optional)"
+          value={explanation}
+          onChange={setExplanation}
+          multiline
+          minHeight="70px"
+          placeholder="Worked solution or hint shown after the student answers. Paste raw text and hit Format to auto-typeset."
+        />
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
