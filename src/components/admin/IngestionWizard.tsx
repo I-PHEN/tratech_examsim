@@ -3,7 +3,7 @@ import { ArrowLeft, Loader2, ScanText, Wand2, RotateCcw, Check, Scissors } from 
 import { apiGet, apiPatch, apiPost } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { DraftReviewTable } from './DraftReviewTable';
-import { StructureStep } from './StructureStep';
+import { splitByMarker } from '../../lib/splitQuestions';
 
 interface Job {
   id: string;
@@ -21,18 +21,22 @@ const STEPS = ['Extract', 'Review text', 'Review & publish'] as const;
 function stepIndex(status: string): number {
   if (status === 'uploaded' || status === 'extracting') return 0;
   if (status === 'text_review') return 1;
-  if (status === 'structuring') return 1; // manual structuring kept as a fallback only
   return 2; // ready_for_review / published
 }
+
+type Busy = { extract: boolean; split: boolean; classify: boolean };
+const IDLE: Busy = { extract: false, split: false, classify: false };
 
 export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () => void }) {
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState<Busy>(IDLE);
   const [text, setText] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const pollRef = useRef<number | null>(null);
   const autoRef = useRef<string>(''); // last status auto-advanced (autonomous)
+
+  const anyBusy = busy.extract || busy.split || busy.classify;
 
   const load = useCallback(async () => {
     try {
@@ -67,60 +71,60 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
     };
   }, [job, load]);
 
-  const runStage = useCallback(
-    async (stage: 'extract' | 'classify') => {
-      setBusy(stage);
-      setErr(null);
-      try {
-        await apiPost(`/api/ingestion/jobs/${jobId}/${stage}`, {});
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : String(e));
-      } finally {
-        setBusy(null);
-        await load();
-      }
-    },
-    [jobId, load]
-  );
+  const runExtract = useCallback(async () => {
+    setBusy((b) => ({ ...b, extract: true }));
+    setErr(null);
+    try {
+      await apiPost(`/api/ingestion/jobs/${jobId}/extract`, {});
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => ({ ...b, extract: false }));
+      await load();
+    }
+  }, [jobId, load]);
+
+  const runClassify = useCallback(async () => {
+    setBusy((b) => ({ ...b, classify: true }));
+    setErr(null);
+    try {
+      await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
+      await apiPost(`/api/ingestion/jobs/${jobId}/classify`, {});
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => ({ ...b, classify: false }));
+      await load();
+    }
+  }, [jobId, text, load]);
+
+  const runSplitByMarker = useCallback(async () => {
+    setBusy((b) => ({ ...b, split: true }));
+    setErr(null);
+    try {
+      await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
+      const parts = splitByMarker(text);
+      const segments = parts.length > 0 ? parts : [text.trim()].filter((s) => s.length > 0);
+      await apiPost(`/api/ingestion/jobs/${jobId}/segments`, { segments, global: {} });
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy((b) => ({ ...b, split: false }));
+      await load();
+    }
+  }, [jobId, text, load]);
 
   // Autonomous: auto-advance once per resting status.
   useEffect(() => {
-    if (!job || job.mode !== 'autonomous' || busy) return;
+    if (!job || job.mode !== 'autonomous' || anyBusy) return;
     if (job.status === 'uploaded' && autoRef.current !== 'uploaded') {
       autoRef.current = 'uploaded';
-      runStage('extract');
+      runExtract();
     } else if (job.status === 'text_review' && autoRef.current !== 'text_review') {
       autoRef.current = 'text_review';
-      runStage('classify');
+      runClassify();
     }
-  }, [job, busy, runStage]);
-
-  const saveText = async () => {
-    setBusy('save');
-    setErr(null);
-    try {
-      await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-      await load();
-    }
-  };
-
-  const splitManually = async () => {
-    setBusy('structure');
-    setErr(null);
-    try {
-      await apiPatch(`/api/ingestion/jobs/${jobId}/text`, { reviewed_text: text });
-      await apiPost(`/api/ingestion/jobs/${jobId}/structure`, {});
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(null);
-      await load();
-    }
-  };
+  }, [job, anyBusy, runExtract, runClassify]);
 
   if (loading) {
     return (
@@ -198,8 +202,8 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
                 {job.error_message}
               </p>
               <button
-                onClick={() => runStage('extract')}
-                disabled={busy !== null}
+                onClick={runExtract}
+                disabled={anyBusy}
                 className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-xl font-bold text-sm disabled:opacity-50"
               >
                 <RotateCcw className="w-4 h-4" /> Retry extraction
@@ -216,11 +220,11 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
                   : 'Extract the text from your upload, then you can review and correct it.'}
               </p>
               <button
-                onClick={() => runStage('extract')}
-                disabled={busy !== null}
+                onClick={runExtract}
+                disabled={anyBusy}
                 className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-xl font-bold text-sm disabled:opacity-50"
               >
-                {busy === 'extract' ? (
+                {busy.extract ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
                   <ScanText className="w-4 h-4" />
@@ -243,6 +247,10 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
               {job.transcripts?.length ?? 0} page(s)
             </span>
           </div>
+          <p className="text-[11px] text-text-secondary mb-2">
+            Insert a line of <code className="font-mono">---</code> between questions to
+            split them yourself, or let AI find boundaries and classify in one step.
+          </p>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -250,39 +258,24 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
           />
           <div className="flex flex-wrap items-center gap-2 mt-4">
             <button
-              onClick={saveText}
-              disabled={busy !== null}
+              onClick={runSplitByMarker}
+              disabled={anyBusy}
+              title="Save text, split on lines containing only --- , and open Review"
               className="inline-flex items-center gap-2 bg-bg-raised border border-border-subtle text-text-primary px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-bg-sunken"
             >
-              {busy === 'save' ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                <Check className="w-4 h-4" />
-              )}
-              Save corrections
-            </button>
-            <button
-              onClick={splitManually}
-              disabled={busy !== null}
-              title="Split this text into individual questions yourself (---, Q#, or by cursor)"
-              className="inline-flex items-center gap-2 bg-bg-raised border border-border-subtle text-text-primary px-4 py-2 rounded-xl font-bold text-sm disabled:opacity-50 hover:bg-bg-sunken"
-            >
-              {busy === 'structure' ? (
+              {busy.split ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Scissors className="w-4 h-4" />
               )}
-              Split manually
+              Split by ---
             </button>
             <button
-              onClick={async () => {
-                await saveText();
-                await runStage('classify');
-              }}
-              disabled={busy !== null}
+              onClick={runClassify}
+              disabled={anyBusy}
               className="inline-flex items-center gap-2 bg-primary text-on-primary px-5 py-2 rounded-xl font-bold text-sm disabled:opacity-50"
             >
-              {busy === 'classify' ? (
+              {busy.classify ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <Wand2 className="w-4 h-4" />
@@ -293,11 +286,8 @@ export function IngestionWizard({ jobId, onBack }: { jobId: string; onBack: () =
         </div>
       )}
 
-      {/* Manual split step — user picked "Split manually" from the text-review screen. */}
-      {job.status === 'structuring' && <StructureStep jobId={jobId} onDone={load} />}
-
       {/* STEP 2: Review drafts & publish */}
-      {step === 2 && job.status !== 'structuring' && <DraftReviewTable jobId={jobId} />}
+      {step === 2 && <DraftReviewTable jobId={jobId} />}
     </div>
   );
 }
