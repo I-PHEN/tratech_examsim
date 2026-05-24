@@ -27,6 +27,8 @@ interface DraftData {
   group_key?: string;
   part_label?: string;
   part_index?: number;
+  /** Shared setup / given data that all sub-parts inherit (multi-part questions). */
+  shared_stem?: string;
 }
 
 interface Draft {
@@ -773,36 +775,46 @@ const QuestionGroupCard: React.FC<QuestionGroupCardProps> = ({
 
       {/* Group-level classification — set once, applies to every sub-part. */}
       {firstData && (
-        <div className="px-5 pt-4 pb-3 border-b border-primary/15 grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
-          <ShortcutPills
-            label="Difficulty"
-            value={firstData.difficulty}
-            options={DIFFICULTY_OPTS}
-            onChange={(v) => updateAll({ difficulty: v })}
+        <div className="px-5 pt-4 pb-3 border-b border-primary/15 space-y-4">
+          <FormattedTextField
+            label="Shared setup / given data"
+            value={firstData.shared_stem ?? ''}
+            onChange={(v) => updateAll({ shared_stem: v })}
+            multiline
+            minHeight="100px"
+            placeholder="The setup all sub-parts share (e.g. given conditions, initial values). Markdown + LaTeX."
           />
-          <ShortcutPills
-            label="Exam Scope"
-            value={firstData.exam_scope}
-            options={SCOPE_OPTS}
-            onChange={(v) => updateAll({ exam_scope: v })}
-          />
-          <label className="text-xs self-start">
-            <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
-              Topic
-            </span>
-            <select
-              value={firstData.topic_id ?? ''}
-              onChange={(e) => updateAll({ topic_id: e.target.value || undefined })}
-              className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-            >
-              <option value="">—</option>
-              {topics.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
+            <ShortcutPills
+              label="Difficulty"
+              value={firstData.difficulty}
+              options={DIFFICULTY_OPTS}
+              onChange={(v) => updateAll({ difficulty: v })}
+            />
+            <ShortcutPills
+              label="Exam Scope"
+              value={firstData.exam_scope}
+              options={SCOPE_OPTS}
+              onChange={(v) => updateAll({ exam_scope: v })}
+            />
+            <label className="text-xs self-start">
+              <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
+                Topic
+              </span>
+              <select
+                value={firstData.topic_id ?? ''}
+                onChange={(e) => updateAll({ topic_id: e.target.value || undefined })}
+                className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
+              >
+                <option value="">—</option>
+                {topics.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
         </div>
       )}
 
