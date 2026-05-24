@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, Loader2, Save, Plus, Trash2 } from 'lucide-react';
 import { apiGet, apiPatch } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
-import { RichText } from '../ui/RichText';
+import { FormattedTextField } from './FormattedTextField';
 
 interface Topic {
   id: string;
@@ -100,6 +100,33 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
     );
   };
 
+  const [toleranceStrs, setToleranceStrs] = useState<Record<string, string>>({});
+  const [toleranceErrors, setToleranceErrors] = useState<Record<string, string>>({});
+
+  // Seed/refresh strings when parts load or numeric tolerance changes externally.
+  useEffect(() => {
+    setToleranceStrs((prev) => {
+      const next = { ...prev };
+      for (const p of parts) {
+        const desired = p.content.answer_tolerance != null ? String(p.content.answer_tolerance) : '';
+        if (!(p.id in next)) next[p.id] = desired;
+      }
+      return next;
+    });
+  }, [parts]);
+
+  // Note: `null` (not undefined) for the empty case — `QuestionContent.answer_tolerance`
+  // is typed `number | null` in this editor, vs `number | undefined` in DraftReviewTable.
+  const commitPartTolerance = (partId: string): { tolerance: number | null } | null => {
+    const str = (toleranceStrs[partId] ?? '').trim();
+    setToleranceErrors((e) => ({ ...e, [partId]: '' }));
+    if (str === '') return { tolerance: null };
+    const n = Number(str);
+    if (Number.isFinite(n) && n >= 0) return { tolerance: n };
+    setToleranceErrors((e) => ({ ...e, [partId]: 'Tolerance must be a non-negative number.' }));
+    return null;
+  };
+
   const updateOption = (i: number, patch: Partial<McqOption>) => {
     if (!active || active.type !== 'mcq') return;
     const opts = [...(active.options ?? [])];
@@ -112,6 +139,17 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
 
   const save = async () => {
     if (parts.length === 0) return;
+    // Commit every part's tolerance string before serialising.
+    const toApply: Record<string, number | null> = {};
+    for (const p of parts) {
+      const r = commitPartTolerance(p.id);
+      if (!r) return; // invalid tolerance somewhere — abort save (error shown inline)
+      toApply[p.id] = r.tolerance;
+    }
+    const partsWithCommit = parts.map((p) => ({
+      ...p,
+      content: { ...p.content, answer_tolerance: toApply[p.id] },
+    }));
     setSaving(true);
     setError(null);
     try {
@@ -122,7 +160,7 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
           exam_scope: sharedScope,
           shared_stem: sharedStem,
         },
-        parts: parts.map((p) => ({
+        parts: partsWithCommit.map((p) => ({
           id: p.id,
           type: p.type,
           topic_id: p.topic_id,
@@ -191,22 +229,14 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
 
       {/* Shared stem + classification */}
       <div className="bg-surface-container-low border border-primary/30 rounded-2xl p-5 space-y-4">
-        <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-text-secondary block mb-1">
-            Shared setup / given data
-          </label>
-          <textarea
-            value={sharedStem}
-            onChange={(e) => patchAllContent({ shared_stem: e.target.value })}
-            placeholder="The setup all sub-parts share (e.g. given conditions, initial values). Markdown + LaTeX."
-            className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none"
-          />
-          {sharedStem.trim() && (
-            <div className="mt-2 bg-bg-sunken border border-border-subtle rounded-lg p-3 text-sm">
-              <RichText>{sharedStem}</RichText>
-            </div>
-          )}
-        </div>
+        <FormattedTextField
+          label="Shared setup / given data"
+          value={sharedStem}
+          onChange={(v) => patchAllContent({ shared_stem: v })}
+          multiline
+          minHeight="120px"
+          placeholder="The setup all sub-parts share (e.g. given conditions, initial values). Markdown + LaTeX."
+        />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <label className="text-xs">
             <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
@@ -283,16 +313,13 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
 
       {/* Active part editor */}
       <div className="bg-surface-container-low border border-border-subtle rounded-2xl p-5 space-y-4">
-        <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-text-secondary block mb-1">
-            Part {active.part_label ?? '?'} task
-          </label>
-          <textarea
-            value={active.content.prompt}
-            onChange={(e) => patchActiveContent({ prompt: e.target.value })}
-            className="w-full min-h-[120px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none"
-          />
-        </div>
+        <FormattedTextField
+          label={`Part ${active.part_label ?? '?'} task`}
+          value={active.content.prompt}
+          onChange={(v) => patchActiveContent({ prompt: v })}
+          multiline
+          minHeight="120px"
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <label className="text-xs">
@@ -330,55 +357,49 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
 
         {active.type === 'calc' ? (
           <div className="space-y-3">
-            <label className="text-xs block">
-              <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
-                {active.answer_type === 'written' ? 'Model answer' : 'Correct answer (numeric only)'}
-              </span>
-              {active.answer_type === 'written' ? (
-                <textarea
-                  value={active.content.correct_answer ?? ''}
-                  onChange={(e) => patchActiveContent({ correct_answer: e.target.value })}
-                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary min-h-[60px]"
-                />
-              ) : (
-                <input
-                  value={active.content.correct_answer ?? ''}
-                  onChange={(e) => patchActiveContent({ correct_answer: e.target.value })}
-                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-                />
-              )}
-            </label>
+            <FormattedTextField
+              label={active.answer_type === 'written' ? 'Model answer' : 'Correct answer (numeric only)'}
+              value={active.content.correct_answer ?? ''}
+              onChange={(v) => patchActiveContent({ correct_answer: v })}
+              multiline={active.answer_type === 'written'}
+              minHeight={active.answer_type === 'written' ? '60px' : undefined}
+              inputClassName={active.answer_type !== 'written' ? 'rounded-lg' : undefined}
+            />
             {active.answer_type !== 'written' && (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <label className="text-xs">
-                  <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
-                    Unit
-                  </span>
-                  <input
+                <div className="text-xs">
+                  <FormattedTextField
+                    label="Unit"
                     value={active.content.unit ?? ''}
-                    onChange={(e) => patchActiveContent({ unit: e.target.value })}
+                    onChange={(v) => patchActiveContent({ unit: v })}
+                    multiline={false}
+                    inlinePreview
+                    inputClassName="rounded-lg font-mono"
                     placeholder="e.g. mol/L"
-                    className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary font-mono"
                   />
-                </label>
+                </div>
                 {active.answer_type === 'range' && (
                   <label className="text-xs">
                     <span className="text-text-secondary font-bold uppercase tracking-wider block mb-1">
                       Tolerance (± absolute)
                     </span>
                     <input
-                      type="number"
-                      step="any"
-                      min="0"
-                      value={active.content.answer_tolerance ?? ''}
+                      type="text"
+                      inputMode="decimal"
+                      value={toleranceStrs[active.id] ?? ''}
                       onChange={(e) =>
-                        patchActiveContent({
-                          answer_tolerance: parseFloat(e.target.value) || null,
-                        })
+                        setToleranceStrs((prev) => ({ ...prev, [active.id]: e.target.value }))
                       }
+                      onBlur={() => {
+                        const r = commitPartTolerance(active.id);
+                        if (r) patchActiveContent({ answer_tolerance: r.tolerance });
+                      }}
                       placeholder="0.05"
                       className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
                     />
+                    {toleranceErrors[active.id] && (
+                      <p className="mt-1 text-[10px] text-red-500">{toleranceErrors[active.id]}</p>
+                    )}
                     <p className="mt-1 text-[10px] text-text-tertiary leading-snug">
                       Correct when |answer − model| ≤ tolerance.
                     </p>
@@ -431,16 +452,13 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
           </div>
         )}
 
-        <div>
-          <label className="text-xs font-bold uppercase tracking-wider text-text-secondary block mb-1">
-            Worked solution / explanation (optional)
-          </label>
-          <textarea
-            value={active.content.explanation ?? ''}
-            onChange={(e) => patchActiveContent({ explanation: e.target.value })}
-            className="w-full min-h-[100px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none"
-          />
-        </div>
+        <FormattedTextField
+          label="Worked solution / explanation (optional)"
+          value={active.content.explanation ?? ''}
+          onChange={(v) => patchActiveContent({ explanation: v })}
+          multiline
+          minHeight="100px"
+        />
       </div>
 
       <div className="flex justify-end gap-2 pt-2">
