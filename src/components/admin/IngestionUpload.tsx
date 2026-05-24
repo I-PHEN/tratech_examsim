@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Upload, Loader2, FileText, Image as ImageIcon, Type, KeyRound } from 'lucide-react';
-import { apiPost, apiUpload } from '../../lib/apiClient';
+import { apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { CourseSelect } from './CourseSelect';
 
@@ -24,6 +24,7 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
   const [text, setText] = useState('');
   const [model, setModel] = useState<string>('');
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [splitMode, setSplitMode] = useState<'auto' | 'manual'>('auto');
 
   const [submitting, setSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState<string>('Start Ingestion');
@@ -45,22 +46,55 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
     try {
       if (mode === 'text') {
         if (text.trim().length < 10) throw new Error('Paste at least 10 characters of text');
-        setSubmitStatus('Uploading…');
-        await apiPost('/api/ingestion/jobs', {
-          source_type: 'text',
-          text,
-          program_course_id: programCourseId,
-          doc_type: docType,
-          mode: runMode,
-          ...(model.trim() ? { model: model.trim() } : {}),
-        });
+
+        if (splitMode === 'manual') {
+          setSubmitStatus('Creating job…');
+          // Manual split: create the job, save reviewed_text, run classify-segments on
+          // the `---`-split chunks. No AI boundary-finding.
+          const segments = text
+            .split(/^\s*---\s*$/m)
+            .map((s) => s.trim())
+            .filter(Boolean);
+          if (segments.length === 0) throw new Error('No non-empty segments found');
+
+          const created = await apiPost<{ job_id: string; status: string }>(
+            '/api/ingestion/jobs',
+            {
+              source_type: 'text',
+              text,
+              program_course_id: programCourseId,
+              doc_type: docType,
+              mode: runMode,
+              ...(model.trim() ? { model: model.trim() } : {}),
+            }
+          );
+
+          setSubmitStatus(`Splitting ${segments.length} questions…`);
+          await apiPatch(`/api/ingestion/jobs/${created.job_id}/text`, {
+            reviewed_text: text,
+          });
+          await apiPost(`/api/ingestion/jobs/${created.job_id}/classify-segments`, {
+            segments,
+          });
+        } else {
+          setSubmitStatus('Uploading…');
+          await apiPost('/api/ingestion/jobs', {
+            source_type: 'text',
+            text,
+            program_course_id: programCourseId,
+            doc_type: docType,
+            mode: runMode,
+            ...(model.trim() ? { model: model.trim() } : {}),
+          });
+        }
       } else {
         if (!file) throw new Error('Pick a file first');
         const fd = new FormData();
         fd.append('source_type', mode);
         fd.append('program_course_id', programCourseId);
         fd.append('doc_type', docType);
-        fd.append('mode', runMode);
+        // For manual split, force stepwise mode so the user gets the OCR-edit step.
+        fd.append('mode', splitMode === 'manual' ? 'stepwise' : runMode);
         if (model.trim()) fd.append('model', model.trim());
         fd.append('files', file);
         if (markschemeFile) fd.append('markscheme', markschemeFile);
@@ -70,9 +104,11 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
       }
       setMsg({
         text:
-          runMode === 'autonomous'
-            ? 'Job created. Open it to watch the AI run each stage.'
-            : 'Job created. Open it to run each stage yourself.',
+          splitMode === 'manual' && mode === 'text'
+            ? `Job created with ${text.split(/^\s*---\s*$/m).filter((s) => s.trim()).length} questions. Open it to review.`
+            : runMode === 'autonomous'
+              ? 'Job created. Open it to watch the AI run each stage.'
+              : 'Job created. Open it to run each stage yourself.',
         type: 'ok',
       });
       reset();
@@ -88,6 +124,33 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <div className="lg:col-span-2 bg-surface-container-low border border-border-subtle rounded-2xl p-5 flex flex-col">
+        <div className="mb-3">
+          <label className="text-[10px] text-text-secondary font-bold block uppercase tracking-wider mb-1">
+            Question boundaries
+          </label>
+          <div className="flex gap-2">
+            {(['auto', 'manual'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setSplitMode(m)}
+                className={cn(
+                  'flex-1 px-3 py-1.5 rounded-lg font-bold text-xs transition-all border',
+                  splitMode === m
+                    ? 'bg-bg-raised text-primary border-primary/30'
+                    : 'bg-surface-container-low text-text-secondary border-border-subtle hover:bg-bg-raised'
+                )}
+              >
+                {m === 'auto' ? 'AI-detect questions' : "I'll split with ---"}
+              </button>
+            ))}
+          </div>
+          {splitMode === 'manual' && (
+            <p className="text-[10px] text-text-tertiary mt-1.5 leading-snug">
+              Put <code className="text-text-primary">---</code> on its own line between Q1, Q2, Q3… Sub-parts a/b/c stay inside one chunk — AI still splits those.
+            </p>
+          )}
+        </div>
+
         <div className="flex gap-2 mb-4">
           {(['pdf', 'image', 'text'] as Mode[]).map((m) => (
             <button
@@ -112,7 +175,11 @@ export function IngestionUpload({ onCreated }: { onCreated: () => void }) {
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Paste raw question text here..."
+            placeholder={
+              splitMode === 'manual'
+                ? 'Paste raw question text here.\n\nQ1 text…\n\n---\n\nQ2 text…\n\n---\n\nQ3 text…'
+                : 'Paste raw question text here...'
+            }
             className="flex-1 min-h-[180px] bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none resize-none"
           />
         ) : (
