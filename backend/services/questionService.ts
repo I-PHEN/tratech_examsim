@@ -383,6 +383,40 @@ export async function deleteQuestion(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/**
+ * Delete every sibling of a multi-part question group. Removes all storage
+ * objects for attached assets, then deletes the question rows (mcq_options,
+ * question_content, question_assets cascade via FKs).
+ */
+export async function deleteQuestionGroup(groupId: string): Promise<void> {
+  const { data: rows, error: fetchErr } = await supabase
+    .from('questions')
+    .select('id')
+    .eq('question_group_id', groupId);
+  if (fetchErr) throw fetchErr;
+  if (!rows || rows.length === 0) {
+    throw new ApiError(404, 'NOT_FOUND', 'Question group not found');
+  }
+
+  const ids = rows.map((r) => r.id);
+
+  const { data: assets, error: assetsErr } = await supabase
+    .from('question_assets')
+    .select('storage_path')
+    .in('question_id', ids);
+  if (assetsErr) throw assetsErr;
+
+  for (const a of assets ?? []) {
+    await removeFile(a.storage_path).catch(() => {});
+  }
+
+  const { error: delErr } = await supabase
+    .from('questions')
+    .delete()
+    .in('id', ids);
+  if (delErr) throw delErr;
+}
+
 export async function addQuestionAsset(
   questionId: string,
   buffer: Buffer,

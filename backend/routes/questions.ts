@@ -3,7 +3,7 @@ import multer from 'multer';
 import { ApiError, asyncHandler } from '../lib/errors';
 import { requireAdmin } from '../lib/auth';
 import { parse } from '../lib/validate';
-import { IdParam } from '../schemas/common';
+import { IdParam, uuid } from '../schemas/common';
 import {
   QuestionCreate,
   QuestionGroupUpdate,
@@ -15,6 +15,7 @@ import {
   addQuestionAsset,
   createQuestion,
   deleteQuestion,
+  deleteQuestionGroup,
   getQuestionById,
   getQuestionsByGroup,
   listQuestions,
@@ -106,6 +107,16 @@ router.post(
       .join('\n\n')
       .trim();
     res.json({ text });
+  })
+);
+
+router.delete(
+  '/by-group/:groupId',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const { groupId } = parse(z.object({ groupId: uuid }), req.params);
+    await deleteQuestionGroup(groupId);
+    res.status(204).end();
   })
 );
 
