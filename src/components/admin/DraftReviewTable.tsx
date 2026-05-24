@@ -232,7 +232,9 @@ interface DraftRowProps {
   topics: Topic[];
   jobId: string;
   onChange: (next: Draft) => void;
-  onSave: () => Promise<void>;
+  /** Pass an override `Draft` to bypass the parent's stale-closure snapshot — used when
+   *  DraftRow has deferred-commit local state (e.g. tolerance) that hasn't reached state yet. */
+  onSave: (override?: Draft) => Promise<void>;
   onReject: () => Promise<void>;
   onExpand?: () => void;
   /** Provided only for ungrouped drafts — splits the draft into sub-parts. */
@@ -251,6 +253,15 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
   const d = draft.draft_data;
+  const [toleranceStr, setToleranceStr] = useState<string>(
+    d.answer_tolerance != null ? String(d.answer_tolerance) : ''
+  );
+  const [toleranceError, setToleranceError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const next = d.answer_tolerance != null ? String(d.answer_tolerance) : '';
+    setToleranceStr((prev) => (prev === next ? prev : next));
+  }, [d.answer_tolerance]);
   const [showMore, setShowMore] = useState<boolean>(() => !!d.explanation?.trim());
   const multipartHint = (d.part_labels?.length ?? 0) >= 2;
   const showSecondary = focused || showMore;
@@ -319,10 +330,27 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
     );
   }
 
+  const commitTolerance = (): { tolerance?: number } | null => {
+    setToleranceError(null);
+    const trimmed = toleranceStr.trim();
+    if (trimmed === '') return { tolerance: undefined };
+    const n = Number(trimmed);
+    if (Number.isFinite(n) && n >= 0) return { tolerance: n };
+    setToleranceError('Tolerance must be a non-negative number.');
+    return null;
+  };
+
   const save = async () => {
+    const r = commitTolerance();
+    if (!r) return;
+    let nextDraft = draft;
+    if (r.tolerance !== d.answer_tolerance) {
+      nextDraft = { ...draft, draft_data: { ...d, answer_tolerance: r.tolerance } };
+      onChange(nextDraft);
+    }
     setSaving(true);
     try {
-      await onSave();
+      await onSave(nextDraft);
     } finally {
       setSaving(false);
     }
@@ -555,16 +583,20 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
                   </span>
                   <input
                     data-cycle
-                    type="number"
-                    step="any"
-                    min="0"
-                    value={d.answer_tolerance ?? ''}
-                    onChange={(e) =>
-                      update({ answer_tolerance: parseFloat(e.target.value) || undefined })
-                    }
+                    type="text"
+                    inputMode="decimal"
+                    value={toleranceStr}
+                    onChange={(e) => setToleranceStr(e.target.value)}
+                    onBlur={() => {
+                      const r = commitTolerance();
+                      if (r) update({ answer_tolerance: r.tolerance });
+                    }}
                     placeholder="0.05"
                     className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
                   />
+                  {toleranceError && (
+                    <p className="mt-1 text-[10px] text-red-500">{toleranceError}</p>
+                  )}
                   <p className="mt-1 text-[10px] text-text-tertiary leading-snug">
                     Correct when |answer − model| ≤ tolerance. e.g. model 12.4, tolerance 0.5 → accepts 11.9 to 12.9.
                   </p>
@@ -804,7 +836,7 @@ const QuestionGroupCard: React.FC<QuestionGroupCardProps> = ({
             topics={topics}
             jobId={jobId}
             onChange={onChange}
-            onSave={() => onSave(active)}
+            onSave={(override) => onSave(override ?? active)}
             onReject={() => onReject(active)}
             onExpand={active.status === 'pending' ? () => onExpand(active.id) : undefined}
             hideClassification
@@ -1264,7 +1296,7 @@ export function DraftReviewTable({ jobId }: { jobId: string }) {
                 topics={topics}
                 jobId={jobId}
                 onChange={updateDraft}
-                onSave={() => saveDraft(item.draft)}
+                onSave={(override) => saveDraft(override ?? item.draft)}
                 onReject={() => rejectDraft(item.draft)}
                 onExpand={
                   item.draft.status === 'pending'
@@ -1485,7 +1517,7 @@ const DraftFocusModal: React.FC<DraftFocusModalProps> = ({
             topics={topics}
             jobId={jobId}
             onChange={onChange}
-            onSave={() => onSave(current)}
+            onSave={(override) => onSave(override ?? current)}
             onReject={() => onReject(current)}
             focused
           />
