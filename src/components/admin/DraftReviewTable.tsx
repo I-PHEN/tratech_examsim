@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Eye, EyeOff, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, X, Keyboard, KeyRound, Split, Layers, Combine } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Maximize2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, X, Keyboard, KeyRound, Split, Layers, Combine } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
-import { RichText } from '../ui/RichText';
+import { FormattedTextField } from './FormattedTextField';
 
 interface DraftData {
   type: 'mcq' | 'calc';
@@ -250,37 +250,10 @@ interface DraftRowProps {
 const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onSave, onReject, onExpand, onSplit, splitting, onPublish, publishing, focused, hideClassification }) => {
   const [saving, setSaving] = useState(false);
   const [ocrBusy, setOcrBusy] = useState(false);
-  const [fmtBusy, setFmtBusy] = useState<'prompt' | 'explanation' | 'unit' | null>(null);
-  const [preview, setPreview] = useState<Set<'prompt' | 'explanation'>>(new Set());
   const d = draft.draft_data;
   const [showMore, setShowMore] = useState<boolean>(() => !!d.explanation?.trim());
   const multipartHint = (d.part_labels?.length ?? 0) >= 2;
   const showSecondary = focused || showMore;
-
-  const togglePreview = (k: 'prompt' | 'explanation') =>
-    setPreview((prev) => {
-      const next = new Set(prev);
-      if (next.has(k)) next.delete(k);
-      else next.add(k);
-      return next;
-    });
-
-  const formatField = async (field: 'prompt' | 'explanation' | 'unit') => {
-    const value = field === 'prompt' ? d.prompt : field === 'explanation' ? d.explanation : d.unit;
-    if (!value || !value.trim()) return;
-    setFmtBusy(field);
-    try {
-      const { formatted } = await apiPost<{ formatted: string }>(`/api/ingestion/format`, {
-        text: value,
-      });
-      const cleaned = field === 'unit' ? formatted.trim() : formatted;
-      update({ [field]: cleaned } as Partial<DraftData>);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : String(err));
-    } finally {
-      setFmtBusy(null);
-    }
-  };
 
   const onSolutionImage = async (file: File) => {
     setOcrBusy(true);
@@ -449,54 +422,14 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
         </div>
       )}
 
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-end gap-3 text-text-secondary">
-          <button
-            onClick={() => formatField('prompt')}
-            disabled={fmtBusy !== null}
-            title="AI clean-up formatting (Markdown + LaTeX)"
-            className="flex items-center gap-1 text-xs hover:text-primary disabled:opacity-50"
-          >
-            {fmtBusy === 'prompt' ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <Sparkles className="w-3.5 h-3.5" />
-            )}
-            Format
-          </button>
-          <button
-            onClick={() => togglePreview('prompt')}
-            title="Toggle rendered preview"
-            className="flex items-center gap-1 text-xs hover:text-text-primary"
-          >
-            {preview.has('prompt') ? (
-              <EyeOff className="w-3.5 h-3.5" />
-            ) : (
-              <Eye className="w-3.5 h-3.5" />
-            )}
-            Preview
-          </button>
-        </div>
-        {preview.has('prompt') ? (
-          <div
-            className={cn(
-              'bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary',
-              focused ? 'min-h-[420px]' : 'min-h-[80px]'
-            )}
-          >
-            <RichText>{d.prompt}</RichText>
-          </div>
-        ) : (
-          <textarea
-            value={d.prompt}
-            onChange={(e) => update({ prompt: e.target.value })}
-            className={cn(
-              'w-full bg-bg-sunken border border-border-subtle rounded-xl p-3 text-sm text-text-primary focus:border-primary focus:outline-none',
-              focused ? 'min-h-[420px]' : 'min-h-[80px]'
-            )}
-          />
-        )}
-      </div>
+      <FormattedTextField
+        label="Question prompt"
+        value={d.prompt}
+        onChange={(v) => update({ prompt: v })}
+        multiline
+        minHeight={focused ? '420px' : '80px'}
+        dataCycle
+      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
         <ShortcutPills
@@ -577,30 +510,20 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
       ) : (
         <div className="space-y-3">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <label className="text-xs md:col-span-2">
-              <span className="flex items-center gap-2 mb-1">
-                <span className="text-text-secondary font-bold uppercase tracking-wider">
-                  {d.answer_type === 'written' ? 'Model Answer' : 'Correct Answer'}
-                </span>
+            <div className="md:col-span-2">
+              <div className="flex items-center gap-2 mb-1">
                 {d.ai_matched?.correct_answer && <AiMatchedBadge />}
-              </span>
-              {d.answer_type === 'written' ? (
-                <textarea
-                  data-cycle
-                  value={d.correct_answer ?? ''}
-                  onChange={(e) => editField('correct_answer', e.target.value)}
-                  placeholder="The worded model answer students are AI-graded against…"
-                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary min-h-[60px]"
-                />
-              ) : (
-                <input
-                  data-cycle
-                  value={d.correct_answer ?? ''}
-                  onChange={(e) => editField('correct_answer', e.target.value)}
-                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary"
-                />
-              )}
-            </label>
+              </div>
+              <FormattedTextField
+                label={d.answer_type === 'written' ? 'Model Answer' : 'Correct Answer'}
+                value={d.correct_answer ?? ''}
+                onChange={(v) => editField('correct_answer', v)}
+                multiline={d.answer_type === 'written'}
+                minHeight={d.answer_type === 'written' ? '60px' : undefined}
+                inputClassName={d.answer_type !== 'written' ? 'rounded-lg' : undefined}
+                dataCycle
+              />
+            </div>
             <ShortcutPills
               label="Answer Type"
               value={d.answer_type ?? 'exact'}
@@ -612,42 +535,18 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
           {/* A numeric answer keeps its unit whether it is exact OR a range. */}
           {d.answer_type !== 'written' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <label className={cn('text-xs', d.answer_type !== 'range' && 'md:col-span-2')}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-text-secondary font-bold uppercase tracking-wider block">
-                    Unit
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => formatField('unit')}
-                    disabled={fmtBusy !== null || !d.unit?.trim()}
-                    title="AI clean-up to KaTeX (e.g. m^3 → $\mathrm{m^{3}}$)"
-                    className="flex items-center gap-1 text-[10px] text-text-secondary hover:text-primary disabled:opacity-40"
-                  >
-                    {fmtBusy === 'unit' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <Sparkles className="w-3 h-3" />
-                    )}
-                    Format
-                  </button>
-                </div>
-                <input
-                  data-cycle
+              <div className={cn('text-xs', d.answer_type !== 'range' && 'md:col-span-2')}>
+                <FormattedTextField
+                  label="Unit"
                   value={d.unit ?? ''}
-                  onChange={(e) => update({ unit: e.target.value })}
-                  placeholder="e.g. mol/L or $\mathrm{m^{3}}$"
-                  className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary font-mono"
+                  onChange={(v) => update({ unit: v })}
+                  multiline={false}
+                  inlinePreview
+                  dataCycle
+                  inputClassName="rounded-lg font-mono"
+                  placeholder="e.g. mol/L or $\\mathrm{m^{3}}$"
                 />
-                {d.unit?.trim() && (
-                  <div className="mt-1 text-[10px] text-text-tertiary flex items-baseline gap-1.5">
-                    <span className="uppercase tracking-wider font-bold">Preview:</span>
-                    <span className="text-text-primary normal-case tracking-normal font-semibold">
-                      <RichText inline>{d.unit}</RichText>
-                    </span>
-                  </div>
-                )}
-              </label>
+              </div>
 
               {d.answer_type === 'range' && (
                 <label className="text-xs">
@@ -696,61 +595,17 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
       {showSecondary && (
       <>
       <div className="text-xs block">
-        <div className="flex items-center justify-between mb-1">
-          <span className="flex items-center gap-2">
-            <span className="text-text-secondary font-bold uppercase tracking-wider">
-              Worked solution / explanation (optional)
-            </span>
-            {d.ai_matched?.explanation && <AiMatchedBadge />}
-          </span>
-          <div className="flex items-center gap-3 text-text-secondary">
-            <button
-              onClick={() => formatField('explanation')}
-              disabled={fmtBusy !== null || !d.explanation?.trim()}
-              title="AI clean-up formatting (Markdown + LaTeX)"
-              className="flex items-center gap-1 hover:text-primary disabled:opacity-40"
-            >
-              {fmtBusy === 'explanation' ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="w-3.5 h-3.5" />
-              )}
-              Format
-            </button>
-            <button
-              onClick={() => togglePreview('explanation')}
-              title="Toggle rendered preview"
-              className="flex items-center gap-1 hover:text-text-primary"
-            >
-              {preview.has('explanation') ? (
-                <EyeOff className="w-3.5 h-3.5" />
-              ) : (
-                <Eye className="w-3.5 h-3.5" />
-              )}
-              Preview
-            </button>
-          </div>
+        <div className="flex items-center gap-2 mb-1">
+          {d.ai_matched?.explanation && <AiMatchedBadge />}
         </div>
-        {preview.has('explanation') ? (
-          <div
-            className={cn(
-              'bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary',
-              focused ? 'min-h-[260px]' : 'min-h-[60px]'
-            )}
-          >
-            <RichText>{d.explanation ?? ''}</RichText>
-          </div>
-        ) : (
-          <textarea
-            data-cycle
-            value={d.explanation ?? ''}
-            onChange={(e) => editField('explanation', e.target.value)}
-            className={cn(
-              'w-full bg-bg-sunken border border-border-subtle rounded-lg px-2 py-1.5 text-sm text-text-primary',
-              focused ? 'min-h-[260px]' : 'min-h-[60px]'
-            )}
-          />
-        )}
+        <FormattedTextField
+          label="Worked solution / explanation (optional)"
+          value={d.explanation ?? ''}
+          onChange={(v) => editField('explanation', v)}
+          multiline
+          minHeight={focused ? '260px' : '60px'}
+          dataCycle
+        />
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
