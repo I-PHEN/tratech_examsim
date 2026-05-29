@@ -93,6 +93,8 @@ RULES — these are absolute:
    - Units rendered clearly, e.g. mol/(L.s) → $\\mathrm{mol\\,L^{-1}\\,s^{-1}}$.
    - Use Markdown lists for step-by-step working in "explanation". Keep numbers, variables, and wording EXACTLY as in the source — formatting only.
 
+2c. IMAGE REFS. If the OCR transcript contains \`![](img-N)\` markers for figures the question needs, preserve those markers VERBATIM in the "prompt". Do NOT rename, paraphrase, or invent new image references.
+
 3. MCQ. Requires "options" array with 2–6 entries, exactly ONE is_correct: true (only if the source states the answer). NEVER guess the correct option.
 
 4. CALC. "prompt" required. "correct_answer" OPTIONAL — only include if the source explicitly shows it. Set "answer_type":

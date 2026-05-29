@@ -724,7 +724,7 @@ const MD_IMAGE_RE = /!\[[^\]]*\]\(\s*<?([^)>\s]+)[^)]*>?\s*\)/g;
  * returns the matching manifest entries. Falls back to all diagrams on the
  * draft's source page when nothing is inlined.
  */
-function extractDiagrams(
+export function extractDiagrams(
   text: string,
   manifest: OcrAssetRef[],
   sourcePage: number | null
@@ -733,8 +733,9 @@ function extractDiagrams(
 
   const refs: OcrAssetRef[] = [];
   const matched = new Set<string>();
+  let hadUnmatched = false;
 
-  const cleaned = text.replace(MD_IMAGE_RE, (whole, target: string) => {
+  const cleaned = text.replace(MD_IMAGE_RE, (_whole, target: string) => {
     const base = String(target).split('/').pop() ?? target;
     const hit = manifest.find(
       (a) => a.img_id === target || a.img_id === base || a.storage_path.endsWith(base)
@@ -744,14 +745,17 @@ function extractDiagrams(
         matched.add(hit.storage_path);
         refs.push(hit);
       }
-      return ''; // drop the placeholder; it becomes an attached asset
+    } else {
+      hadUnmatched = true;
     }
-    return whole; // unknown ref — leave it (RichText renders a safe placeholder)
+    // Always drop the placeholder — an unmatched ref would otherwise render as
+    // a broken-image "diagram" pill in production.
+    return '';
   });
 
-  // Nothing inlined but this draft came from a page that has diagrams — attach
-  // them so a figure is never silently lost.
-  if (refs.length === 0 && sourcePage != null) {
+  // Attach page-level diagrams when nothing inlined OR some refs were orphans,
+  // so a figure is never silently lost.
+  if ((hadUnmatched || refs.length === 0) && sourcePage != null) {
     for (const a of manifest) {
       if (a.page_number === sourcePage && !matched.has(a.storage_path)) {
         matched.add(a.storage_path);
