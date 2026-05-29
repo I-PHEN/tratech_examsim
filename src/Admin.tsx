@@ -10,6 +10,7 @@ import { IngestionWizard } from './components/admin/IngestionWizard';
 import { ManualQuestionEntry } from './components/admin/ManualQuestionEntry';
 import { QuestionLibrary } from './components/admin/QuestionLibrary';
 import { CurriculumManager } from './components/admin/curriculum/CurriculumManager';
+import { usePersistentState } from './lib/usePersistentState';
 import 'katex/dist/katex.min.css';
 
 function AdminManager() {
@@ -124,7 +125,7 @@ function IngestionTab() {
 }
 
 export function AdminDashboardScreen({ onBack }: { onBack: () => void }) {
-  const [activeTab, setActiveTab] = useState<'upload' | 'manual' | 'library' | 'manage' | 'admins'>('upload');
+  const [activeTab, setActiveTab] = usePersistentState<'upload' | 'manual' | 'library' | 'manage' | 'admins'>('admin.activeTab', 'upload');
   
   return (
     <div className="absolute inset-0 flex flex-col bg-surface-dim z-50 overflow-hidden">

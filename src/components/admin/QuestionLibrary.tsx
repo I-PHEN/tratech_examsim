@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, FileText, Layers } from 'lucide-react';
 import { apiDelete, apiGet } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
+import { usePersistentState } from '../../lib/usePersistentState';
+import { RichText } from '../ui/RichText';
 import { CourseSelect } from './CourseSelect';
 import { ManualQuestionEntry } from './ManualQuestionEntry';
 import { QuestionGroupEditor } from './QuestionGroupEditor';
@@ -55,16 +57,16 @@ function buildItems(rows: QuestionRow[]): LibraryItem[] {
 const PAGE_SIZE = 25;
 
 export function QuestionLibrary() {
-  const [programCourseId, setProgramCourseId] = useState('');
+  const [programCourseId, setProgramCourseId] = usePersistentState('library.programCourseId', '');
   const [courseLabel, setCourseLabel] = useState<string>('');
   const [topics, setTopics] = useState<Topic[]>([]);
-  const [topicId, setTopicId] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'' | 'mcq' | 'calc'>('');
+  const [topicId, setTopicId] = usePersistentState('library.topicId', '');
+  const [typeFilter, setTypeFilter] = usePersistentState<'' | 'mcq' | 'calc'>('library.typeFilter', '');
 
   const [rows, setRows] = useState<QuestionRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [offset, setOffset] = useState(0);
+  const [offset, setOffset] = usePersistentState('library.offset', 0);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null);
 
@@ -266,11 +268,15 @@ export function QuestionLibrary() {
                         Parts: {item.parts.map((p) => p.part_label ?? '?').join(', ')}
                       </span>
                     </div>
-                    <p className="text-sm text-text-primary line-clamp-2 break-words">
-                      {item.parts[0].prompt || (
+                    <div className="text-sm text-text-primary line-clamp-2 break-words">
+                      {item.parts[0].prompt?.trim() ? (
+                        <RichText inline className="text-sm text-text-primary">
+                          {item.parts[0].prompt.trim()}
+                        </RichText>
+                      ) : (
                         <em className="text-text-tertiary">(no prompt text)</em>
                       )}
-                    </p>
+                    </div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
                       <Badge tone="diff">{item.parts[0].difficulty}</Badge>
                       <Badge tone="scope">{item.parts[0].exam_scope}</Badge>
@@ -287,7 +293,7 @@ export function QuestionLibrary() {
                       className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
                     >
                       <Pencil className="w-3.5 h-3.5" />
-                      Edit group
+                      Edit
                     </button>
                     <button
                       onClick={() => handleDeleteGroup(item.groupId, item.parts.length)}
@@ -299,7 +305,7 @@ export function QuestionLibrary() {
                       ) : (
                         <Trash2 className="w-3.5 h-3.5" />
                       )}
-                      Delete group
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -309,9 +315,15 @@ export function QuestionLibrary() {
                   className="bg-surface-container-low border border-border-subtle rounded-2xl px-4 py-3 flex items-start gap-3"
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-primary line-clamp-2 break-words">
-                      {item.row.prompt || <em className="text-text-tertiary">(no prompt text)</em>}
-                    </p>
+                    <div className="text-sm text-text-primary line-clamp-2 break-words">
+                      {item.row.prompt?.trim() ? (
+                        <RichText inline className="text-sm text-text-primary">
+                          {item.row.prompt.trim()}
+                        </RichText>
+                      ) : (
+                        <em className="text-text-tertiary">(no prompt text)</em>
+                      )}
+                    </div>
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
                       <Badge>{item.row.type === 'mcq' ? 'MCQ' : 'Calc'}</Badge>
                       <Badge tone="diff">{item.row.difficulty}</Badge>
