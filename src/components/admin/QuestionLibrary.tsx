@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Loader2, Pencil, Trash2, ChevronLeft, ChevronRight, FileText, Layers } from 'lucide-react';
 import { apiDelete, apiGet } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
@@ -73,20 +73,30 @@ export function QuestionLibrary() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
 
+  // Persisted filters must survive a refresh — only clear topic/offset when
+  // the course actually changes, not when state is rehydrated on mount.
+  const lastCourseRef = useRef(programCourseId);
   useEffect(() => {
-    setTopicId('');
-    setOffset(0);
+    if (lastCourseRef.current !== programCourseId) {
+      setTopicId('');
+      setOffset(0);
+      lastCourseRef.current = programCourseId;
+    }
     if (!programCourseId) {
       setTopics([]);
       setCourseLabel('');
       return;
     }
     apiGet<Topic[]>(`/api/topics?program_course_id=${programCourseId}`)
-      .then(setTopics)
+      .then((next) => {
+        setTopics(next);
+        if (topicId && !next.find((t) => t.id === topicId)) setTopicId('');
+      })
       .catch((e) => console.error(e));
     apiGet<ProgramCourseDetail>(`/api/program-courses/${programCourseId}`)
       .then((pc) => setCourseLabel(pc?.courses?.name ?? ''))
       .catch(() => setCourseLabel(''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programCourseId]);
 
   const fetchList = () => {
@@ -268,15 +278,7 @@ export function QuestionLibrary() {
                         Parts: {item.parts.map((p) => p.part_label ?? '?').join(', ')}
                       </span>
                     </div>
-                    <div className="text-sm text-text-primary line-clamp-2 break-words">
-                      {item.parts[0].prompt?.trim() ? (
-                        <RichText inline className="text-sm text-text-primary">
-                          {item.parts[0].prompt.trim()}
-                        </RichText>
-                      ) : (
-                        <em className="text-text-tertiary">(no prompt text)</em>
-                      )}
-                    </div>
+                    <PromptPreview text={item.parts[0].prompt} />
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
                       <Badge tone="diff">{item.parts[0].difficulty}</Badge>
                       <Badge tone="scope">{item.parts[0].exam_scope}</Badge>
@@ -315,15 +317,7 @@ export function QuestionLibrary() {
                   className="bg-surface-container-low border border-border-subtle rounded-2xl px-4 py-3 flex items-start gap-3"
                 >
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm text-text-primary line-clamp-2 break-words">
-                      {item.row.prompt?.trim() ? (
-                        <RichText inline className="text-sm text-text-primary">
-                          {item.row.prompt.trim()}
-                        </RichText>
-                      ) : (
-                        <em className="text-text-tertiary">(no prompt text)</em>
-                      )}
-                    </div>
+                    <PromptPreview text={item.row.prompt} />
                     <div className="flex flex-wrap items-center gap-1.5 mt-2 text-[10px] font-bold uppercase tracking-wider">
                       <Badge>{item.row.type === 'mcq' ? 'MCQ' : 'Calc'}</Badge>
                       <Badge tone="diff">{item.row.difficulty}</Badge>
@@ -386,6 +380,21 @@ export function QuestionLibrary() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+function PromptPreview({ text }: { text?: string | null }) {
+  const trimmed = text?.trim();
+  return (
+    <div className="text-sm text-text-primary line-clamp-2 break-words">
+      {trimmed ? (
+        <RichText inline className="text-sm text-text-primary">
+          {trimmed}
+        </RichText>
+      ) : (
+        <em className="text-text-tertiary">(no prompt text)</em>
+      )}
     </div>
   );
 }
