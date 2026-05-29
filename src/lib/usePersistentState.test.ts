@@ -29,4 +29,11 @@ describe('usePersistentState', () => {
     const { result } = renderHook(() => usePersistentState('t.corrupt', 'safe'));
     expect(result.current[0]).toBe('safe');
   });
+
+  it('supports functional updaters', () => {
+    const { result } = renderHook(() => usePersistentState('t.fn', 1));
+    act(() => result.current[1]((prev) => prev + 1));
+    expect(result.current[0]).toBe(2);
+    expect(sessionStorage.getItem('examsim:t.fn')).toBe(JSON.stringify(2));
+  });
 });
