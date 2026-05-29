@@ -1,0 +1,21 @@
+name: Keepalive
+
+# Ping the Render web service every ~10 minutes so the free-tier instance
+# doesn't sleep (it spins down after 15 min idle). The schedule is offset
+# off the :00/:10 marks because GitHub's cron infra runs lots of jobs on
+# those marks and delays them by 5-15 min.
+
+on:
+  schedule:
+    - cron: '2,12,22,32,42,52 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping /api/health
+        run: |
+          curl --fail --silent --show-error --max-time 60 \
+            https://tratech-examsim.onrender.com/api/health
