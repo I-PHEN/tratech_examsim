@@ -3317,7 +3317,7 @@ function ExamSimulation({
                       <button
                         onClick={toggleFlag}
                         className={cn(
-                          "flex items-center gap-2 px-3 py-1.5 md:px-3 md:py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
+                          "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
                           flagged.has(currentIdx) ? "bg-amber-500 border-amber-500 text-white" : "border-border-subtle hover:border-border-medium hover:bg-bg-raised text-text-tertiary hover:text-text-primary"
                         )}
                       >
@@ -3381,7 +3381,7 @@ function ExamSimulation({
                       </div>
 
                       {hasAssets && (
-                        <div className="flex flex-col gap-3 lg:sticky lg:top-0 lg:self-start">
+                        <div className="flex flex-col gap-3 lg:sticky lg:top-0 lg:self-start lg:max-h-full lg:overflow-y-auto no-scrollbar">
                           {currentQuestion.assets!.map((a) => (
                             <button
                               key={a.id}
@@ -3394,7 +3394,7 @@ function ExamSimulation({
                                 src={a.url}
                                 alt="diagram"
                                 loading="lazy"
-                                className="rounded-xl border border-border-subtle max-h-[60vh] w-auto"
+                                className="rounded-xl border border-border-subtle max-h-[60vh] lg:max-h-[50vh] w-auto"
                               />
                             </button>
                           ))}
