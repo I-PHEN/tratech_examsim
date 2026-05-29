@@ -11,6 +11,7 @@ import { auth, db } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
 import { RichText } from './components/ui/RichText';
 import { ThinkingDots } from './components/ui/JudeBlocks';
+import { AutoGrowTextarea } from './components/ui/AutoGrowTextarea';
 import 'katex/dist/katex.min.css';
 import {
   Home, 
@@ -2769,6 +2770,7 @@ function ExamSimulation({
   const timerText = formatTime(timeLeftSeconds);
 
   const currentQuestion = questions[currentIdx];
+  const hasAssets = !!currentQuestion.assets?.length;
 
   // Multi-part sub-parts share ONE display number so the student reads them as
   // a single question; the counter only advances when leaving a group.
@@ -3306,7 +3308,7 @@ function ExamSimulation({
                   <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50 pointer-events-none" />
 
                   {/* Header zone — pinned; never scrolls away */}
-                  <div className="relative z-10 shrink-0 space-y-1.5 border-b border-border-subtle pb-2">
+                  <div className="relative z-10 shrink-0 space-y-1.5 border-b border-border-subtle pb-1.5">
                     <div className="flex items-center justify-between gap-3">
                       <div className="flex items-baseline gap-2">
                         <span className="text-xl font-black text-text-primary">Q{currentNumber}</span>
@@ -3315,7 +3317,7 @@ function ExamSimulation({
                       <button
                         onClick={toggleFlag}
                         className={cn(
-                          "flex items-center gap-2 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
+                          "flex items-center gap-2 px-3 py-1.5 md:px-3 md:py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
                           flagged.has(currentIdx) ? "bg-amber-500 border-amber-500 text-white" : "border-border-subtle hover:border-border-medium hover:bg-bg-raised text-text-tertiary hover:text-text-primary"
                         )}
                       >
@@ -3357,24 +3359,30 @@ function ExamSimulation({
                   </div>
 
                   {/* Scroll zone — ONLY the question text + diagrams scroll */}
-                  <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-2 space-y-3">
-                      {currentQuestion.sharedStem && (
-                        <div className="bg-bg-sunken/40 border-l-2 border-accent/40 rounded-r-lg px-3 py-2">
-                          <span className="block text-[9px] font-black uppercase tracking-widest text-accent-text mb-1">
-                            Setup
-                          </span>
-                          <RichText className="text-sm text-text-primary leading-relaxed">
-                            {currentQuestion.sharedStem}
-                          </RichText>
-                        </div>
-                      )}
-                      <RichText className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
-                        {currentQuestion.prompt}
-                      </RichText>
+                  <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-2">
+                    <div className={cn(
+                      'space-y-3',
+                      hasAssets && 'lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:gap-4 lg:space-y-0'
+                    )}>
+                      <div className="space-y-3 min-w-0">
+                        {currentQuestion.sharedStem && (
+                          <div className="bg-bg-sunken/40 border-l-2 border-accent/40 rounded-r-lg px-3 py-2">
+                            <span className="block text-[9px] font-black uppercase tracking-widest text-accent-text mb-1">
+                              Setup
+                            </span>
+                            <RichText className="text-sm text-text-primary leading-relaxed">
+                              {currentQuestion.sharedStem}
+                            </RichText>
+                          </div>
+                        )}
+                        <RichText className="text-sm md:text-base text-text-primary leading-relaxed font-medium tracking-tight">
+                          {currentQuestion.prompt}
+                        </RichText>
+                      </div>
 
-                      {currentQuestion.assets && currentQuestion.assets.length > 0 && (
-                        <div className="flex flex-col gap-3">
-                          {currentQuestion.assets.map((a) => (
+                      {hasAssets && (
+                        <div className="flex flex-col gap-3 lg:sticky lg:top-0 lg:self-start">
+                          {currentQuestion.assets!.map((a) => (
                             <button
                               key={a.id}
                               type="button"
@@ -3392,12 +3400,13 @@ function ExamSimulation({
                           ))}
                         </div>
                       )}
+                    </div>
                   </div>
 
                   {/* Answer zone — pinned above the nav buttons */}
-                  <div className="relative z-10 shrink-0 max-h-[35vh] overflow-y-auto no-scrollbar pt-2.5 border-t border-border-subtle">
+                  <div className="relative z-10 shrink-0 pt-2.5 border-t border-border-subtle">
                       {currentQuestion.type === 'MCQ' ? (
-                        <div className="grid grid-cols-1 gap-2.5">
+                        <div className="grid grid-cols-1 gap-2.5 max-h-[40vh] overflow-y-auto no-scrollbar">
                           {currentQuestion.options?.map((opt, i) => {
                             const label = String.fromCharCode(65 + i) + '.';
                             return (
@@ -3415,12 +3424,11 @@ function ExamSimulation({
                       ) : currentQuestion.answerType === 'written' ? (
                         <div className="space-y-3">
                           <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">Written Response</label>
-                          <textarea
+                          <AutoGrowTextarea
                             value={answers[currentIdx] || ''}
                             onChange={(e) => handleAnswer(e.target.value)}
                             placeholder="Write your full answer here — show your reasoning…"
-                            rows={5}
-                            className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent transition-[transform,opacity,box-shadow] resize-y leading-relaxed"
+                            className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent leading-relaxed"
                           />
                           <p className="text-[9px] text-text-tertiary italic">
                             Explain your reasoning in full — this answer is marked by AI on its substance, with partial credit.
@@ -3457,19 +3465,19 @@ function ExamSimulation({
                       )}
                   </div>
 
-                  <div className="flex items-center justify-between gap-3 shrink-0 pt-4 pb-1 border-t border-border-subtle relative z-10 bg-bg-surface">
-                    <button 
+                  <div className="flex items-center justify-between gap-3 shrink-0 pt-2.5 pb-0 border-t border-border-subtle relative z-10 bg-bg-surface">
+                    <button
                      onClick={prevQuestion}
                      disabled={currentIdx === 0}
-                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-raised transition-all disabled:opacity-50 disabled:cursor-not-allowed group active:scale-95 shadow-sm"
+                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-2xl bg-bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:bg-bg-raised transition-all disabled:opacity-50 disabled:cursor-not-allowed group active:scale-95 shadow-sm"
                    >
                        <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                        <span className="text-[11px] font-black uppercase tracking-widest">Previous</span>
                     </button>
-                    
-                   <button 
+
+                   <button
                      onClick={nextQuestion}
-                     className="flex-[1.5] sm:flex-none flex items-center justify-center gap-2.5 px-6 py-3 bg-accent hover:bg-accent-hover text-bg-page text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-all hover:scale-[1.02] active:scale-95"
+                     className="flex-[1.5] sm:flex-none flex items-center justify-center gap-2.5 px-6 py-2.5 bg-accent hover:bg-accent-hover text-bg-page text-[11px] font-black uppercase tracking-widest rounded-2xl shadow-[0_8px_20px_var(--accent-muted)] hover:shadow-[0_12px_24px_var(--accent-muted)] transition-all hover:scale-[1.02] active:scale-95"
                    >
                      {currentIdx === questions.length - 1 ? 'Submit' : 'Next'}
                      <ArrowRight className="w-5 h-5" />
