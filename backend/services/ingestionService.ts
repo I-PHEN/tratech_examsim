@@ -719,10 +719,12 @@ export async function ocrSolutionImage(
 const MD_IMAGE_RE = /!\[[^\]]*\]\(\s*<?([^)>\s]+)[^)]*>?\s*\)/g;
 
 /**
- * Pull OCR diagram references out of a draft's text: strips the markdown image
- * tags (students get the diagram as an attached asset, not broken markdown) and
- * returns the matching manifest entries. Falls back to all diagrams on the
- * draft's source page when nothing is inlined.
+ * Pull OCR diagram references out of a draft's text: strips every markdown
+ * image placeholder (matched or orphaned — students get the diagram as an
+ * attached asset, not broken markdown) and returns the matching manifest
+ * entries. Falls back to all diagrams on the draft's source page when nothing
+ * inlined matched, OR when at least one placeholder was an orphan, so a real
+ * figure is never silently lost.
  */
 export function extractDiagrams(
   text: string,

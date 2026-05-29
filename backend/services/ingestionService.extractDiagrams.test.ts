@@ -82,6 +82,17 @@ describe('extractDiagrams', () => {
     expect(refs[0].storage_path).toBe('job/p2-img-7.jpeg');
   });
 
+  it('matches by basename when placeholder target has a slash path', () => {
+    const manifest = [
+      ref({ img_id: 'img-0.jpeg', storage_path: 'job/ocr-images/p1-img-0.jpeg' }),
+    ];
+    const text = 'See ![](sub/dir/img-0.jpeg) below.';
+    const { cleaned, refs } = extractDiagrams(text, manifest, 1);
+    expect(cleaned).not.toContain('![](sub/dir/img-0.jpeg)');
+    expect(refs).toHaveLength(1);
+    expect(refs[0].storage_path).toBe('job/ocr-images/p1-img-0.jpeg');
+  });
+
   it('strips orphan placeholder even with sourcePage null and no fallback possible', () => {
     const manifest = [
       ref({ page_number: 5, img_id: 'img-99', storage_path: 'job/p5-img-99.jpeg' }),
