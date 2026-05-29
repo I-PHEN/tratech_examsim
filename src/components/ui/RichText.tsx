@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type ReactNode } from 'react';
-import ReactMarkdown, { type Components } from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
@@ -239,6 +239,9 @@ export function RichText({
       remarkPlugins={remarkPlugins}
       rehypePlugins={rehypePlugins}
       components={components}
+      urlTransform={(url, key) =>
+        key === 'src' && /^data:image\//i.test(url) ? url : defaultUrlTransform(url)
+      }
     >
       {source}
     </ReactMarkdown>
