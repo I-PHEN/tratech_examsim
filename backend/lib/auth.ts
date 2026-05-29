@@ -35,6 +35,12 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
     if (!token) throw new ApiError(401, 'UNAUTHORIZED', 'Empty bearer token');
 
     const decoded = await getFirebaseAdmin().auth().verifyIdToken(token);
+    // Real-email gate: Firebase only validates email format on signup, not
+    // ownership. Block API access until the user clicks the verification link.
+    // Google sign-in stamps email_verified: true automatically.
+    if (decoded.email_verified !== true) {
+      throw new ApiError(403, 'EMAIL_NOT_VERIFIED', 'Verify your email address to continue.');
+    }
     req.user = { uid: decoded.uid, email: decoded.email ?? null };
     next();
   } catch (err) {

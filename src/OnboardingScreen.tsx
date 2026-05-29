@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  signInWithEmailAndPassword, 
-  createUserWithEmailAndPassword, 
+import {
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
   signInWithPopup,
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  sendEmailVerification
 } from 'firebase/auth';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db } from './lib/firebase';
@@ -80,6 +81,14 @@ export function OnboardingScreen() {
       } else {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         await createUserDocument(result.user);
+        // Real-email gate: Firebase only validates email FORMAT, not ownership.
+        // Send a verification link; ProtectedApp blocks the user from the app
+        // until they click it and reload.
+        try {
+          await sendEmailVerification(result.user);
+        } catch (e) {
+          console.error('Failed to send verification email', e);
+        }
       }
     } catch (err: any) {
       setError(getAuthErrorMessage(err.code || ''));

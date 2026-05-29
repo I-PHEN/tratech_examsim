@@ -5,16 +5,23 @@ import App from './App.tsx';
 import { AdminDashboardScreen } from './Admin.tsx';
 import { AuthProvider, useAuth } from './lib/AuthContext.tsx';
 import { OnboardingScreen } from './OnboardingScreen.tsx';
+import { VerifyEmailScreen } from './VerifyEmailScreen.tsx';
 import { ProfileSetupScreen } from './ProfileSetupScreen.tsx';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/fraunces';
 import './index.css';
 
 function AdminRoute() {
-  const { isAdmin, isLoading } = useAuth();
+  const { currentUser, isAdmin, isLoading } = useAuth();
   const navigate = useNavigate();
 
   if (isLoading) return null;
+
+  // Email-verification gate also applies here so an unverified admin can't
+  // bypass /admin. Bounce to / and let ProtectedApp render the verify screen.
+  if (currentUser && !currentUser.emailVerified) {
+    return <Navigate to="/" replace />;
+  }
 
   // Access is enforced server-side by `requireAdmin` (email allowlist) on every
   // /api route. The old UI passcode was decorative, so it's gone.
@@ -38,6 +45,12 @@ function ProtectedApp() {
 
   if (!currentUser) {
     return <OnboardingScreen />;
+  }
+
+  // Real-email gate. Google sign-in stamps email_verified=true automatically,
+  // so this only blocks password-signups that haven't clicked the verify link.
+  if (!currentUser.emailVerified) {
+    return <VerifyEmailScreen />;
   }
 
   if (userProfile && (!userProfile.department || !userProfile.year || !userProfile.semester)) {
