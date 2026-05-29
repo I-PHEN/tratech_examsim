@@ -10,10 +10,19 @@ import type {
 } from '../schemas/question';
 
 const STORAGE_BUCKET = 'ingestion-uploads';
+// 8 hours — longer than a single exam session, short enough that a leaked
+// URL stops working before it's of much use. Bucket is private; getPublicUrl
+// would just return a non-functional URL here.
+const SIGNED_URL_TTL_SECONDS = 8 * 60 * 60;
 
-function publicUrlFor(path: string): string {
-  const { data } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
+async function signedUrlFor(path: string): Promise<string> {
+  const { data, error } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+  if (error || !data?.signedUrl) {
+    throw new ApiError(500, 'STORAGE_SIGN_FAILED', `Could not sign URL for ${path}`);
+  }
+  return data.signedUrl;
 }
 
 function extensionFor(mime: string): string {
@@ -148,11 +157,13 @@ interface QuestionJoinRow {
   question_assets: AssetRow[] | null;
 }
 
-export function mapAssets(rows: AssetRow[] | null | undefined): QuestionAsset[] {
-  return (rows ?? [])
-    .slice()
-    .sort((a, b) => a.position - b.position)
-    .map((a) => ({ ...a, url: publicUrlFor(a.storage_path) }));
+export async function mapAssets(
+  rows: AssetRow[] | null | undefined
+): Promise<QuestionAsset[]> {
+  const sorted = (rows ?? []).slice().sort((a, b) => a.position - b.position);
+  return Promise.all(
+    sorted.map(async (a) => ({ ...a, url: await signedUrlFor(a.storage_path) }))
+  );
 }
 
 export async function getQuestionById(id: string): Promise<QuestionWithContent> {
@@ -186,7 +197,7 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
     part_index: row.part_index,
     content: unwrapContent(row.question_content),
     options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
-    assets: mapAssets(row.question_assets),
+    assets: await mapAssets(row.question_assets),
   };
 
   return shuffleOptionsIfMcq(result);
@@ -454,7 +465,7 @@ export async function addQuestionAsset(
     throw error;
   }
 
-  return { ...(data as AssetRow), url: publicUrlFor(data.storage_path) };
+  return { ...(data as AssetRow), url: await signedUrlFor(data.storage_path) };
 }
 
 /**

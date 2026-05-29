@@ -416,7 +416,7 @@ export async function getSessionById(uid: string, sessionId: string) {
       .in('id', orderedIds);
     if (qErr) throw qErr;
 
-    questions = (full ?? []).map((row) => {
+    questions = await Promise.all((full ?? []).map(async (row) => {
       const r = row as unknown as {
         id: string;
         type: 'mcq' | 'calc';
@@ -449,9 +449,9 @@ export async function getSessionById(uid: string, sessionId: string) {
         part_index: r.part_index,
         content: contentArr[0],
         options: mcqOptions,
-        assets: mapAssets(r.question_assets),
+        assets: await mapAssets(r.question_assets),
       };
-    });
+    }));
 
     // `.in()` does not preserve order — restore the exam order so the review
     // (and grouped multi-part numbering) renders questions as they were sat.
@@ -557,44 +557,46 @@ export async function getSessionResume(uid: string, sessionId: string) {
     const byId = new Map<string, unknown>();
     for (const row of qRows ?? []) byId.set((row as unknown as { id: string }).id, row);
 
-    picked = orderedIds
-      .map((id) => byId.get(id))
-      .filter((row): row is NonNullable<typeof row> => Boolean(row))
-      .map((row) => {
-        const r = row as unknown as {
-          id: string;
-          type: 'mcq' | 'calc';
-          difficulty: 'easy' | 'medium' | 'hard';
-          exam_scope: 'midsem' | 'final' | 'both';
-          topic_id: string;
-          answer_type: 'exact' | 'range' | 'written' | null;
-          question_group_id: string | null;
-          part_label: string | null;
-          part_index: number | null;
-          question_content: QuestionContent | QuestionContent[] | null;
-          mcq_options: McqOption[] | null;
-          question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
-        };
-        const contentArr: QuestionContent[] = Array.isArray(r.question_content)
-          ? r.question_content
-          : r.question_content
-          ? [r.question_content]
-          : [];
-        return {
-          id: r.id,
-          type: r.type,
-          difficulty: r.difficulty,
-          exam_scope: r.exam_scope,
-          topic_id: r.topic_id,
-          answer_type: r.answer_type,
-          question_group_id: r.question_group_id,
-          part_label: r.part_label,
-          part_index: r.part_index,
-          content: contentArr[0],
-          options: r.type === 'mcq' ? r.mcq_options ?? [] : undefined,
-          assets: mapAssets(r.question_assets),
-        };
-      });
+    picked = await Promise.all(
+      orderedIds
+        .map((id) => byId.get(id))
+        .filter((row): row is NonNullable<typeof row> => Boolean(row))
+        .map(async (row) => {
+          const r = row as unknown as {
+            id: string;
+            type: 'mcq' | 'calc';
+            difficulty: 'easy' | 'medium' | 'hard';
+            exam_scope: 'midsem' | 'final' | 'both';
+            topic_id: string;
+            answer_type: 'exact' | 'range' | 'written' | null;
+            question_group_id: string | null;
+            part_label: string | null;
+            part_index: number | null;
+            question_content: QuestionContent | QuestionContent[] | null;
+            mcq_options: McqOption[] | null;
+            question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
+          };
+          const contentArr: QuestionContent[] = Array.isArray(r.question_content)
+            ? r.question_content
+            : r.question_content
+            ? [r.question_content]
+            : [];
+          return {
+            id: r.id,
+            type: r.type,
+            difficulty: r.difficulty,
+            exam_scope: r.exam_scope,
+            topic_id: r.topic_id,
+            answer_type: r.answer_type,
+            question_group_id: r.question_group_id,
+            part_label: r.part_label,
+            part_index: r.part_index,
+            content: contentArr[0],
+            options: r.type === 'mcq' ? r.mcq_options ?? [] : undefined,
+            assets: await mapAssets(r.question_assets),
+          };
+        })
+    );
   }
 
   const { data: aRows } = await supabase

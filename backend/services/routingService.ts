@@ -223,31 +223,33 @@ export async function pickSessionQuestions(
   const fullRows = full as unknown as QuestionJoinRow[];
   const byId = new Map<string, QuestionJoinRow>(fullRows.map((f) => [f.id, f]));
 
-  const picked: QuestionWithContent[] = ids
-    .map((id) => byId.get(id))
-    .filter((row): row is QuestionJoinRow => Boolean(row))
-    .map((row) => {
-      const contentArr: QuestionContent[] = Array.isArray(row.question_content)
-        ? row.question_content
-        : row.question_content
-        ? [row.question_content]
-        : [];
-      return shuffleOptionsIfMcq({
-        id: row.id,
-        program_course_id: row.program_course_id,
-        topic_id: row.topic_id,
-        type: row.type,
-        difficulty: row.difficulty,
-        exam_scope: row.exam_scope,
-        answer_type: row.answer_type,
-        question_group_id: row.question_group_id,
-        part_label: row.part_label,
-        part_index: row.part_index,
-        content: contentArr[0],
-        options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
-        assets: mapAssetsForRouting(row.question_assets),
-      });
-    });
+  const picked: QuestionWithContent[] = await Promise.all(
+    ids
+      .map((id) => byId.get(id))
+      .filter((row): row is QuestionJoinRow => Boolean(row))
+      .map(async (row) => {
+        const contentArr: QuestionContent[] = Array.isArray(row.question_content)
+          ? row.question_content
+          : row.question_content
+          ? [row.question_content]
+          : [];
+        return shuffleOptionsIfMcq({
+          id: row.id,
+          program_course_id: row.program_course_id,
+          topic_id: row.topic_id,
+          type: row.type,
+          difficulty: row.difficulty,
+          exam_scope: row.exam_scope,
+          answer_type: row.answer_type,
+          question_group_id: row.question_group_id,
+          part_label: row.part_label,
+          part_index: row.part_index,
+          content: contentArr[0],
+          options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
+          assets: await mapAssetsForRouting(row.question_assets),
+        });
+      })
+  );
 
   return { mode: input.mode, count, picked, difficulty_fallback: difficultyFallback };
 }
