@@ -70,8 +70,7 @@ export function QuestionLibrary() {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [deletingGroup, setDeletingGroup] = useState<string | null>(null);
 
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   // Persisted filters must survive a refresh — only clear topic/offset when
   // the course actually changes, not when state is rehydrated on mount.
@@ -155,39 +154,53 @@ export function QuestionLibrary() {
     }
   };
 
-  if (editingGroupId) {
-    return (
-      <QuestionGroupEditor
-        groupId={editingGroupId}
-        topics={topics}
-        courseLabel={courseLabel || undefined}
-        onCancel={() => setEditingGroupId(null)}
-        onDone={() => {
-          setEditingGroupId(null);
-          fetchList();
-        }}
-      />
-    );
-  }
+  const items = useMemo(() => buildItems(rows), [rows]);
+  const editing = editingIndex !== null ? items[editingIndex] : null;
 
-  if (editingId) {
-    const editingRow = rows.find((r) => r.id === editingId);
-    const editingTopic = editingRow ? topics.find((t) => t.id === editingRow.topic_id)?.name : undefined;
+  if (editing) {
+    const goPrev = () => setEditingIndex((i) => (i !== null && i > 0 ? i - 1 : i));
+    const goNext = () =>
+      setEditingIndex((i) => (i !== null && i < items.length - 1 ? i + 1 : i));
+    const prevDisabled = editingIndex === 0;
+    const nextDisabled = editingIndex !== null && editingIndex >= items.length - 1;
+
+    if (editing.kind === 'group') {
+      return (
+        <QuestionGroupEditor
+          groupId={editing.groupId}
+          topics={topics}
+          courseLabel={courseLabel || undefined}
+          onCancel={() => setEditingIndex(null)}
+          onDone={() => {
+            setEditingIndex(null);
+            fetchList();
+          }}
+          onPrev={goPrev}
+          onNext={goNext}
+          prevDisabled={prevDisabled}
+          nextDisabled={nextDisabled}
+        />
+      );
+    }
+    const editingRow = editing.row;
+    const editingTopic = topics.find((t) => t.id === editingRow.topic_id)?.name;
     return (
       <ManualQuestionEntry
-        editing={{ id: editingId }}
+        editing={{ id: editingRow.id }}
         courseLabel={courseLabel || undefined}
         topicLabel={editingTopic ?? topicLabel}
-        onCancel={() => setEditingId(null)}
+        onCancel={() => setEditingIndex(null)}
         onDone={() => {
-          setEditingId(null);
+          setEditingIndex(null);
           fetchList();
         }}
+        onPrev={goPrev}
+        onNext={goNext}
+        prevDisabled={prevDisabled}
+        nextDisabled={nextDisabled}
       />
     );
   }
-
-  const items = buildItems(rows);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 animate-in fade-in duration-200">
@@ -262,7 +275,7 @@ export function QuestionLibrary() {
           </div>
         ) : (
           <>
-            {items.map((item) =>
+            {items.map((item, idx) =>
               item.kind === 'group' ? (
                 <div
                   key={item.groupId}
@@ -291,7 +304,7 @@ export function QuestionLibrary() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button
-                      onClick={() => setEditingGroupId(item.groupId)}
+                      onClick={() => setEditingIndex(idx)}
                       className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
                     >
                       <Pencil className="w-3.5 h-3.5" />
@@ -331,7 +344,7 @@ export function QuestionLibrary() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <button
-                      onClick={() => setEditingId(item.row.id)}
+                      onClick={() => setEditingIndex(idx)}
                       className="flex items-center gap-1.5 text-xs bg-bg-raised border border-border-subtle text-text-primary px-3 py-1.5 rounded-lg font-bold hover:bg-bg-sunken"
                     >
                       <Pencil className="w-3.5 h-3.5" />

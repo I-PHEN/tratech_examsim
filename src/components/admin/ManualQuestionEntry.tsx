@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, ImageUp, X } from 'lucide-react';
+import { Loader2, Plus, Trash2, ListChecks, Calculator, Image as ImageIcon, ImageUp, X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { CourseSelect } from './CourseSelect';
@@ -72,6 +72,10 @@ export interface ManualQuestionEntryProps {
   topicLabel?: string;
   onDone?: () => void;
   onCancel?: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  prevDisabled?: boolean;
+  nextDisabled?: boolean;
 }
 
 export function ManualQuestionEntry({
@@ -80,6 +84,10 @@ export function ManualQuestionEntry({
   topicLabel,
   onDone,
   onCancel,
+  onPrev,
+  onNext,
+  prevDisabled,
+  nextDisabled,
 }: ManualQuestionEntryProps = {}) {
   const [type, setType] = useState<QType>('mcq');
   const [programCourseId, setProgramCourseId] = useState('');
@@ -117,6 +125,7 @@ export function ManualQuestionEntry({
 
   const [loading, setLoading] = useState(Boolean(editing));
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
     if (!editing) return;
@@ -148,6 +157,7 @@ export function ManualQuestionEntry({
         const sol = (q.assets ?? []).find((a) => a.kind === 'solution') ?? null;
         setAttachedDiagrams(diagrams);
         setAttachedSolution(sol);
+        setDirty(false);
       })
       .catch((e) => {
         if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e));
@@ -234,16 +244,19 @@ export function ManualQuestionEntry({
       }
       return next;
     });
+    setDirty(true);
   };
 
   const addOption = () => {
     if (options.length >= 6) return;
     setOptions((prev) => [...prev, emptyOption()]);
+    setDirty(true);
   };
 
   const removeOption = (i: number) => {
     if (options.length <= 2) return;
     setOptions((prev) => prev.filter((_, idx) => idx !== i));
+    setDirty(true);
   };
 
   const handleImagesPicked = (files: FileList | null) => {
@@ -259,6 +272,7 @@ export function ManualQuestionEntry({
       });
     }
     setPendingImages((prev) => [...prev, ...next]);
+    setDirty(true);
   };
 
   const removePendingImage = (localId: string) => {
@@ -267,6 +281,7 @@ export function ManualQuestionEntry({
       if (target) URL.revokeObjectURL(target.previewUrl);
       return prev.filter((p) => p.localId !== localId);
     });
+    setDirty(true);
   };
 
   const removeAttachedAsset = async (assetId: string, kind: 'prompt' | 'solution') => {
@@ -279,6 +294,7 @@ export function ManualQuestionEntry({
       } else {
         setAttachedDiagrams((prev) => prev.filter((a) => a.id !== assetId));
       }
+      setDirty(true);
     } catch (e) {
       setMsg({
         text: `Failed to remove image: ${e instanceof Error ? e.message : String(e)}`,
@@ -437,6 +453,7 @@ export function ManualQuestionEntry({
           setSolutionImage(null);
           onDone?.();
         }
+        setDirty(false);
       }
     } catch (err) {
       setMsg({ text: err instanceof Error ? err.message : String(err), type: 'err' });
@@ -480,21 +497,55 @@ export function ManualQuestionEntry({
                 </span>
               )}
             </div>
-            {onCancel && (
-              <button
-                onClick={onCancel}
-                className="text-xs font-bold text-text-secondary hover:text-text-primary"
-              >
-                Cancel
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {onPrev && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (dirty && !confirm('Discard unsaved changes and move to another question?')) return;
+                    onPrev();
+                  }}
+                  disabled={prevDisabled}
+                  className="flex items-center gap-1 text-xs font-bold text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  Prev
+                </button>
+              )}
+              {onNext && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (dirty && !confirm('Discard unsaved changes and move to another question?')) return;
+                    onNext();
+                  }}
+                  disabled={nextDisabled}
+                  className="flex items-center gap-1 text-xs font-bold text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Next
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {onCancel && (
+                <button
+                  onClick={onCancel}
+                  className="text-xs font-bold text-text-secondary hover:text-text-primary"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
           </div>
         )}
         <div className="flex gap-2">
           {(['mcq', 'calc'] as QType[]).map((t) => (
             <button
               key={t}
-              onClick={() => !editing && setType(t)}
+              onClick={() => {
+                if (editing) return;
+                setType(t);
+                setDirty(true);
+              }}
               disabled={Boolean(editing) && type !== t}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-bold text-xs transition-all',
@@ -514,7 +565,7 @@ export function ManualQuestionEntry({
         <FormattedTextField
           label="Question Prompt"
           value={prompt}
-          onChange={setPrompt}
+          onChange={(v) => { setPrompt(v); setDirty(true); }}
           multiline
           minHeight="120px"
           placeholder="Type the full question text here. Paste raw text and hit Format to auto-typeset math/units. For multi-part questions, create one entry per sub-part."
@@ -581,7 +632,7 @@ export function ManualQuestionEntry({
               <FormattedTextField
                 label={answerType === 'written' ? 'Model Answer' : 'Correct Answer'}
                 value={correctAnswer}
-                onChange={setCorrectAnswer}
+                onChange={(v) => { setCorrectAnswer(v); setDirty(true); }}
                 multiline={answerType === 'written'}
                 minHeight={answerType === 'written' ? '72px' : undefined}
                 inputClassName={answerType === 'written' ? undefined : 'rounded-lg'}
@@ -595,7 +646,7 @@ export function ManualQuestionEntry({
               <FormattedTextField
                 label="Unit"
                 value={unit}
-                onChange={setUnit}
+                onChange={(v) => { setUnit(v); setDirty(true); }}
                 multiline={false}
                 inlinePreview
                 inputClassName="rounded-lg font-mono"
@@ -609,7 +660,7 @@ export function ManualQuestionEntry({
               </label>
               <select
                 value={answerType}
-                onChange={(e) => setAnswerType(e.target.value as AnswerType)}
+                onChange={(e) => { setAnswerType(e.target.value as AnswerType); setDirty(true); }}
                 className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
               >
                 <option value="exact">Exact</option>
@@ -627,7 +678,7 @@ export function ManualQuestionEntry({
                   step="any"
                   min="0"
                   value={answerTolerance}
-                  onChange={(e) => setAnswerTolerance(e.target.value)}
+                  onChange={(e) => { setAnswerTolerance(e.target.value); setDirty(true); }}
                   placeholder="0.05"
                   className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
                 />
@@ -642,7 +693,7 @@ export function ManualQuestionEntry({
         <FormattedTextField
           label="Explanation (optional)"
           value={explanation}
-          onChange={setExplanation}
+          onChange={(v) => { setExplanation(v); setDirty(true); }}
           multiline
           minHeight="70px"
           placeholder="Worked solution or hint shown after the student answers. Paste raw text and hit Format to auto-typeset."
@@ -655,7 +706,7 @@ export function ManualQuestionEntry({
             </label>
             <input
               value={sourceReference}
-              onChange={(e) => setSourceReference(e.target.value)}
+              onChange={(e) => { setSourceReference(e.target.value); setDirty(true); }}
               placeholder="e.g. 2021 Final Exam, Q3"
               className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
             />
@@ -899,7 +950,7 @@ export function ManualQuestionEntry({
               ) : !addingTopic ? (
                 <select
                   value={topicId}
-                  onChange={(e) => setTopicId(e.target.value)}
+                  onChange={(e) => { setTopicId(e.target.value); setDirty(true); }}
                   className="w-full bg-bg-sunken border border-border-subtle rounded-lg px-2.5 py-1.5 text-sm text-text-primary focus:border-primary focus:outline-none"
                 >
                   <option value="" disabled hidden>
@@ -977,7 +1028,7 @@ export function ManualQuestionEntry({
             {DIFFICULTIES.map((d) => (
               <button
                 key={d}
-                onClick={() => setDifficulty(d)}
+                onClick={() => { setDifficulty(d); setDirty(true); }}
                 className={cn(
                   'px-2 py-1.5 rounded-lg border text-xs font-bold uppercase transition-all',
                   difficulty === d
@@ -997,7 +1048,7 @@ export function ManualQuestionEntry({
             {EXAM_SCOPES.map((s) => (
               <button
                 key={s}
-                onClick={() => setExamScope(s)}
+                onClick={() => { setExamScope(s); setDirty(true); }}
                 className={cn(
                   'px-2 py-1.5 rounded-lg border text-xs font-bold uppercase transition-all',
                   examScope === s

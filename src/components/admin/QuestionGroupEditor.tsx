@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Loader2, Save, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Plus, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { apiGet, apiPatch } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { FormattedTextField } from './FormattedTextField';
@@ -44,14 +44,29 @@ interface Props {
   courseLabel?: string;
   onCancel: () => void;
   onDone: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
+  prevDisabled?: boolean;
+  nextDisabled?: boolean;
 }
 
-export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, onDone }: Props) {
+export function QuestionGroupEditor({
+  groupId,
+  topics,
+  courseLabel,
+  onCancel,
+  onDone,
+  onPrev,
+  onNext,
+  prevDisabled,
+  nextDisabled,
+}: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [parts, setParts] = useState<QuestionPart[]>([]);
   const [activeId, setActiveId] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
 
   // Shared (group-level) editable values — first part is the source of truth.
   const first = parts[0];
@@ -71,6 +86,7 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
         );
         setParts(sorted);
         setActiveId(sorted[0]?.id ?? '');
+        setDirty(false);
       })
       .catch((e) => !cancelled && setError(e instanceof Error ? e.message : String(e)))
       .finally(() => !cancelled && setLoading(false));
@@ -83,6 +99,7 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
 
   const patchActive = (patch: Partial<QuestionPart>) => {
     setParts((prev) => prev.map((p) => (p.id === active?.id ? { ...p, ...patch } : p)));
+    setDirty(true);
   };
   const patchActiveContent = (patch: Partial<QuestionContent>) => {
     setParts((prev) =>
@@ -90,14 +107,17 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
         p.id === active?.id ? { ...p, content: { ...p.content, ...patch } } : p
       )
     );
+    setDirty(true);
   };
   const patchAll = (patch: Partial<QuestionPart>) => {
     setParts((prev) => prev.map((p) => ({ ...p, ...patch })));
+    setDirty(true);
   };
   const patchAllContent = (patch: Partial<QuestionContent>) => {
     setParts((prev) =>
       prev.map((p) => ({ ...p, content: { ...p.content, ...patch } }))
     );
+    setDirty(true);
   };
 
   const [toleranceStrs, setToleranceStrs] = useState<Record<string, string>>({});
@@ -184,6 +204,7 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
         })),
       };
       await apiPatch(`/api/questions/by-group/${groupId}`, body);
+      setDirty(false);
       onDone();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -216,8 +237,38 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
         >
           <ArrowLeft className="w-4 h-4" /> Back to library
         </button>
-        <div className="text-xs text-text-secondary">
-          {courseLabel ? `${courseLabel} · ` : ''}Multi-part group · {parts.length} parts
+        <div className="flex items-center gap-4">
+          {onPrev && (
+            <button
+              type="button"
+              onClick={() => {
+                if (dirty && !confirm('Discard unsaved changes and move to another question?')) return;
+                onPrev();
+              }}
+              disabled={prevDisabled}
+              className="flex items-center gap-1 text-xs font-bold text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Prev
+            </button>
+          )}
+          {onNext && (
+            <button
+              type="button"
+              onClick={() => {
+                if (dirty && !confirm('Discard unsaved changes and move to another question?')) return;
+                onNext();
+              }}
+              disabled={nextDisabled}
+              className="flex items-center gap-1 text-xs font-bold text-text-secondary hover:text-text-primary disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              Next
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <div className="text-xs text-text-secondary">
+            {courseLabel ? `${courseLabel} · ` : ''}Multi-part group · {parts.length} parts
+          </div>
         </div>
       </div>
 
@@ -387,9 +438,10 @@ export function QuestionGroupEditor({ groupId, topics, courseLabel, onCancel, on
                       type="text"
                       inputMode="decimal"
                       value={toleranceStrs[active.id] ?? ''}
-                      onChange={(e) =>
-                        setToleranceStrs((prev) => ({ ...prev, [active.id]: e.target.value }))
-                      }
+                      onChange={(e) => {
+                        setToleranceStrs((prev) => ({ ...prev, [active.id]: e.target.value }));
+                        setDirty(true);
+                      }}
                       onBlur={() => {
                         const r = commitPartTolerance(active.id);
                         if (r) patchActiveContent({ answer_tolerance: r.tolerance });
