@@ -93,6 +93,7 @@ interface ApiTopic {
   id: string;
   name: string;
   description?: string | null;
+  question_count?: number;
 }
 
 interface ApiAsset {
@@ -441,7 +442,10 @@ export default function App() {
     setTopicsLoading(true);
     apiGet<ApiTopic[]>(`/api/topics?program_course_id=${state.selectedCourse.id}`)
       .then((rows) => {
-        if (!cancelled) setAvailableTopics(rows.map((r) => ({ id: r.id, name: r.name })));
+        if (!cancelled)
+          setAvailableTopics(
+            rows.map((r) => ({ id: r.id, name: r.name, questionsCount: r.question_count ?? 0 }))
+          );
       })
       .catch((e) => {
         if (cancelled) return;

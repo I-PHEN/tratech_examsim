@@ -12,13 +12,25 @@ router.get(
   '/',
   asyncHandler(async (req, res) => {
     const query = parse(TopicListQuery, req.query);
-    const { data, error } = await supabase
+    const { data: topics, error } = await supabase
       .from('topics')
       .select('*')
       .eq('program_course_id', query.program_course_id)
       .order('name', { ascending: true });
     if (error) throw error;
-    res.json(data);
+    const rows = topics ?? [];
+    if (rows.length === 0) return res.json([]);
+
+    const { data: qRows, error: qErr } = await supabase
+      .from('questions')
+      .select('topic_id')
+      .in('topic_id', rows.map((t) => t.id));
+    if (qErr) throw qErr;
+    const counts = new Map<string, number>();
+    for (const r of (qRows ?? []) as Array<{ topic_id: string }>) {
+      counts.set(r.topic_id, (counts.get(r.topic_id) ?? 0) + 1);
+    }
+    res.json(rows.map((t) => ({ ...t, question_count: counts.get(t.id) ?? 0 })));
   })
 );
 
