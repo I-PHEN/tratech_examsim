@@ -203,6 +203,7 @@ export function ManualQuestionEntry({
         return next;
       });
       setTopicId(created.id);
+      setDirty(true);
       setNewTopicName('');
       setAddingTopic(false);
     } catch (e) {
