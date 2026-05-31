@@ -96,6 +96,13 @@ interface ApiTopic {
   question_count?: number;
 }
 
+interface ApiMastery {
+  topic_id: string;
+  state: 'not_started' | 'in_progress' | 'scored';
+  mastery: number;
+  answered_count: number;
+}
+
 interface ApiAsset {
   id: string;
   url: string;
@@ -440,12 +447,27 @@ export default function App() {
       return;
     }
     setTopicsLoading(true);
-    apiGet<ApiTopic[]>(`/api/topics?program_course_id=${state.selectedCourse.id}`)
-      .then((rows) => {
-        if (!cancelled)
-          setAvailableTopics(
-            rows.map((r) => ({ id: r.id, name: r.name, questionsCount: r.question_count ?? 0 }))
-          );
+    Promise.all([
+      apiGet<ApiTopic[]>(`/api/topics?program_course_id=${state.selectedCourse.id}`),
+      apiGet<ApiMastery[]>(`/api/mastery?program_course_id=${state.selectedCourse.id}`).catch(
+        () => [] as ApiMastery[]
+      ),
+    ])
+      .then(([rows, mastery]) => {
+        if (cancelled) return;
+        const byTopic = new Map(mastery.map((m) => [m.topic_id, m]));
+        setAvailableTopics(
+          rows.map((r) => {
+            const m = byTopic.get(r.id);
+            return {
+              id: r.id,
+              name: r.name,
+              questionsCount: r.question_count ?? 0,
+              mastery: m?.mastery ?? 0,
+              masteryState: m?.state ?? 'not_started',
+            };
+          })
+        );
       })
       .catch((e) => {
         if (cancelled) return;

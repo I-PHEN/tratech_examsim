@@ -70,15 +70,21 @@ export function TopicCard({
               {topic.questionsCount ?? 0} Questions
             </span>
             <span className={active ? 'text-accent-text' : 'text-text-tertiary'}>
-              {topic.mastery ?? 0}% Mastery
+              {topic.masteryState === 'scored'
+                ? `${topic.mastery ?? 0}% Mastery`
+                : topic.masteryState === 'in_progress'
+                  ? 'In progress'
+                  : 'Not started'}
             </span>
           </div>
           <div className="w-full h-1 bg-bg-sunken rounded-full overflow-hidden">
             <div
-              style={{ width: `${topic.mastery ?? 0}%` }}
+              style={{ width: topic.masteryState === 'scored' ? `${topic.mastery ?? 0}%` : topic.masteryState === 'in_progress' ? '12%' : '0%' }}
               className={cn(
                 'h-full rounded-full transition-colors',
-                active ? 'bg-accent' : 'bg-text-tertiary/40',
+                topic.masteryState === 'scored'
+                  ? active ? 'bg-accent' : 'bg-text-tertiary/40'
+                  : 'bg-text-tertiary/20',
               )}
             />
           </div>

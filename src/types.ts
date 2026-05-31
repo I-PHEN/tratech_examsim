@@ -34,6 +34,7 @@ export interface Topic {
   name: string;
   questionsCount?: number;
   mastery?: number;
+  masteryState?: 'not_started' | 'in_progress' | 'scored';
   difficulty?: 'Easy' | 'Medium' | 'Hard';
 }
 
