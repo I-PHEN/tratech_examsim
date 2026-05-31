@@ -79,7 +79,7 @@ import { ModeCard } from './components/ui/ModeCard';
 import { TopicCard } from './components/ui/TopicCard';
 import { NotificationsBell } from './components/NotificationsBell';
 import { ApiError, apiDelete, apiGet, apiPost } from './lib/apiClient';
-import { Loader2 } from 'lucide-react';
+import { Bookmark, Loader2 } from 'lucide-react';
 
 interface ApiProgramCourse {
   id: string;
@@ -1677,6 +1677,7 @@ interface ReviewSessionData {
     content: { prompt: string; explanation?: string | null; correct_answer?: string | null; unit?: string | null; shared_stem?: string | null };
     options: Array<{ id: string; text: string; is_correct: boolean }>;
     assets: Array<{ id: string; url: string }>;
+    bookmarked?: boolean;
   }>;
   topic_breakdown?: Array<{
     topic_id: string;
@@ -1758,6 +1759,31 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
   const [data, setData] = useState<ReviewSessionData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [bookmarkedIds, setBookmarkedIds] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!data) return;
+    setBookmarkedIds(new Set(data.questions.filter((q) => q.bookmarked).map((q) => q.id)));
+  }, [data]);
+
+  const toggleBookmark = async (questionId: string) => {
+    const isOn = bookmarkedIds.has(questionId);
+    setBookmarkedIds((prev) => {
+      const next = new Set(prev);
+      if (isOn) next.delete(questionId); else next.add(questionId);
+      return next;
+    });
+    try {
+      if (isOn) await apiDelete(`/api/bookmarks/${questionId}`);
+      else await apiPost('/api/bookmarks', { question_id: questionId });
+    } catch {
+      setBookmarkedIds((prev) => {
+        const next = new Set(prev);
+        if (isOn) next.add(questionId); else next.delete(questionId);
+        return next;
+      });
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -2053,6 +2079,14 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
                           {it.isUnanswered ? "Unanswered" : it.isCorrect ? "Correct" : "Incorrect"}
                         </div>
                         <ChevronDown className={cn("w-4 h-4 text-text-tertiary shrink-0 transition-transform", isOpen && "rotate-180")} />
+                      </button>
+                      <button
+                        onClick={() => toggleBookmark(it.id)}
+                        className="shrink-0 p-1.5 rounded-lg hover:bg-bg-raised text-text-tertiary hover:text-accent-text transition-colors"
+                        aria-label={bookmarkedIds.has(it.id) ? 'Remove bookmark' : 'Save question'}
+                        title={bookmarkedIds.has(it.id) ? 'Saved' : 'Save'}
+                      >
+                        <Bookmark className={cn('w-4 h-4', bookmarkedIds.has(it.id) ? 'fill-accent text-accent' : 'fill-none')} />
                       </button>
                       <button
                         onClick={() => setFocusedId(it.id)}
