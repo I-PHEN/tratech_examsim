@@ -65,6 +65,7 @@ import {
 import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
 import { cn } from './lib/utils';
 import { MySessionsScreen } from './components/MySessionsScreen';
+import { SavedScreen } from './components/SavedScreen';
 import { PerformanceScreen } from './components/PerformanceScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HelpScreen } from './components/HelpScreen';
@@ -694,6 +695,26 @@ export default function App() {
     }
   };
 
+  const startSavedQuiz = async (questionIds: string[]) => {
+    if (!state.selectedCourse || questionIds.length === 0) return;
+    setStartError(null);
+    try {
+      const res = await apiPost<ApiSessionCreated>('/api/sessions', {
+        program_course_id: state.selectedCourse.id,
+        mode: 'practice',
+        question_ids: questionIds,
+      });
+      setActiveSession({
+        sessionId: res.session_id,
+        questions: apiQuestionsToFrontend(res.picked),
+        difficultyFallback: res.difficulty_fallback,
+      });
+      setState((prev) => ({ ...prev, step: 'EXAM' }));
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : 'Could not start the saved quiz.');
+    }
+  };
+
   const finishExam = (sessionId: string) => {
     setActiveSession(null);
     setState(prev => ({
@@ -721,7 +742,7 @@ export default function App() {
       setActiveSession(null);
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
-    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
+    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'SAVED' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
   };
@@ -814,6 +835,9 @@ export default function App() {
               <NavItem onClick={() => { setActiveSession(null); setState(p => ({ ...p, returnStep: undefined, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              {state.selectedCourse && (
+                <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SAVED' })); setIsMobileMenuOpen(false); }} icon={Bookmark} label="Saved" active={state.step === 'SAVED'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              )}
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
             </div>
 
@@ -939,6 +963,11 @@ export default function App() {
                  .then(setRecentSessions)
                  .catch(() => setRecentSessions([]));
              }}
+          />
+        ) : state.step === 'SAVED' && state.selectedCourse ? (
+          <SavedScreen
+            programCourseId={state.selectedCourse.id}
+            onQuiz={startSavedQuiz}
           />
         ) : state.step === 'PERFORMANCE' ? (
           <PerformanceScreen
