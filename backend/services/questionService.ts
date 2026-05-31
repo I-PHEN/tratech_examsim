@@ -57,6 +57,46 @@ export interface McqOption {
   is_correct: boolean;
 }
 
+/** One labeled answer field of a multi-input calc question. */
+export interface AnswerFieldSpec {
+  position: number;
+  label: string;
+  correct_answer: string;
+  answer_type: 'exact' | 'range';
+  answer_tolerance: number | null;
+  unit: string | null;
+}
+
+/** Human-readable join of a multi-input answer, stored in question_content.correct_answer for previews. */
+function buildAnswerSummary(fields: { label: string; correct_answer: string; unit?: string | null }[]): string {
+  return fields
+    .map((f) => `${f.label} = ${f.correct_answer}${f.unit ? ` ${f.unit}` : ''}`)
+    .join('; ');
+}
+
+interface AnswerFieldInput {
+  label: string;
+  correct_answer: string;
+  answer_type: 'exact' | 'range';
+  answer_tolerance?: number;
+  unit?: string;
+}
+
+/** Write the ordered answer-field rows for a multi-input calc question. */
+async function insertAnswerFields(questionId: string, fields: AnswerFieldInput[]): Promise<void> {
+  const rows = fields.map((f, i) => ({
+    question_id: questionId,
+    position: i,
+    label: f.label,
+    correct_answer: f.correct_answer,
+    answer_type: f.answer_type,
+    answer_tolerance: f.answer_tolerance ?? null,
+    unit: f.unit ?? null,
+  }));
+  const { error } = await supabase.from('question_answer_fields').insert(rows);
+  if (error) throw error;
+}
+
 export interface QuestionAsset {
   id: string;
   storage_path: string;
@@ -73,12 +113,14 @@ export interface QuestionWithContent {
   type: 'mcq' | 'calc';
   difficulty: 'easy' | 'medium' | 'hard';
   exam_scope: 'midsem' | 'final' | 'both';
-  answer_type: 'exact' | 'range' | 'written' | null;
+  answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
   question_group_id: string | null;
   part_label: string | null;
   part_index: number | null;
   content: QuestionContent;
   options?: McqOption[];
+  /** Present only for answer_type 'multi'. Ordered by position. */
+  answer_fields?: AnswerFieldSpec[];
   assets: QuestionAsset[];
 }
 
@@ -148,12 +190,13 @@ interface QuestionJoinRow {
   type: 'mcq' | 'calc';
   difficulty: 'easy' | 'medium' | 'hard';
   exam_scope: 'midsem' | 'final' | 'both';
-  answer_type: 'exact' | 'range' | 'written' | null;
+  answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
   question_group_id: string | null;
   part_label: string | null;
   part_index: number | null;
   question_content: QuestionContent | QuestionContent[] | null;
   mcq_options: McqOption[] | null;
+  question_answer_fields: AnswerFieldSpec[] | null;
   question_assets: AssetRow[] | null;
 }
 
@@ -174,6 +217,7 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
         'question_group_id, part_label, part_index, ' +
         'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
         'mcq_options(id, text, is_correct), ' +
+        'question_answer_fields(position, label, correct_answer, answer_type, answer_tolerance, unit), ' +
         'question_assets(id, storage_path, mime_type, position, kind)'
     )
     .eq('id', id)
@@ -197,6 +241,10 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
     part_index: row.part_index,
     content: unwrapContent(row.question_content),
     options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
+    answer_fields:
+      row.answer_type === 'multi'
+        ? (row.question_answer_fields ?? []).slice().sort((a, b) => a.position - b.position)
+        : undefined,
     assets: await mapAssets(row.question_assets),
   };
 
@@ -221,6 +269,13 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
         400,
         'INVALID_CALC',
         'Calc questions with answer_type=range require answer_tolerance'
+      );
+    }
+    if (input.answer_type === 'multi' && (!input.answer_fields || input.answer_fields.length < 2)) {
+      throw new ApiError(
+        400,
+        'INVALID_CALC',
+        'Multi-input calc questions require at least 2 answer fields'
       );
     }
   }
@@ -263,9 +318,12 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
             question_id: questionId,
             prompt: input.content.prompt,
             explanation: input.content.explanation ?? null,
-            correct_answer: input.content.correct_answer,
-            answer_tolerance: input.content.answer_tolerance ?? null,
-            unit: input.content.unit ?? null,
+            correct_answer:
+              input.answer_type === 'multi'
+                ? buildAnswerSummary(input.answer_fields ?? [])
+                : input.content.correct_answer ?? '',
+            answer_tolerance: input.answer_type === 'multi' ? null : input.content.answer_tolerance ?? null,
+            unit: input.answer_type === 'multi' ? null : input.content.unit ?? null,
             source_reference: input.content.source_reference ?? null,
             shared_stem: input.content.shared_stem ?? null,
           };
@@ -281,6 +339,8 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
       }));
       const { error: optionsErr } = await supabase.from('mcq_options').insert(optionRows);
       if (optionsErr) throw optionsErr;
+    } else if (input.answer_type === 'multi') {
+      await insertAnswerFields(questionId, input.answer_fields ?? []);
     }
 
     return await getQuestionById(questionId);
@@ -318,6 +378,12 @@ export async function updateQuestion(
       'INVALID_CALC',
       'Calc questions with answer_type=range require answer_tolerance'
     );
+  } else if (input.answer_type === 'multi' && (!input.answer_fields || input.answer_fields.length < 2)) {
+    throw new ApiError(
+      400,
+      'INVALID_CALC',
+      'Multi-input calc questions require at least 2 answer fields'
+    );
   }
 
   const questionPatch = {
@@ -351,9 +417,12 @@ export async function updateQuestion(
           question_id: id,
           prompt: input.content.prompt,
           explanation: input.content.explanation ?? null,
-          correct_answer: input.content.correct_answer,
-          answer_tolerance: input.content.answer_tolerance ?? null,
-          unit: input.content.unit ?? null,
+          correct_answer:
+            input.answer_type === 'multi'
+              ? buildAnswerSummary(input.answer_fields ?? [])
+              : input.content.correct_answer ?? '',
+          answer_tolerance: input.answer_type === 'multi' ? null : input.content.answer_tolerance ?? null,
+          unit: input.answer_type === 'multi' ? null : input.content.unit ?? null,
           source_reference: input.content.source_reference ?? null,
           shared_stem: input.content.shared_stem ?? null,
         };
@@ -375,6 +444,16 @@ export async function updateQuestion(
     }));
     const { error: optsErr } = await supabase.from('mcq_options').insert(optionRows);
     if (optsErr) throw optsErr;
+  } else {
+    // Calc: replace any existing answer fields (handles single↔multi switches).
+    const { error: delFieldsErr } = await supabase
+      .from('question_answer_fields')
+      .delete()
+      .eq('question_id', id);
+    if (delFieldsErr) throw delFieldsErr;
+    if (input.answer_type === 'multi') {
+      await insertAnswerFields(id, input.answer_fields ?? []);
+    }
   }
 
   return await getQuestionById(id);

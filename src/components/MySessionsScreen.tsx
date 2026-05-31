@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Clock, Search, History, CheckCircle2, ChevronRight, Trash2, AlertTriangle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Clock, Search, History, CheckCircle2, ChevronRight, Trash2, AlertTriangle, Loader2, Bookmark } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { StudyMode } from '../types';
 import { apiDelete, apiGet } from '../lib/apiClient';
@@ -8,6 +8,16 @@ import { Spinner } from './ui/Spinner';
 import { EmptyState } from './ui/EmptyState';
 import { Pill } from './ui/Pill';
 import { Button } from './ui/Button';
+import { RichText } from './ui/RichText';
+
+interface SavedQuestion {
+  id: string;
+  topic_name: string | null;
+  course_name: string | null;
+  type: 'mcq' | 'calc';
+  prompt: string;
+  session_id: string | null;
+}
 
 interface ApiSession {
   id: string;
@@ -49,12 +59,17 @@ function formatDate(iso: string): string {
 export function MySessionsScreen({
   onBack,
   onReview,
+  onReviewQuestion,
   onSessionDeleted,
 }: {
   onBack: () => void;
   onReview: (id: string) => void;
+  onReviewQuestion: (sessionId: string, questionId: string) => void;
   onSessionDeleted?: () => void;
 }) {
+  const [view, setView] = useState<'sessions' | 'saved'>('sessions');
+  const [saved, setSaved] = useState<SavedQuestion[]>([]);
+  const [savedLoading, setSavedLoading] = useState(false);
   const [filterMode, setFilterMode] = useState<StudyMode | 'ALL'>('ALL');
   const [searchQuery, setSearchQuery] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -120,16 +135,30 @@ export function MySessionsScreen({
     };
   }, []);
 
+  useEffect(() => {
+    if (view !== 'saved') return;
+    let cancelled = false;
+    setSavedLoading(true);
+    apiGet<SavedQuestion[]>('/api/bookmarks')
+      .then((rows) => { if (!cancelled) setSaved(rows); })
+      .catch(() => { if (!cancelled) setSaved([]); })
+      .finally(() => { if (!cancelled) setSavedLoading(false); });
+    return () => { cancelled = true; };
+  }, [view]);
+
   const filteredHistory = useMemo(() => {
     return sessions
       .filter((session) => session.finished_at !== null)
       .filter((session) => {
         if (filterMode !== 'ALL' && MODE_DISPLAY[session.mode] !== filterMode) return false;
-        const q = searchQuery.toLowerCase();
+        const q = searchQuery.trim().toLowerCase();
         if (q) {
           const course = (session.course_name ?? '').toLowerCase();
           const topic = (session.topic_name ?? '').toLowerCase();
-          if (!course.includes(q) && !topic.includes(q)) return false;
+          // Mode is the most distinguishing field on a card, so search it too
+          // (e.g. "midsem", "practice") — matched on both the raw and display form.
+          const mode = `${session.mode} ${MODE_DISPLAY[session.mode].replace('_', ' ')}`.toLowerCase();
+          if (!course.includes(q) && !topic.includes(q) && !mode.includes(q)) return false;
         }
         return true;
       });
@@ -163,12 +192,32 @@ export function MySessionsScreen({
           </div>
         </header>
 
+        <div className="flex gap-2">
+          {(['sessions', 'saved'] as const).map((v) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider border transition-colors',
+                view === v
+                  ? 'bg-accent text-slate-950 border-accent'
+                  : 'bg-bg-surface text-text-secondary border-border-subtle hover:text-text-primary hover:border-border-medium'
+              )}
+            >
+              {v === 'sessions' ? <History className="w-3.5 h-3.5" /> : <Bookmark className="w-3.5 h-3.5" />}
+              {v === 'sessions' ? 'Sessions' : 'Saved'}
+            </button>
+          ))}
+        </div>
+
+        {view === 'sessions' ? (
+        <>
         <Card variant="default" padding="none" className="flex flex-col md:flex-row gap-4 p-3">
           <div className="flex-1 relative">
             <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               type="text"
-              placeholder="Search by course or topic..."
+              placeholder="Search by course, topic, or mode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-bg-page border border-border-subtle rounded-xl py-3 pl-12 pr-4 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent transition-colors"
@@ -345,6 +394,44 @@ export function MySessionsScreen({
             </div>
           )}
         </div>
+        </>
+        ) : (
+          <div className="space-y-3">
+            {savedLoading ? (
+              <Spinner size="md" className="py-20" />
+            ) : saved.length === 0 ? (
+              <EmptyState
+                icon={Bookmark}
+                title="No saved questions yet"
+                description="Star a question from any review to save it here."
+              />
+            ) : (
+              saved.map((q) => (
+                <Card
+                  key={q.id}
+                  variant={q.session_id ? 'interactive' : 'default'}
+                  padding="md"
+                  onClick={q.session_id ? () => onReviewQuestion(q.session_id!, q.id) : undefined}
+                  className="group flex items-center gap-4"
+                >
+                  <Bookmark className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)', fill: 'var(--accent)' }} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary mb-1">
+                      {q.course_name ?? 'Course'} · {q.topic_name ?? 'Untitled topic'} · {q.type === 'mcq' ? 'MCQ' : 'Calc'}
+                    </div>
+                    <RichText className="text-sm text-text-primary line-clamp-2">{q.prompt}</RichText>
+                    {!q.session_id && (
+                      <p className="text-[10px] text-text-tertiary mt-1">Original session was deleted — can’t open review.</p>
+                    )}
+                  </div>
+                  {q.session_id && (
+                    <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-primary transition-colors shrink-0" />
+                  )}
+                </Card>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {pendingDelete && (

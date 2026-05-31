@@ -4,6 +4,22 @@ import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiCl
 import { cn } from '../../lib/utils';
 import { CourseSelect } from './CourseSelect';
 import { FormattedTextField } from './FormattedTextField';
+import {
+  AnswerFieldsEditor,
+  emptyAnswerField,
+  validateAnswerFields,
+  answerFieldsToPayload,
+  type AnswerFieldState,
+} from './AnswerFieldsEditor';
+import {
+  PartEditor,
+  emptyPart,
+  validatePart,
+  partToContentPayload,
+  type PartState,
+} from './PartEditor';
+
+const PART_LABELS = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
 
 type QType = 'mcq' | 'calc';
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -46,7 +62,7 @@ interface LoadedQuestion {
   type: QType;
   difficulty: Difficulty;
   exam_scope: ExamScope;
-  answer_type: AnswerType | null;
+  answer_type: AnswerType | 'multi' | null;
   content: {
     prompt: string;
     explanation: string | null;
@@ -56,6 +72,14 @@ interface LoadedQuestion {
     source_reference?: string | null;
   };
   options?: Array<{ id: string; text: string; is_correct: boolean }>;
+  answer_fields?: Array<{
+    position: number;
+    label: string;
+    correct_answer: string;
+    answer_type: 'exact' | 'range';
+    answer_tolerance: number | null;
+    unit: string | null;
+  }>;
   assets: AttachedAsset[];
 }
 
@@ -114,6 +138,17 @@ export function ManualQuestionEntry({
   const [answerType, setAnswerType] = useState<AnswerType>('exact');
   const [answerTolerance, setAnswerTolerance] = useState('');
   const [unit, setUnit] = useState('');
+  // Multi-input calc: several labeled answer fields instead of one.
+  const [multiAnswer, setMultiAnswer] = useState(false);
+  const [answerFields, setAnswerFields] = useState<AnswerFieldState[]>([
+    emptyAnswerField(),
+    emptyAnswerField(),
+  ]);
+
+  // Multi-part: a shared stem + several linked sub-parts (create-only).
+  const [multiPart, setMultiPart] = useState(false);
+  const [sharedStem, setSharedStem] = useState('');
+  const [parts, setParts] = useState<PartState[]>([emptyPart('a'), emptyPart('b')]);
 
   const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
   const [attachedDiagrams, setAttachedDiagrams] = useState<AttachedAsset[]>([]);
@@ -145,6 +180,20 @@ export function ManualQuestionEntry({
         setSourceReference(q.content.source_reference ?? '');
         if (q.type === 'mcq' && q.options) {
           setOptions(q.options.map((o) => ({ text: o.text, is_correct: o.is_correct })));
+        } else if (q.answer_type === 'multi') {
+          setMultiAnswer(true);
+          setAnswerFields(
+            (q.answer_fields ?? [])
+              .slice()
+              .sort((a, b) => a.position - b.position)
+              .map((f) => ({
+                label: f.label,
+                correct_answer: f.correct_answer,
+                answer_type: f.answer_type,
+                answer_tolerance: f.answer_tolerance != null ? String(f.answer_tolerance) : '',
+                unit: f.unit ?? '',
+              }))
+          );
         } else {
           setCorrectAnswer(q.content.correct_answer ?? '');
           setAnswerType(q.answer_type ?? 'exact');
@@ -230,6 +279,11 @@ export function ManualQuestionEntry({
     setAnswerType('exact');
     setAnswerTolerance('');
     setUnit('');
+    setMultiAnswer(false);
+    setAnswerFields([emptyAnswerField(), emptyAnswerField()]);
+    setMultiPart(false);
+    setSharedStem('');
+    setParts([emptyPart('a'), emptyPart('b')]);
     pendingImages.forEach((p) => URL.revokeObjectURL(p.previewUrl));
     setPendingImages([]);
   };
@@ -307,12 +361,25 @@ export function ManualQuestionEntry({
   const validateBeforeSubmit = (): string | null => {
     if (!programCourseId) return 'Pick a course.';
     if (!topicId) return 'Pick a topic.';
+    if (multiPart) {
+      if (parts.length < 2) return 'A multi-part question needs at least 2 parts.';
+      const labels = parts.map((p) => p.partLabel.trim());
+      if (labels.some((l) => l.length === 0)) return 'Every part needs a label.';
+      if (new Set(labels).size !== labels.length) return 'Part labels must be unique.';
+      for (const p of parts) {
+        const err = validatePart(p);
+        if (err) return err;
+      }
+      return null;
+    }
     if (prompt.trim().length === 0) return 'Question prompt is required.';
     if (type === 'mcq') {
       if (options.length < 2) return 'MCQ needs at least 2 options.';
       if (options.some((o) => o.text.trim().length === 0)) return 'Every option needs text.';
       const correctCount = options.filter((o) => o.is_correct).length;
       if (correctCount !== 1) return 'Exactly one option must be marked correct.';
+    } else if (multiAnswer) {
+      return validateAnswerFields(answerFields);
     } else {
       if (correctAnswer.trim().length === 0) return 'Calc question needs a correct answer.';
       if (answerType === 'range' && !answerTolerance.trim()) {
@@ -336,6 +403,28 @@ export function ManualQuestionEntry({
     setStatusText(editing ? 'Saving changes…' : 'Saving question…');
 
     try {
+      let targetId: string;
+      if (multiPart) {
+        // Author a linked multi-part group: one create per part, all sharing a
+        // client-generated question_group_id + the shared stem.
+        const groupId = crypto.randomUUID();
+        let firstId = '';
+        for (let i = 0; i < parts.length; i++) {
+          setStatusText(`Saving part ${i + 1}/${parts.length}…`);
+          const created = await apiPost<{ id: string }>('/api/questions', {
+            program_course_id: programCourseId,
+            topic_id: topicId,
+            difficulty,
+            exam_scope: examScope,
+            question_group_id: groupId,
+            part_label: parts[i].partLabel.trim(),
+            part_index: i,
+            ...partToContentPayload(parts[i], sharedStem, sourceReference),
+          });
+          if (i === 0) firstId = created.id;
+        }
+        targetId = firstId;
+      } else {
       const createPayload =
         type === 'mcq'
           ? {
@@ -350,6 +439,21 @@ export function ManualQuestionEntry({
                 ...(sourceReference.trim() ? { source_reference: sourceReference.trim() } : {}),
               },
               options: options.map((o) => ({ text: o.text.trim(), is_correct: o.is_correct })),
+            }
+          : multiAnswer
+          ? {
+              program_course_id: programCourseId,
+              topic_id: topicId,
+              difficulty,
+              exam_scope: examScope,
+              type: 'calc' as const,
+              answer_type: 'multi' as const,
+              content: {
+                prompt: prompt.trim(),
+                explanation: explanation.trim() || undefined,
+                ...(sourceReference.trim() ? { source_reference: sourceReference.trim() } : {}),
+              },
+              answer_fields: answerFieldsToPayload(answerFields),
             }
           : {
               program_course_id: programCourseId,
@@ -368,7 +472,6 @@ export function ManualQuestionEntry({
               },
             };
 
-      let targetId: string;
       if (editing) {
         const { program_course_id: _omit, ...rest } = createPayload;
         await apiPatch(`/api/questions/${editing.id}`, rest);
@@ -376,6 +479,7 @@ export function ManualQuestionEntry({
       } else {
         const created = await apiPost<{ id: string }>('/api/questions', createPayload);
         targetId = created.id;
+      }
       }
 
       let solutionImageError: string | null = null;
@@ -538,6 +642,20 @@ export function ManualQuestionEntry({
             </div>
           </div>
         )}
+        {!editing && (
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={multiPart}
+              onChange={(e) => { setMultiPart(e.target.checked); setDirty(true); }}
+              className="accent-primary w-4 h-4"
+            />
+            <span className="text-xs font-bold text-text-primary">Multi-part question</span>
+            <span className="text-[10px] text-text-tertiary">— a shared setup with linked sub-parts (a, b, c…)</span>
+          </label>
+        )}
+
+        {!multiPart && (
         <div className="flex gap-2">
           {(['mcq', 'calc'] as QType[]).map((t) => (
             <button
@@ -562,17 +680,68 @@ export function ManualQuestionEntry({
             </button>
           ))}
         </div>
+        )}
 
-        <FormattedTextField
-          label="Question Prompt"
-          value={prompt}
-          onChange={(v) => { setPrompt(v); setDirty(true); }}
-          multiline
-          minHeight="120px"
-          placeholder="Type the full question text here. Paste raw text and hit Format to auto-typeset math/units. For multi-part questions, create one entry per sub-part."
-        />
+        {multiPart ? (
+          <FormattedTextField
+            label="Shared setup (stem)"
+            value={sharedStem}
+            onChange={(v) => { setSharedStem(v); setDirty(true); }}
+            multiline
+            minHeight="100px"
+            placeholder="The common context shown once above every part (e.g. the reactor data, the scenario). Each part's specific task goes in that part below."
+          />
+        ) : (
+          <FormattedTextField
+            label="Question Prompt"
+            value={prompt}
+            onChange={(v) => { setPrompt(v); setDirty(true); }}
+            multiline
+            minHeight="120px"
+            placeholder="Type the full question text here. Paste raw text and hit Format to auto-typeset math/units."
+          />
+        )}
 
-        {type === 'mcq' ? (
+        {multiPart ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-[10px] text-text-secondary font-bold uppercase tracking-wider">
+                Parts · {parts.length}
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  if (parts.length >= 8) return;
+                  setParts((prev) => [...prev, emptyPart(PART_LABELS[prev.length] ?? String(prev.length + 1))]);
+                  setDirty(true);
+                }}
+                disabled={parts.length >= 8}
+                className="flex items-center gap-1 text-xs font-bold text-primary disabled:opacity-30 hover:underline"
+              >
+                <Plus className="w-3 h-3" /> Add part
+              </button>
+            </div>
+            {parts.map((p, i) => (
+              <PartEditor
+                key={i}
+                part={p}
+                index={i}
+                canRemove={parts.length > 2}
+                onChange={(next) => {
+                  setParts((prev) => prev.map((pp, idx) => (idx === i ? next : pp)));
+                  setDirty(true);
+                }}
+                onRemove={() => {
+                  setParts((prev) => prev.filter((_, idx) => idx !== i));
+                  setDirty(true);
+                }}
+              />
+            ))}
+            <p className="text-[10px] text-text-tertiary leading-snug">
+              Each part is graded on its own. Diagrams below attach to the first part. The shared setup is shown once above every part in the exam.
+            </p>
+          </div>
+        ) : type === 'mcq' ? (
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-[10px] text-text-secondary font-bold uppercase tracking-wider">
@@ -628,6 +797,20 @@ export function ManualQuestionEntry({
             </div>
           </div>
         ) : (
+          <div className="space-y-3">
+            <label className="flex items-center gap-2 cursor-pointer w-fit">
+              <input
+                type="checkbox"
+                checked={multiAnswer}
+                onChange={(e) => { setMultiAnswer(e.target.checked); setDirty(true); }}
+                className="accent-primary w-4 h-4"
+              />
+              <span className="text-xs font-bold text-text-primary">Multiple answers (e.g. C_A and X)</span>
+              <span className="text-[10px] text-text-tertiary">— one labeled input per value, marked separately</span>
+            </label>
+            {multiAnswer ? (
+              <AnswerFieldsEditor fields={answerFields} onChange={(f) => { setAnswerFields(f); setDirty(true); }} />
+            ) : (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-2">
               <FormattedTextField
@@ -689,8 +872,11 @@ export function ManualQuestionEntry({
               </div>
             )}
           </div>
+            )}
+          </div>
         )}
 
+        {!multiPart && (
         <FormattedTextField
           label="Explanation (optional)"
           value={explanation}
@@ -699,6 +885,7 @@ export function ManualQuestionEntry({
           minHeight="70px"
           placeholder="Worked solution or hint shown after the student answers. Paste raw text and hit Format to auto-typeset."
         />
+        )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>

@@ -18,8 +18,10 @@ export interface Question {
   correctAnswer?: string;
   unit?: string;
   assets?: { id: string; url: string }[];
-  /** 'written' → free-text answer graded by AI; otherwise numeric. */
-  answerType?: 'exact' | 'range' | 'written';
+  /** 'written' → free-text answer graded by AI; 'multi' → several labeled fields; otherwise numeric. */
+  answerType?: 'exact' | 'range' | 'written' | 'multi';
+  /** Present only for answerType 'multi' — one labeled input per field. */
+  answerFields?: { label: string; unit?: string }[];
   /** Multi-part grouping — sub-parts of one source question. */
   groupId?: string;
   partLabel?: string;
@@ -56,8 +58,8 @@ export interface Course {
 }
 
 export interface AppState {
-  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'SAVED' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
-  returnStep?: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'SAVED' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
+  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
+  returnStep?: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
   mode: StudyMode | null;
   selectedCourse: Course | null;
   selectedTopic: Topic | null;
@@ -67,4 +69,6 @@ export interface AppState {
   semester: 'Sem 1' | 'Sem 2';
   practiceTimeLimit: number;
   reviewSessionId?: string;
+  /** When set, the review screen shows only this one question (from Saved). */
+  reviewFocusQuestionId?: string;
 }

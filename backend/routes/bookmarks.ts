@@ -8,7 +8,7 @@ import { addBookmark, listBookmarks, removeBookmark } from '../services/bookmark
 const router = Router();
 
 const CreateBody = z.object({ question_id: uuid });
-const ListQuery = z.object({ program_course_id: uuid });
+const ListQuery = z.object({ program_course_id: uuid.optional() });
 const QuestionIdParam = z.object({ question_id: uuid });
 
 router.get(

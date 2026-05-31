@@ -65,7 +65,6 @@ import {
 import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
 import { cn } from './lib/utils';
 import { MySessionsScreen } from './components/MySessionsScreen';
-import { SavedScreen } from './components/SavedScreen';
 import { PerformanceScreen } from './components/PerformanceScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HelpScreen } from './components/HelpScreen';
@@ -126,18 +125,28 @@ interface ApiContent {
   shared_stem?: string | null;
 }
 
+interface ApiAnswerField {
+  position: number;
+  label: string;
+  correct_answer: string;
+  answer_type: 'exact' | 'range';
+  answer_tolerance?: number | null;
+  unit?: string | null;
+}
+
 interface ApiQuestion {
   id: string;
   type: 'mcq' | 'calc';
   difficulty: 'easy' | 'medium' | 'hard';
   exam_scope: 'midsem' | 'final' | 'both';
   topic_id: string;
-  answer_type: 'exact' | 'range' | 'written' | null;
+  answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
   question_group_id: string | null;
   part_label: string | null;
   part_index: number | null;
   content: ApiContent;
   options?: ApiOption[];
+  answer_fields?: ApiAnswerField[];
   assets: ApiAsset[];
 }
 
@@ -197,6 +206,13 @@ function apiQuestionToFrontend(q: ApiQuestion): Question {
     correctAnswer: q.content.correct_answer ?? undefined,
     unit: q.content.unit ?? undefined,
     answerType: q.answer_type ?? undefined,
+    answerFields:
+      q.answer_type === 'multi'
+        ? (q.answer_fields ?? [])
+            .slice()
+            .sort((a, b) => a.position - b.position)
+            .map((f) => ({ label: f.label, unit: f.unit ?? undefined }))
+        : undefined,
     marks: 1,
     assets: q.assets,
     sharedStem,
@@ -403,7 +419,7 @@ export default function App() {
   const [practiceTimeUserSet, setPracticeTimeUserSet] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
-  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[]; prefilledAnswers?: Record<number, string>; difficultyFallback?: boolean } | null>(null);
+  const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[]; prefilledAnswers?: Record<number, string>; prefilledFieldAnswers?: Record<number, Record<number, string>>; difficultyFallback?: boolean } | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
   const [resumeError, setResumeError] = useState<string | null>(null);
 
@@ -695,26 +711,6 @@ export default function App() {
     }
   };
 
-  const startSavedQuiz = async (questionIds: string[]) => {
-    if (!state.selectedCourse || questionIds.length === 0) return;
-    setStartError(null);
-    try {
-      const res = await apiPost<ApiSessionCreated>('/api/sessions', {
-        program_course_id: state.selectedCourse.id,
-        mode: 'practice',
-        question_ids: questionIds,
-      });
-      setActiveSession({
-        sessionId: res.session_id,
-        questions: apiQuestionsToFrontend(res.picked),
-        difficultyFallback: res.difficulty_fallback,
-      });
-      setState((prev) => ({ ...prev, step: 'EXAM' }));
-    } catch (e) {
-      setStartError(e instanceof Error ? e.message : 'Could not start the saved quiz.');
-    }
-  };
-
   const finishExam = (sessionId: string) => {
     setActiveSession(null);
     setState(prev => ({
@@ -728,7 +724,7 @@ export default function App() {
     setStartError(null);
     if (state.returnStep) {
       const step = state.returnStep;
-      setState(prev => ({ ...prev, step, returnStep: undefined, reviewSessionId: undefined }));
+      setState(prev => ({ ...prev, step, returnStep: undefined, reviewSessionId: undefined, reviewFocusQuestionId: undefined }));
       return;
     }
 
@@ -742,7 +738,7 @@ export default function App() {
       setActiveSession(null);
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
-    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'SAVED' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
+    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
   };
@@ -832,12 +828,9 @@ export default function App() {
             </div>
 
             <div className="flex-1 px-3 space-y-2">
-              <NavItem onClick={() => { setActiveSession(null); setState(p => ({ ...p, returnStep: undefined, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP' && state.step !== 'SAVED'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setActiveSession(null); setState(p => ({ ...p, returnStep: undefined, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen} />
-              {state.selectedCourse && (
-                <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SAVED' })); setIsMobileMenuOpen(false); }} icon={Bookmark} label="Saved" active={state.step === 'SAVED'} expanded={isSidebarExpanded || isMobileMenuOpen} />
-              )}
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
             </div>
 
@@ -924,6 +917,7 @@ export default function App() {
               questions={activeSession.questions}
               practiceTimeLimit={state.practiceTimeLimit}
               prefilledAnswers={activeSession.prefilledAnswers}
+              prefilledFieldAnswers={activeSession.prefilledFieldAnswers}
               difficultyFallback={activeSession.difficultyFallback}
               requestedDifficulty={state.difficulty}
             />
@@ -931,6 +925,7 @@ export default function App() {
         ) : state.step === 'REVIEW' && state.reviewSessionId ? (
           <ReviewScreen
             sessionId={state.reviewSessionId}
+            focusQuestionId={state.reviewFocusQuestionId}
             onBack={goBack}
             courseName={state.selectedCourse?.name || 'Session'}
             onPracticeTopic={(topicId, topicName) =>
@@ -940,6 +935,7 @@ export default function App() {
                 selectedTopic: { id: topicId, name: topicName },
                 step: 'READY',
                 reviewSessionId: undefined,
+                reviewFocusQuestionId: undefined,
               }))
             }
           />
@@ -952,6 +948,16 @@ export default function App() {
                  step: 'REVIEW',
                  returnStep: 'SESSIONS_HISTORY',
                  reviewSessionId: id,
+                 reviewFocusQuestionId: undefined,
+               }));
+             }}
+             onReviewQuestion={(sessionId, questionId) => {
+               setState(prev => ({
+                 ...prev,
+                 step: 'REVIEW',
+                 returnStep: 'SESSIONS_HISTORY',
+                 reviewSessionId: sessionId,
+                 reviewFocusQuestionId: questionId,
                }));
              }}
              onSessionDeleted={() => {
@@ -963,11 +969,6 @@ export default function App() {
                  .then(setRecentSessions)
                  .catch(() => setRecentSessions([]));
              }}
-          />
-        ) : state.step === 'SAVED' && state.selectedCourse ? (
-          <SavedScreen
-            programCourseId={state.selectedCourse.id}
-            onQuiz={startSavedQuiz}
           />
         ) : state.step === 'PERFORMANCE' ? (
           <PerformanceScreen
@@ -1103,6 +1104,11 @@ export default function App() {
                             picked_option_id: string | null;
                             picked_text: string | null;
                           }>;
+                          answered_fields?: Array<{
+                            question_id: string;
+                            field_position: number;
+                            picked_text: string | null;
+                          }>;
                         }>(`/api/sessions/${pending.id}/resume`);
 
                         const questions = apiQuestionsToFrontend(data.picked_questions);
@@ -1122,15 +1128,29 @@ export default function App() {
                           if (q.type === 'mcq' && a.picked_option_id) {
                             const opt = (q.options ?? []).find((o) => o.id === a.picked_option_id);
                             if (opt) prefilledAnswers[a.position] = opt.text;
+                          } else if (q.answer_type === 'multi') {
+                            // multi answers restore from answered_fields, not the summary text
                           } else if (a.picked_text != null) {
                             prefilledAnswers[a.position] = a.picked_text;
                           }
+                        }
+
+                        // Restore each multi-input field by its position in the session.
+                        const prefilledFieldAnswers: Record<number, Record<number, string>> = {};
+                        const positionByQuestionId = new Map(
+                          data.picked_questions.map((q, i) => [q.id, i])
+                        );
+                        for (const f of data.answered_fields ?? []) {
+                          const pos = positionByQuestionId.get(f.question_id);
+                          if (pos === undefined || f.picked_text == null) continue;
+                          (prefilledFieldAnswers[pos] ??= {})[f.field_position] = f.picked_text;
                         }
 
                         setActiveSession({
                           sessionId: pending.id,
                           questions,
                           prefilledAnswers,
+                          prefilledFieldAnswers,
                         });
                         setState((prev) => ({
                           ...prev,
@@ -1695,11 +1715,18 @@ interface ReviewSessionData {
     points: number | null;
     ai_feedback: string | null;
     time_ms: number | null;
+    fields?: Array<{
+      label: string;
+      unit: string | null;
+      picked_text: string | null;
+      correct_answer: string;
+      is_correct: boolean | null;
+    }>;
   }>;
   questions: Array<{
     id: string;
     type: 'mcq' | 'calc';
-    answer_type: 'exact' | 'range' | 'written' | null;
+    answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
     question_group_id: string | null;
     part_label: string | null;
     part_index: number | null;
@@ -1722,7 +1749,7 @@ interface ReviewItem {
   position: number;
   prompt: string;
   type: 'mcq' | 'calc';
-  answerType: 'exact' | 'range' | 'written' | null;
+  answerType: 'exact' | 'range' | 'written' | 'multi' | null;
   groupId: string | null;
   partLabel: string | null;
   partIndex: number | null;
@@ -1740,6 +1767,14 @@ interface ReviewItem {
   points: number | null;
   aiFeedback: string | null;
   isUnanswered: boolean;
+  /** Per-field breakdown for multi-input answers. */
+  fields?: Array<{
+    label: string;
+    unit: string | null;
+    picked_text: string | null;
+    correct_answer: string;
+    is_correct: boolean | null;
+  }>;
 }
 
 type GradeTone = 'success' | 'accent' | 'neutral' | 'danger';
@@ -1780,7 +1815,7 @@ function computeQuestionNumbers(
   return { numbers, total: counter };
 }
 
-function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sessionId: string; onBack: () => void; courseName: string; onPracticeTopic: (topicId: string, topicName: string) => void }) {
+function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracticeTopic }: { sessionId: string; focusQuestionId?: string; onBack: () => void; courseName: string; onPracticeTopic: (topicId: string, topicName: string) => void }) {
   const [filter, setFilter] = useState<'All' | 'Correct' | 'Incorrect' | 'Unanswered'>('All');
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1878,6 +1913,7 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
         points: a?.points ?? null,
         aiFeedback: a?.ai_feedback ?? null,
         isUnanswered,
+        fields: a?.fields,
       };
     });
   }, [data]);
@@ -1906,6 +1942,8 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
   }, [items, data]);
 
   const filteredQuestions = useMemo(() => {
+    // Saved → single-question view: show only the focused question.
+    if (focusQuestionId) return items.filter((it) => it.id === focusQuestionId);
     return items.filter((it) => {
       if (filter === 'All') return true;
       if (filter === 'Unanswered') return it.isUnanswered;
@@ -1913,7 +1951,7 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
       if (filter === 'Incorrect') return it.isCorrect === false;
       return true;
     });
-  }, [items, filter]);
+  }, [items, filter, focusQuestionId]);
 
   const grade = gradeBand(stats.percent);
   const gradeTone = GRADE_TONES[grade.tone];
@@ -2048,10 +2086,11 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
             </div>
           )}
 
-          {/* Filter Bar */}
+          {/* Filter Bar — hidden in single-question (Saved) view */}
+          {!focusQuestionId && (
           <div id="review-list" className="flex flex-wrap items-center gap-2 md:gap-3 pb-4 border-b border-border-subtle sticky top-0 bg-bg-page z-30 pt-4 w-full">
             {(['All', 'Correct', 'Incorrect', 'Unanswered'] as const).map(f => (
-              <button 
+              <button
                 key={f}
                 onClick={() => setFilter(f)}
                 className={cn(
@@ -2065,6 +2104,7 @@ function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sess
               </button>
             ))}
           </div>
+          )}
 
           {/* Layer 2: Question Review List */}
           <div className="space-y-2 pb-20">
@@ -2297,6 +2337,49 @@ function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
               {it.correctAnswer ? <RichText>{it.correctAnswer}</RichText> : '—'}
             </div>
           </div>
+        </div>
+      ) : it.answerType === 'multi' ? (
+        <div className="space-y-2">
+          <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 px-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest">
+            <span>Field</span>
+            <span>Your Value</span>
+            <span>Model</span>
+            <span className="text-right">Result</span>
+          </div>
+          {(it.fields ?? []).map((f, i) => (
+            <div
+              key={i}
+              className={cn(
+                'grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center p-3 rounded-xl border text-sm',
+                f.is_correct
+                  ? 'bg-success-bg/10 border-success-border'
+                  : 'bg-danger-bg/10 border-danger-border'
+              )}
+            >
+              <span className="font-bold text-text-primary"><RichText inline>{f.label}</RichText></span>
+              <span className="font-mono text-text-secondary">
+                {f.picked_text ? <RichText inline>{f.picked_text}</RichText> : '—'}
+              </span>
+              <span className="font-mono text-success-text">
+                <RichText inline>{`${f.correct_answer}${f.unit ? ` ${f.unit}` : ''}`}</RichText>
+              </span>
+              <span className="flex justify-end">
+                {f.is_correct ? (
+                  <Check className="w-4 h-4 text-success-text" />
+                ) : (
+                  <X className="w-4 h-4 text-danger-text" />
+                )}
+              </span>
+            </div>
+          ))}
+          {it.points != null && (
+            <div className="flex items-center gap-2 px-3 pt-1">
+              <span className="text-[10px] font-black text-accent-text uppercase tracking-widest">Score</span>
+              <span className="px-2 py-0.5 rounded-md bg-accent/10 border border-accent/20 text-xs font-black text-accent-text">
+                {Math.round(it.points * 100)}%
+              </span>
+            </div>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -2787,6 +2870,7 @@ function ExamSimulation({
   questions,
   practiceTimeLimit,
   prefilledAnswers,
+  prefilledFieldAnswers,
   difficultyFallback,
   requestedDifficulty,
 }: {
@@ -2799,6 +2883,7 @@ function ExamSimulation({
   questions: Question[];
   practiceTimeLimit: number;
   prefilledAnswers?: Record<number, string>;
+  prefilledFieldAnswers?: Record<number, Record<number, string>>;
   difficultyFallback?: boolean;
   requestedDifficulty?: 'Easy' | 'Medium' | 'Hard' | 'All';
 }) {
@@ -2807,6 +2892,10 @@ function ExamSimulation({
     difficultyFallback && !fallbackBannerDismissed && requestedDifficulty && requestedDifficulty !== 'All';
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, string>>(() => prefilledAnswers ?? {});
+  // Multi-input answers: question index → field position → typed value.
+  const [fieldAnswers, setFieldAnswers] = useState<Record<number, Record<number, string>>>(
+    () => prefilledFieldAnswers ?? {}
+  );
   const [flagged, setFlagged] = useState<Set<number>>(new Set());
   const [navOpen, setNavOpen] = useState(true);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
@@ -2837,10 +2926,17 @@ function ExamSimulation({
   const pendingAnswersRef = useRef<Set<Promise<unknown>>>(new Set());
 
   const totalQuestions = questions.length;
-  // A question only counts as answered once it holds a non-empty value, so
-  // clearing the field drops it back to unanswered (matches the grid's
-  // `!!answers[i]`). Empty keys may linger in `answers` — they just don't count.
-  const answeredCount = Object.values(answers).filter((v) => String(v).trim().length > 0).length;
+  // A question counts as answered once it holds a non-empty value. For
+  // multi-input questions, ANY non-empty field counts. Clearing drops it back
+  // to unanswered. Empty keys may linger in state — they just don't count.
+  const isAnsweredAt = (i: number): boolean => {
+    if (questions[i]?.answerType === 'multi') {
+      const fa = fieldAnswers[i];
+      return !!fa && Object.values(fa).some((v) => v.trim().length > 0);
+    }
+    return String(answers[i] ?? '').trim().length > 0;
+  };
+  const answeredCount = questions.reduce((n, _q, i) => n + (isAnsweredAt(i) ? 1 : 0), 0);
 
   // Timer state lives ONLY on the server. The session row's `started_at` and
   // `total_paused_ms` are the single source of truth — the reconcile effect
@@ -3023,6 +3119,14 @@ function ExamSimulation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, timeLeftMs, questions.length]);
 
+  const postAnswer = (payload: Record<string, unknown>) => {
+    const p = apiPost(`/api/sessions/${sessionId}/answer`, payload).catch((e) =>
+      console.error('answer submit failed', e)
+    );
+    pendingAnswersRef.current.add(p);
+    p.finally(() => pendingAnswersRef.current.delete(p));
+  };
+
   const handleAnswer = (answer: string) => {
     setAnswers(prev => ({ ...prev, [currentIdx]: answer }));
     if (!currentQuestion) return;
@@ -3040,11 +3144,25 @@ function ExamSimulation({
     } else {
       payload.picked_text = answer;
     }
-    const p = apiPost(`/api/sessions/${sessionId}/answer`, payload).catch((e) =>
-      console.error('answer submit failed', e)
-    );
-    pendingAnswersRef.current.add(p);
-    p.finally(() => pendingAnswersRef.current.delete(p));
+    postAnswer(payload);
+  };
+
+  // Multi-input: update one field's value, then submit ALL fields for the
+  // question (the server grades each by position).
+  const handleFieldAnswer = (fieldPos: number, value: string) => {
+    if (!currentQuestion) return;
+    const merged = { ...(fieldAnswers[currentIdx] ?? {}), [fieldPos]: value };
+    setFieldAnswers((prev) => ({ ...prev, [currentIdx]: merged }));
+    const fields = (currentQuestion.answerFields ?? []).map((_f, i) => ({
+      position: i,
+      text: merged[i] ?? '',
+    }));
+    postAnswer({
+      question_id: currentQuestion.id,
+      position: currentIdx,
+      time_ms: Date.now() - questionStartTime,
+      picked_fields: fields,
+    });
   };
 
   const toggleFlag = () => {
@@ -3130,7 +3248,7 @@ function ExamSimulation({
             const dnum = numbering.numbers[i] ?? i + 1;
             const label = q.groupId ? `${dnum}${q.partLabel ?? ''}` : `${dnum}`;
             const isActive = currentIdx === i;
-            const isDone = !!answers[i];
+            const isDone = isAnsweredAt(i);
             const isFlagged = flagged.has(i);
 
             if (navFilter === 'Flagged' && !isFlagged) return null;
@@ -3484,7 +3602,7 @@ function ExamSimulation({
                                   "min-w-[1.75rem] h-7 px-1.5 rounded-lg text-[10px] font-black uppercase transition-colors border flex items-center justify-center",
                                   isCurrent
                                     ? "bg-accent border-accent text-bg-page"
-                                    : answers[sibIdx]
+                                    : isAnsweredAt(sibIdx)
                                       ? "bg-success-bg/80 border-success-border text-success-text"
                                       : "bg-bg-raised border-border-subtle text-text-tertiary hover:text-text-primary hover:border-border-medium"
                                 )}
@@ -3572,6 +3690,36 @@ function ExamSimulation({
                           />
                           <p className="text-[9px] text-text-tertiary italic">
                             Explain your reasoning in full — this answer is marked by AI on its substance, with partial credit.
+                          </p>
+                        </div>
+                      ) : currentQuestion.answerType === 'multi' ? (
+                        <div className="space-y-3 max-h-[40vh] overflow-y-auto no-scrollbar pr-0.5">
+                          <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">
+                            Input Responses · {currentQuestion.answerFields?.length ?? 0} values expected
+                          </label>
+                          {(currentQuestion.answerFields ?? []).map((f, i) => (
+                            <div key={i} className="flex items-end gap-3">
+                              <div className="shrink-0 min-w-[2.5rem] pb-3 text-sm font-bold text-text-primary">
+                                <RichText inline>{f.label}</RichText>
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <input
+                                  type="text"
+                                  value={fieldAnswers[currentIdx]?.[i] ?? ''}
+                                  onChange={(e) => handleFieldAnswer(i, e.target.value)}
+                                  placeholder="Numeric value only…"
+                                  className="w-full bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm text-text-primary focus:outline-none focus:border-accent font-mono"
+                                />
+                              </div>
+                              {f.unit && (
+                                <div className="shrink-0 min-w-[80px] bg-bg-sunken border border-border-subtle rounded-xl px-4 py-3 text-sm font-bold text-text-primary flex items-center justify-center whitespace-nowrap">
+                                  <RichText inline>{f.unit}</RichText>
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                          <p className="text-[9px] text-text-tertiary italic">
+                            Enter the numeric value for each — units shown are assumed. Each is marked separately (partial credit). Match specified precision (±0.01).
                           </p>
                         </div>
                       ) : (

@@ -60,9 +60,23 @@ export const DraftData = z.object({
   exam_scope: ExamScope.optional(),
   options: z.array(McqOption).optional(),
   correct_answer: z.string().optional(),
-  answer_type: z.enum(['exact', 'range', 'written']).optional(),
+  answer_type: z.enum(['exact', 'range', 'written', 'multi']).optional(),
   answer_tolerance: z.number().positive().optional(),
   unit: z.string().optional(),
+  // Multi-input calc: several labeled answer fields (when answer_type === 'multi').
+  answer_fields: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(120),
+        correct_answer: z.string().min(1),
+        answer_type: z.enum(['exact', 'range']),
+        answer_tolerance: z.number().positive().optional(),
+        unit: z.string().optional(),
+      })
+    )
+    .min(2)
+    .max(8)
+    .optional(),
   explanation: z.string().optional(),
   raw_text: z.string().optional(),
   source_reference: z.string().max(500).optional(),

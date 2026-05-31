@@ -854,7 +854,7 @@ export async function publishJob(
         explanation: explDiag.cleaned,
         ...(data.shared_stem?.trim() ? { shared_stem: data.shared_stem.trim() } : {}),
         ...(data.source_reference ? { source_reference: data.source_reference } : {}),
-        ...(data.type === 'calc'
+        ...(data.type === 'calc' && data.answer_type !== 'multi'
           ? {
               correct_answer: data.correct_answer ?? '',
               answer_tolerance: data.answer_tolerance,
@@ -865,6 +865,9 @@ export async function publishJob(
       ...(data.type === 'mcq'
         ? { options: data.options ?? [] }
         : { answer_type: data.answer_type ?? 'exact' }),
+      ...(data.type === 'calc' && data.answer_type === 'multi'
+        ? { answer_fields: data.answer_fields ?? [] }
+        : {}),
       ...(data.group_key
         ? {
             question_group_id: groupIdByKey.get(data.group_key),

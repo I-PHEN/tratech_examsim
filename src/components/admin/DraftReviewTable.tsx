@@ -3,6 +3,34 @@ import { ArrowLeft, Loader2, Save, Trash2, Send, Plus, Sparkles, ImageUp, Maximi
 import { apiDelete, apiGet, apiPatch, apiPost, apiUpload } from '../../lib/apiClient';
 import { cn } from '../../lib/utils';
 import { FormattedTextField } from './FormattedTextField';
+import { AnswerFieldsEditor, emptyAnswerField, type AnswerFieldState } from './AnswerFieldsEditor';
+
+/** Convert persisted (numeric tolerance) answer fields to editor state (string tolerance). */
+function draftFieldsToState(
+  fields: DraftData['answer_fields']
+): AnswerFieldState[] {
+  if (!fields || fields.length === 0) return [emptyAnswerField(), emptyAnswerField()];
+  return fields.map((f) => ({
+    label: f.label,
+    correct_answer: f.correct_answer,
+    answer_type: f.answer_type,
+    answer_tolerance: f.answer_tolerance != null ? String(f.answer_tolerance) : '',
+    unit: f.unit ?? '',
+  }));
+}
+
+/** Convert editor state back to the persisted draft shape (numeric tolerance). */
+function stateToDraftFields(fields: AnswerFieldState[]): DraftData['answer_fields'] {
+  return fields.map((f) => ({
+    label: f.label,
+    correct_answer: f.correct_answer,
+    answer_type: f.answer_type,
+    ...(f.answer_tolerance && !Number.isNaN(Number(f.answer_tolerance))
+      ? { answer_tolerance: Number(f.answer_tolerance) }
+      : {}),
+    ...(f.unit.trim() ? { unit: f.unit.trim() } : {}),
+  }));
+}
 
 interface DraftData {
   type: 'mcq' | 'calc';
@@ -12,9 +40,17 @@ interface DraftData {
   exam_scope?: 'midsem' | 'final' | 'both';
   options?: Array<{ text: string; is_correct: boolean }>;
   correct_answer?: string;
-  answer_type?: 'exact' | 'range' | 'written';
+  answer_type?: 'exact' | 'range' | 'written' | 'multi';
   answer_tolerance?: number;
   unit?: string;
+  /** Multi-input calc: several labeled answer fields (when answer_type === 'multi'). */
+  answer_fields?: Array<{
+    label: string;
+    correct_answer: string;
+    answer_type: 'exact' | 'range';
+    answer_tolerance?: number;
+    unit?: string;
+  }>;
   explanation?: string;
   source_reference?: string;
   solution_image_path?: string;
@@ -539,6 +575,29 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
         </div>
       ) : (
         <div className="space-y-3">
+          <label className="flex items-center gap-2 cursor-pointer w-fit">
+            <input
+              type="checkbox"
+              checked={d.answer_type === 'multi'}
+              onChange={(e) =>
+                update(
+                  e.target.checked
+                    ? { answer_type: 'multi', answer_fields: stateToDraftFields(draftFieldsToState(d.answer_fields)) }
+                    : { answer_type: 'exact' }
+                )
+              }
+              className="accent-primary w-4 h-4"
+            />
+            <span className="text-xs font-bold text-text-primary">Multiple answers (e.g. C_A and X)</span>
+          </label>
+
+          {d.answer_type === 'multi' ? (
+            <AnswerFieldsEditor
+              fields={draftFieldsToState(d.answer_fields)}
+              onChange={(f) => update({ answer_fields: stateToDraftFields(f) })}
+            />
+          ) : (
+          <>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <div className="md:col-span-2">
               <div className="flex items-center gap-2 mb-1">
@@ -605,6 +664,8 @@ const DraftRow: React.FC<DraftRowProps> = ({ draft, topics, jobId, onChange, onS
                 </label>
               )}
             </div>
+          )}
+          </>
           )}
         </div>
       )}

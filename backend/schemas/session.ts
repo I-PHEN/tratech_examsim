@@ -17,7 +17,6 @@ export const SessionCreate = z.object({
   count: z.coerce.number().int().min(1).max(100).optional(),
   topic_id: uuid.optional(),
   difficulty: Difficulty.optional(),
-  question_ids: z.array(uuid).min(1).max(100).optional(),
 });
 export type SessionCreateInput = z.infer<typeof SessionCreate>;
 
@@ -27,11 +26,22 @@ export const SessionAnswerSubmit = z
     position: z.coerce.number().int().min(0),
     picked_option_id: uuid.optional(),
     picked_text: z.string().max(8000).optional(),
+    // Multi-input (answer_type 'multi'): one entry per labeled answer field.
+    picked_fields: z
+      .array(z.object({ position: z.coerce.number().int().min(0), text: z.string().max(8000) }))
+      .max(8)
+      .optional(),
     time_ms: z.coerce.number().int().min(0).optional(),
   })
-  .refine((d) => d.picked_option_id !== undefined || d.picked_text !== undefined, {
-    message: 'Either picked_option_id or picked_text must be provided',
-  });
+  .refine(
+    (d) =>
+      d.picked_option_id !== undefined ||
+      d.picked_text !== undefined ||
+      d.picked_fields !== undefined,
+    {
+      message: 'Either picked_option_id, picked_text, or picked_fields must be provided',
+    }
+  );
 export type SessionAnswerSubmitInput = z.infer<typeof SessionAnswerSubmit>;
 
 export const SessionFinish = z.object({

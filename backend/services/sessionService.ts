@@ -1,7 +1,13 @@
 import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
 import { pickSessionQuestions } from './routingService';
-import { getQuestionById, mapAssets, type QuestionAsset, type QuestionContent, type McqOption } from './questionService';
+import {
+  mapAssets,
+  type QuestionAsset,
+  type QuestionContent,
+  type McqOption,
+  type AnswerFieldSpec,
+} from './questionService';
 import { shuffle } from '../lib/shuffle';
 import { parallelMap } from '../lib/concurrency';
 import { gradeWrittenAnswer } from './gradingService';
@@ -37,6 +43,15 @@ export interface SessionListItem extends SessionRow {
   accuracy: number | null;
 }
 
+/** One field of a multi-input answer in the review payload: student value + model value + result. */
+export interface ReviewAnswerField {
+  label: string;
+  unit: string | null;
+  picked_text: string | null;
+  correct_answer: string;
+  is_correct: boolean | null;
+}
+
 export interface SessionAnswerRow {
   id: string;
   session_id: string;
@@ -49,6 +64,8 @@ export interface SessionAnswerRow {
   ai_feedback: string | null;
   time_ms: number | null;
   answered_at: string;
+  /** Present only for multi-input answers. */
+  fields?: ReviewAnswerField[];
 }
 
 interface ReviewQuestion {
@@ -57,44 +74,29 @@ interface ReviewQuestion {
   difficulty: 'easy' | 'medium' | 'hard';
   exam_scope: 'midsem' | 'final' | 'both';
   topic_id: string;
-  answer_type: 'exact' | 'range' | 'written' | null;
+  answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
   question_group_id: string | null;
   part_label: string | null;
   part_index: number | null;
   content: QuestionContent;
   options: McqOption[];
+  answer_fields?: AnswerFieldSpec[];
   assets: QuestionAsset[];
   bookmarked: boolean;
 }
 
 export async function createSession(uid: string, input: SessionCreateInput) {
-  let pickedQuestions;
-  let difficultyFallback = false;
-  let topicId = input.topic_id ?? null;
+  const topicId = input.topic_id ?? null;
 
-  if (input.question_ids && input.question_ids.length > 0) {
-    // Seed directly from an explicit id list (e.g. re-practice from Saved).
-    const loaded = await Promise.all(
-      input.question_ids.map((id) => getQuestionById(id).catch(() => null))
-    );
-    // Scope to the requested course — never quiz another course's questions,
-    // even if the client sends ids from elsewhere.
-    pickedQuestions = loaded.filter(
-      (q): q is NonNullable<typeof q> =>
-        q !== null && q.program_course_id === input.program_course_id
-    );
-    topicId = null;
-  } else {
-    const picked = await pickSessionQuestions({
-      program_course_id: input.program_course_id,
-      mode: input.mode,
-      count: input.count,
-      topic_id: input.topic_id,
-      difficulty: input.difficulty,
-    });
-    pickedQuestions = picked.picked;
-    difficultyFallback = picked.difficulty_fallback;
-  }
+  const picked = await pickSessionQuestions({
+    program_course_id: input.program_course_id,
+    mode: input.mode,
+    count: input.count,
+    topic_id: input.topic_id,
+    difficulty: input.difficulty,
+  });
+  const pickedQuestions = picked.picked;
+  const difficultyFallback = picked.difficulty_fallback;
 
   if (pickedQuestions.length === 0) {
     throw new ApiError(
@@ -165,20 +167,80 @@ async function evaluateAnswer(
   if (cErr) throw cErr;
   if (!content) return null;
 
-  const expected = content.correct_answer ?? '';
-  const got = pickedText.trim();
+  return gradeNumeric(
+    content.correct_answer ?? '',
+    pickedText,
+    question.answer_type === 'range' ? 'range' : 'exact',
+    content.answer_tolerance ?? null
+  );
+}
 
-  if (question.answer_type === 'range') {
-    const expectedNum = Number(expected);
-    const gotNum = Number(got);
-    const tol = Number(content.answer_tolerance ?? 0);
-    if (Number.isFinite(expectedNum) && Number.isFinite(gotNum)) {
-      return Math.abs(expectedNum - gotNum) <= tol;
-    }
+/**
+ * Grade a single numeric/short answer. `range` accepts |answer − model| ≤ tol;
+ * `exact` requires a normalized (case/whitespace-insensitive) string match.
+ * A blank answer is never correct.
+ */
+function gradeNumeric(
+  expected: string,
+  got: string,
+  type: 'exact' | 'range',
+  tolerance: number | null
+): boolean {
+  const g = got.trim();
+  if (g.length === 0) return false;
+  if (type === 'range') {
+    const e = Number(expected);
+    const n = Number(g);
+    const tol = Number(tolerance ?? 0);
+    if (Number.isFinite(e) && Number.isFinite(n)) return Math.abs(e - n) <= tol;
+  }
+  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
+  return norm(expected) === norm(g);
+}
+
+interface MultiFieldRow {
+  field_position: number;
+  picked_text: string;
+  is_correct: boolean;
+  label: string;
+  unit: string | null;
+}
+
+/**
+ * Grade every answer field of a multi-input question against the student's
+ * picked values (keyed by field position; missing/blank fields count wrong).
+ */
+async function evaluateMultiFields(
+  questionId: string,
+  pickedFields: { position: number; text: string }[]
+): Promise<{ rows: MultiFieldRow[]; allCorrect: boolean; summary: string }> {
+  const { data: fields, error } = await supabase
+    .from('question_answer_fields')
+    .select('position, label, correct_answer, answer_type, answer_tolerance, unit')
+    .eq('question_id', questionId)
+    .order('position', { ascending: true });
+  if (error) throw error;
+  if (!fields || fields.length === 0) {
+    throw new ApiError(400, 'NOT_MULTI', 'Question has no answer fields');
   }
 
-  const norm = (s: string) => s.trim().toLowerCase().replace(/\s+/g, ' ');
-  return norm(expected) === norm(got);
+  const pickedByPos = new Map(pickedFields.map((p) => [p.position, p.text]));
+  const rows: MultiFieldRow[] = fields.map((f) => {
+    const got = (pickedByPos.get(f.position) ?? '').trim();
+    return {
+      field_position: f.position,
+      picked_text: got,
+      is_correct: gradeNumeric(f.correct_answer, got, f.answer_type as 'exact' | 'range', f.answer_tolerance),
+      label: f.label,
+      unit: f.unit,
+    };
+  });
+
+  const allCorrect = rows.every((r) => r.is_correct);
+  const summary = rows
+    .map((r) => `${r.label} = ${r.picked_text || '—'}${r.unit ? ` ${r.unit}` : ''}`)
+    .join('; ');
+  return { rows, allCorrect, summary };
 }
 
 export async function submitAnswer(
@@ -195,6 +257,46 @@ export async function submitAnswer(
   if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
   if (session.user_uid !== uid) throw new ApiError(403, 'FORBIDDEN', 'Not your session');
   if (session.finished_at) throw new ApiError(400, 'SESSION_FINISHED', 'Session already finished');
+
+  // Multi-input answer: grade each field, store per-field rows, and mirror an
+  // overall result + readable summary on the parent session_answers row.
+  if (input.picked_fields !== undefined) {
+    const { rows, allCorrect, summary } = await evaluateMultiFields(
+      input.question_id,
+      input.picked_fields
+    );
+
+    const { error: parentErr } = await supabase
+      .from('session_answers')
+      .upsert(
+        {
+          session_id: sessionId,
+          question_id: input.question_id,
+          position: input.position,
+          picked_option_id: null,
+          picked_text: summary,
+          is_correct: allCorrect,
+          time_ms: input.time_ms ?? null,
+          answered_at: new Date().toISOString(),
+        },
+        { onConflict: 'session_id,question_id' }
+      );
+    if (parentErr) throw parentErr;
+
+    const fieldRows = rows.map((r) => ({
+      session_id: sessionId,
+      question_id: input.question_id,
+      field_position: r.field_position,
+      picked_text: r.picked_text || null,
+      is_correct: r.is_correct,
+    }));
+    const { error: fieldsErr } = await supabase
+      .from('session_answer_fields')
+      .upsert(fieldRows, { onConflict: 'session_id,question_id,field_position' });
+    if (fieldsErr) throw fieldsErr;
+
+    return { is_correct: allCorrect };
+  }
 
   const isCorrect = await evaluateAnswer(input.question_id, input.picked_option_id, input.picked_text);
 
@@ -318,6 +420,20 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
             .eq('id', a.id);
         }
       }
+    } else if (meta?.answer_type === 'multi') {
+      // Partial credit: fraction of answer fields the student got right.
+      const { data: fieldRows } = await supabase
+        .from('session_answer_fields')
+        .select('is_correct')
+        .eq('session_id', sessionId)
+        .eq('question_id', a.question_id);
+      const total = fieldRows?.length ?? 0;
+      const correct = (fieldRows ?? []).filter((f) => f.is_correct === true).length;
+      pts = total > 0 ? correct / total : 0;
+      await supabase
+        .from('session_answers')
+        .update({ points: pts, is_correct: pts >= 0.5 })
+        .eq('id', a.id);
     } else {
       pts = a.is_correct === true ? 1 : 0;
       await supabase.from('session_answers').update({ points: pts }).eq('id', a.id);
@@ -436,6 +552,7 @@ export async function getSessionById(uid: string, sessionId: string) {
           'question_group_id, part_label, part_index, ' +
           'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
           'mcq_options(id, text, is_correct), ' +
+          'question_answer_fields(position, label, correct_answer, answer_type, answer_tolerance, unit), ' +
           'question_assets(id, storage_path, mime_type, position)'
       )
       .in('id', orderedIds);
@@ -448,12 +565,13 @@ export async function getSessionById(uid: string, sessionId: string) {
         difficulty: 'easy' | 'medium' | 'hard';
         exam_scope: 'midsem' | 'final' | 'both';
         topic_id: string;
-        answer_type: 'exact' | 'range' | 'written' | null;
+        answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
         question_group_id: string | null;
         part_label: string | null;
         part_index: number | null;
         question_content: QuestionContent | QuestionContent[] | null;
         mcq_options: McqOption[] | null;
+        question_answer_fields: AnswerFieldSpec[] | null;
         question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
       };
       const contentArr = Array.isArray(r.question_content)
@@ -474,6 +592,10 @@ export async function getSessionById(uid: string, sessionId: string) {
         part_index: r.part_index,
         content: contentArr[0],
         options: mcqOptions,
+        answer_fields:
+          r.answer_type === 'multi'
+            ? (r.question_answer_fields ?? []).slice().sort((a, b) => a.position - b.position)
+            : undefined,
         assets: await mapAssets(r.question_assets),
         bookmarked: bookmarkedSet.has(r.id),
       };
@@ -485,6 +607,44 @@ export async function getSessionById(uid: string, sessionId: string) {
     questions.sort(
       (a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0)
     );
+  }
+
+  // Enrich multi-input answers with their per-field breakdown (student value +
+  // model value + result), joining session_answer_fields to the question spec.
+  const multiQuestionIds = questions.filter((q) => q.answer_type === 'multi').map((q) => q.id);
+  let enrichedAnswers = (answers ?? []) as SessionAnswerRow[];
+  if (multiQuestionIds.length > 0) {
+    const { data: studentFields, error: sfErr } = await supabase
+      .from('session_answer_fields')
+      .select('question_id, field_position, picked_text, is_correct')
+      .eq('session_id', sessionId)
+      .in('question_id', multiQuestionIds);
+    if (sfErr) throw sfErr;
+    const specByQuestion = new Map(
+      questions.filter((q) => q.answer_fields).map((q) => [q.id, q.answer_fields!])
+    );
+    const studentByQuestion = new Map<string, Map<number, { picked_text: string | null; is_correct: boolean | null }>>();
+    for (const sf of studentFields ?? []) {
+      const m = studentByQuestion.get(sf.question_id) ?? new Map();
+      m.set(sf.field_position, { picked_text: sf.picked_text, is_correct: sf.is_correct });
+      studentByQuestion.set(sf.question_id, m);
+    }
+    enrichedAnswers = enrichedAnswers.map((a) => {
+      const spec = specByQuestion.get(a.question_id);
+      if (!spec) return a;
+      const studentMap = studentByQuestion.get(a.question_id);
+      const fields: ReviewAnswerField[] = spec.map((f) => {
+        const picked = studentMap?.get(f.position);
+        return {
+          label: f.label,
+          unit: f.unit,
+          picked_text: picked?.picked_text ?? null,
+          correct_answer: f.correct_answer,
+          is_correct: picked?.is_correct ?? null,
+        };
+      });
+      return { ...a, fields };
+    });
   }
 
   let topic_breakdown: TopicBreakdownEntry[] | null = null;
@@ -525,7 +685,7 @@ export async function getSessionById(uid: string, sessionId: string) {
       topic_name: s.topics?.name ?? null,
       accuracy,
     },
-    answers: (answers ?? []) as SessionAnswerRow[],
+    answers: enrichedAnswers,
     questions,
     topic_breakdown,
   };
@@ -577,12 +737,13 @@ export async function getSessionResume(uid: string, sessionId: string) {
     difficulty: 'easy' | 'medium' | 'hard';
     exam_scope: 'midsem' | 'final' | 'both';
     topic_id: string;
-    answer_type: 'exact' | 'range' | 'written' | null;
+    answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
     question_group_id: string | null;
     part_label: string | null;
     part_index: number | null;
     content: QuestionContent;
     options?: McqOption[];
+    answer_fields?: AnswerFieldSpec[];
     assets: QuestionAsset[];
   }> = [];
 
@@ -594,6 +755,7 @@ export async function getSessionResume(uid: string, sessionId: string) {
           'question_group_id, part_label, part_index, ' +
           'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
           'mcq_options(id, text, is_correct), ' +
+          'question_answer_fields(position, label, correct_answer, answer_type, answer_tolerance, unit), ' +
           'question_assets(id, storage_path, mime_type, position)'
       )
       .in('id', orderedIds);
@@ -613,12 +775,13 @@ export async function getSessionResume(uid: string, sessionId: string) {
             difficulty: 'easy' | 'medium' | 'hard';
             exam_scope: 'midsem' | 'final' | 'both';
             topic_id: string;
-            answer_type: 'exact' | 'range' | 'written' | null;
+            answer_type: 'exact' | 'range' | 'written' | 'multi' | null;
             question_group_id: string | null;
             part_label: string | null;
             part_index: number | null;
             question_content: QuestionContent | QuestionContent[] | null;
             mcq_options: McqOption[] | null;
+            question_answer_fields: AnswerFieldSpec[] | null;
             question_assets: Array<{ id: string; storage_path: string; mime_type: string; position: number }> | null;
           };
           const contentArr: QuestionContent[] = Array.isArray(r.question_content)
@@ -638,6 +801,10 @@ export async function getSessionResume(uid: string, sessionId: string) {
             part_index: r.part_index,
             content: contentArr[0],
             options: r.type === 'mcq' ? r.mcq_options ?? [] : undefined,
+            answer_fields:
+              r.answer_type === 'multi'
+                ? (r.question_answer_fields ?? []).slice().sort((a, b) => a.position - b.position)
+                : undefined,
             assets: await mapAssets(r.question_assets),
           };
         })
@@ -655,6 +822,19 @@ export async function getSessionResume(uid: string, sessionId: string) {
     picked_text: string | null;
   }>;
 
+  // Per-field values for any multi-input answers, so the exam UI can restore
+  // each individual input box on resume (not just the summary).
+  const multiIds = picked.filter((q) => q.answer_type === 'multi').map((q) => q.id);
+  let answeredFields: Array<{ question_id: string; field_position: number; picked_text: string | null }> = [];
+  if (multiIds.length > 0) {
+    const { data: fRows } = await supabase
+      .from('session_answer_fields')
+      .select('question_id, field_position, picked_text')
+      .eq('session_id', sessionId)
+      .in('question_id', multiIds);
+    answeredFields = (fRows ?? []) as typeof answeredFields;
+  }
+
   return {
     session: {
       id: s.id,
@@ -671,6 +851,7 @@ export async function getSessionResume(uid: string, sessionId: string) {
     },
     picked_questions: picked,
     answered,
+    answered_fields: answeredFields,
   };
 }
 
