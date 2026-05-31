@@ -5,6 +5,7 @@ import { mapAssets, type QuestionAsset, type QuestionContent, type McqOption } f
 import { shuffle } from '../lib/shuffle';
 import { parallelMap } from '../lib/concurrency';
 import { gradeWrittenAnswer } from './gradingService';
+import { summarizeByTopic, type TopicBreakdownEntry } from './topicBreakdown';
 import type {
   SessionAnswerSubmitInput,
   SessionCreateInput,
@@ -461,6 +462,24 @@ export async function getSessionById(uid: string, sessionId: string) {
     );
   }
 
+  let topic_breakdown: TopicBreakdownEntry[] | null = null;
+  if (s.mode === 'diagnostic' && questions.length > 0) {
+    const topicById = new Map(questions.map((q) => [q.id, q.topic_id]));
+    const topicIds = Array.from(new Set(questions.map((q) => q.topic_id)));
+    const { data: topicRows } = await supabase
+      .from('topics')
+      .select('id, name')
+      .in('id', topicIds);
+    const nameById = new Map((topicRows ?? []).map((t) => [t.id as string, t.name as string]));
+    const rows = (answers ?? [])
+      .map((a) => {
+        const tid = topicById.get(a.question_id) ?? '';
+        return { topic_id: tid, topic_name: nameById.get(tid) ?? null, is_correct: a.is_correct };
+      })
+      .filter((r) => r.topic_id !== '');
+    topic_breakdown = summarizeByTopic(rows);
+  }
+
   const accuracy =
     s.score != null && s.total_questions > 0 ? s.score / s.total_questions : null;
 
@@ -483,6 +502,7 @@ export async function getSessionById(uid: string, sessionId: string) {
     },
     answers: (answers ?? []) as SessionAnswerRow[],
     questions,
+    topic_breakdown,
   };
 }
 
