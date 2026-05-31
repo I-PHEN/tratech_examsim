@@ -6,6 +6,7 @@ import { shuffle } from '../lib/shuffle';
 import { parallelMap } from '../lib/concurrency';
 import { gradeWrittenAnswer } from './gradingService';
 import { summarizeByTopic, type TopicBreakdownEntry } from './topicBreakdown';
+import { bookmarkedIdsAmong } from './bookmarkService';
 import type {
   SessionAnswerSubmitInput,
   SessionCreateInput,
@@ -63,6 +64,7 @@ interface ReviewQuestion {
   content: QuestionContent;
   options: McqOption[];
   assets: QuestionAsset[];
+  bookmarked: boolean;
 }
 
 export async function createSession(uid: string, input: SessionCreateInput) {
@@ -403,6 +405,8 @@ export async function getSessionById(uid: string, sessionId: string) {
       ? s.question_ids
       : answeredIds;
 
+  const bookmarkedSet = await bookmarkedIdsAmong(uid, orderedIds);
+
   let questions: ReviewQuestion[] = [];
   if (orderedIds.length > 0) {
     const { data: full, error: qErr } = await supabase
@@ -451,6 +455,7 @@ export async function getSessionById(uid: string, sessionId: string) {
         content: contentArr[0],
         options: mcqOptions,
         assets: await mapAssets(r.question_assets),
+        bookmarked: bookmarkedSet.has(r.id),
       };
     }));
 
