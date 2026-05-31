@@ -909,6 +909,15 @@ export default function App() {
             sessionId={state.reviewSessionId}
             onBack={goBack}
             courseName={state.selectedCourse?.name || 'Session'}
+            onPracticeTopic={(topicId, topicName) =>
+              setState((prev) => ({
+                ...prev,
+                mode: 'PRACTICE',
+                selectedTopic: { id: topicId, name: topicName },
+                step: 'READY',
+                reviewSessionId: undefined,
+              }))
+            }
           />
         ) : state.step === 'SESSIONS_HISTORY' ? (
           <MySessionsScreen
@@ -1669,6 +1678,13 @@ interface ReviewSessionData {
     options: Array<{ id: string; text: string; is_correct: boolean }>;
     assets: Array<{ id: string; url: string }>;
   }>;
+  topic_breakdown?: Array<{
+    topic_id: string;
+    topic_name: string | null;
+    correct: number;
+    total: number;
+    accuracy: number;
+  }> | null;
 }
 
 interface ReviewItem {
@@ -1734,7 +1750,7 @@ function computeQuestionNumbers(
   return { numbers, total: counter };
 }
 
-function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; onBack: () => void; courseName: string }) {
+function ReviewScreen({ sessionId, onBack, courseName, onPracticeTopic }: { sessionId: string; onBack: () => void; courseName: string; onPracticeTopic: (topicId: string, topicName: string) => void }) {
   const [filter, setFilter] = useState<'All' | 'Correct' | 'Incorrect' | 'Unanswered'>('All');
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -1941,6 +1957,41 @@ function ReviewScreen({ sessionId, onBack, courseName }: { sessionId: string; on
               </div>
             </div>
           </section>
+
+          {data.session.mode === 'diagnostic' && data.topic_breakdown && data.topic_breakdown.length > 0 && (
+            <div className="bg-bg-surface border border-border-subtle rounded-2xl p-5 mb-4">
+              <h3 className="text-sm font-black uppercase tracking-widest text-accent-text mb-3">
+                Diagnostic breakdown
+              </h3>
+              {data.topic_breakdown.every((t) => t.accuracy >= 0.6) ? (
+                <p className="text-sm text-text-secondary mb-2">Solid across the board — no weak topics flagged.</p>
+              ) : null}
+              <div className="space-y-2">
+                {data.topic_breakdown.map((t) => {
+                  const pct = Math.round(t.accuracy * 100);
+                  const weak = t.accuracy < 0.6;
+                  return (
+                    <div key={t.topic_id} className="flex items-center justify-between gap-3">
+                      <span className="text-sm text-text-primary">{t.topic_name ?? 'Untitled topic'}</span>
+                      <div className="flex items-center gap-3">
+                        <span className={cn('text-sm font-bold', weak ? 'text-danger-text' : 'text-text-secondary')}>
+                          {pct}% ({t.correct}/{t.total})
+                        </span>
+                        {weak && (
+                          <button
+                            onClick={() => onPracticeTopic(t.topic_id, t.topic_name ?? '')}
+                            className="text-[11px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg bg-accent text-bg-page hover:bg-accent-hover"
+                          >
+                            Practice
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Filter Bar */}
           <div id="review-list" className="flex flex-wrap items-center gap-2 md:gap-3 pb-4 border-b border-border-subtle sticky top-0 bg-bg-page z-30 pt-4 w-full">
