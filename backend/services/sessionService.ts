@@ -1,7 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
 import { pickSessionQuestions } from './routingService';
-import { mapAssets, type QuestionAsset, type QuestionContent, type McqOption } from './questionService';
+import { getQuestionById, mapAssets, type QuestionAsset, type QuestionContent, type McqOption } from './questionService';
 import { shuffle } from '../lib/shuffle';
 import { parallelMap } from '../lib/concurrency';
 import { gradeWrittenAnswer } from './gradingService';
@@ -68,15 +68,30 @@ interface ReviewQuestion {
 }
 
 export async function createSession(uid: string, input: SessionCreateInput) {
-  const picked = await pickSessionQuestions({
-    program_course_id: input.program_course_id,
-    mode: input.mode,
-    count: input.count,
-    topic_id: input.topic_id,
-    difficulty: input.difficulty,
-  });
+  let pickedQuestions;
+  let difficultyFallback = false;
+  let topicId = input.topic_id ?? null;
 
-  if (picked.picked.length === 0) {
+  if (input.question_ids && input.question_ids.length > 0) {
+    // Seed directly from an explicit id list (e.g. re-practice from Saved).
+    const loaded = await Promise.all(
+      input.question_ids.map((id) => getQuestionById(id).catch(() => null))
+    );
+    pickedQuestions = loaded.filter((q): q is NonNullable<typeof q> => q !== null);
+    topicId = null;
+  } else {
+    const picked = await pickSessionQuestions({
+      program_course_id: input.program_course_id,
+      mode: input.mode,
+      count: input.count,
+      topic_id: input.topic_id,
+      difficulty: input.difficulty,
+    });
+    pickedQuestions = picked.picked;
+    difficultyFallback = picked.difficulty_fallback;
+  }
+
+  if (pickedQuestions.length === 0) {
     throw new ApiError(
       404,
       'NO_QUESTIONS',
@@ -90,11 +105,11 @@ export async function createSession(uid: string, input: SessionCreateInput) {
       user_uid: uid,
       program_course_id: input.program_course_id,
       mode: input.mode,
-      topic_id: input.topic_id ?? null,
-      total_questions: picked.picked.length,
+      topic_id: topicId,
+      total_questions: pickedQuestions.length,
       // Persist the picked question ids in original order so any device can
       // resume the same exam with the same questions in the same positions.
-      question_ids: picked.picked.map((q) => q.id),
+      question_ids: pickedQuestions.map((q) => q.id),
     })
     .select('*')
     .single();
@@ -102,8 +117,8 @@ export async function createSession(uid: string, input: SessionCreateInput) {
 
   return {
     session_id: row.id,
-    picked: picked.picked,
-    difficulty_fallback: picked.difficulty_fallback,
+    picked: pickedQuestions,
+    difficulty_fallback: difficultyFallback,
   };
 }
 

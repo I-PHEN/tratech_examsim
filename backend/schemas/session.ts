@@ -17,6 +17,7 @@ export const SessionCreate = z.object({
   count: z.coerce.number().int().min(1).max(100).optional(),
   topic_id: uuid.optional(),
   difficulty: Difficulty.optional(),
+  question_ids: z.array(uuid).min(1).max(100).optional(),
 });
 export type SessionCreateInput = z.infer<typeof SessionCreate>;
 
