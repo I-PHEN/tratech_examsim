@@ -18,6 +18,7 @@ import aiRouter from './routes/ai';
 import ingestionRouter from './routes/ingestion';
 import topicSuggestionsRouter from './routes/topicSuggestions';
 import analyticsRouter from './routes/analytics';
+import masteryRouter from './routes/mastery';
 
 async function startServer() {
   const app = express();
@@ -38,6 +39,7 @@ async function startServer() {
   app.use('/api/ingestion', requireAuth, ingestionRouter);
   app.use('/api/topic-suggestions', requireAuth, topicSuggestionsRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
+  app.use('/api/mastery', requireAuth, masteryRouter);
 
   app.use('/api', errorMiddleware);
 
