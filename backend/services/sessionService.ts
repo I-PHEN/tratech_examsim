@@ -77,7 +77,12 @@ export async function createSession(uid: string, input: SessionCreateInput) {
     const loaded = await Promise.all(
       input.question_ids.map((id) => getQuestionById(id).catch(() => null))
     );
-    pickedQuestions = loaded.filter((q): q is NonNullable<typeof q> => q !== null);
+    // Scope to the requested course — never quiz another course's questions,
+    // even if the client sends ids from elsewhere.
+    pickedQuestions = loaded.filter(
+      (q): q is NonNullable<typeof q> =>
+        q !== null && q.program_course_id === input.program_course_id
+    );
     topicId = null;
   } else {
     const picked = await pickSessionQuestions({

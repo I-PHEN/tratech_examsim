@@ -47,7 +47,7 @@ export async function listBookmarks(uid: string, programCourseId: string): Promi
     .select(
       'created_at, question_id, questions!inner(id, type, topic_id, program_course_id, ' +
         'question_content(prompt, explanation), topics(name), ' +
-        'question_assets(id, storage_path, mime_type, position))'
+        'question_assets(id, storage_path, mime_type, position, kind))'
     )
     .eq('user_uid', uid)
     .eq('questions.program_course_id', programCourseId)
