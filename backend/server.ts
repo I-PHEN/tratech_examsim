@@ -19,6 +19,7 @@ import ingestionRouter from './routes/ingestion';
 import topicSuggestionsRouter from './routes/topicSuggestions';
 import analyticsRouter from './routes/analytics';
 import masteryRouter from './routes/mastery';
+import bookmarksRouter from './routes/bookmarks';
 
 async function startServer() {
   const app = express();
@@ -40,6 +41,7 @@ async function startServer() {
   app.use('/api/topic-suggestions', requireAuth, topicSuggestionsRouter);
   app.use('/api/analytics', requireAuth, analyticsRouter);
   app.use('/api/mastery', requireAuth, masteryRouter);
+  app.use('/api/bookmarks', requireAuth, bookmarksRouter);
 
   app.use('/api', errorMiddleware);
 
