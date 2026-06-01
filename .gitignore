@@ -7,3 +7,6 @@ coverage/
 .env*
 .mcp.json
 .claude/
+
+# Superpowers brainstorm scratch
+.superpowers/
