@@ -96,6 +96,8 @@ export interface ManualQuestionEntryProps {
   topicLabel?: string;
   onDone?: () => void;
   onCancel?: () => void;
+  /** Fired after a successful edit-save (editor stays open) so the parent can refresh its list. */
+  onSaved?: () => void;
   onPrev?: () => void;
   onNext?: () => void;
   prevDisabled?: boolean;
@@ -106,8 +108,8 @@ export function ManualQuestionEntry({
   editing = null,
   courseLabel,
   topicLabel,
-  onDone,
   onCancel,
+  onSaved,
   onPrev,
   onNext,
   prevDisabled,
@@ -553,10 +555,21 @@ export function ManualQuestionEntry({
         if (!editing) {
           resetForm();
         } else {
+          // Stay in the editor after saving (don't bounce back to the list).
+          // Clear the just-uploaded pending images and re-sync attached assets
+          // from the server so a second save can't re-upload them.
           pendingImages.forEach((p) => URL.revokeObjectURL(p.previewUrl));
           setPendingImages([]);
           setSolutionImage(null);
-          onDone?.();
+          setMsg({ text: 'Saved ✓ — changes saved. Keep editing, or use Prev/Next/Back.', type: 'ok' });
+          try {
+            const fresh = await apiGet<LoadedQuestion>(`/api/questions/${editing.id}`);
+            setAttachedDiagrams((fresh.assets ?? []).filter((a) => a.kind !== 'solution'));
+            setAttachedSolution((fresh.assets ?? []).find((a) => a.kind === 'solution') ?? null);
+          } catch {
+            /* non-fatal: attached assets just won't refresh until the editor is reopened */
+          }
+          onSaved?.();
         }
         setDirty(false);
       }

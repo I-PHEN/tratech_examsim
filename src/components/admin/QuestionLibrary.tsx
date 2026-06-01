@@ -189,11 +189,11 @@ export function QuestionLibrary() {
         editing={{ id: editingRow.id }}
         courseLabel={courseLabel || undefined}
         topicLabel={editingTopic ?? topicLabel}
-        onCancel={() => setEditingIndex(null)}
-        onDone={() => {
+        onCancel={() => {
           setEditingIndex(null);
           fetchList();
         }}
+        onSaved={fetchList}
         onPrev={goPrev}
         onNext={goNext}
         prevDisabled={prevDisabled}
@@ -209,7 +209,7 @@ export function QuestionLibrary() {
           <h4 className="font-bold uppercase tracking-widest text-xs text-text-primary mb-3">
             Course
           </h4>
-          <CourseSelect value={programCourseId} onChange={setProgramCourseId} compact />
+          <CourseSelect value={programCourseId} onChange={setProgramCourseId} compact persistKey="library" />
         </div>
 
         {programCourseId && (

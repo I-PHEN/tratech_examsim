@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Clock, Search, History, CheckCircle2, ChevronRight, Trash2, AlertTriangle, Loader2, Bookmark } from 'lucide-react';
+import { ArrowLeft, Clock, Search, History, CheckCircle2, ChevronRight, Trash2, AlertTriangle, Loader2, Bookmark, BookmarkX } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { StudyMode } from '../types';
 import { apiDelete, apiGet } from '../lib/apiClient';
@@ -145,6 +145,17 @@ export function MySessionsScreen({
       .finally(() => { if (!cancelled) setSavedLoading(false); });
     return () => { cancelled = true; };
   }, [view]);
+
+  // Remove a saved question (optimistic — restore the row if the call fails).
+  const removeSaved = async (questionId: string) => {
+    const prev = saved;
+    setSaved((rows) => rows.filter((r) => r.id !== questionId));
+    try {
+      await apiDelete(`/api/bookmarks/${questionId}`);
+    } catch {
+      setSaved(prev);
+    }
+  };
 
   const filteredHistory = useMemo(() => {
     return sessions
@@ -424,6 +435,15 @@ export function MySessionsScreen({
                       <p className="text-[10px] text-text-tertiary mt-1">Original session was deleted — can’t open review.</p>
                     )}
                   </div>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); removeSaved(q.id); }}
+                    title="Remove from saved"
+                    aria-label="Remove from saved"
+                    className="shrink-0 p-1.5 rounded-lg text-text-tertiary hover:text-[color:var(--danger-text)] hover:bg-bg-raised transition-colors"
+                  >
+                    <BookmarkX className="w-4 h-4" />
+                  </button>
                   {q.session_id && (
                     <ChevronRight className="w-4 h-4 text-text-tertiary group-hover:text-text-primary transition-colors shrink-0" />
                   )}

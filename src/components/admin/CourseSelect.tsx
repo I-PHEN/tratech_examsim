@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet } from '../../lib/apiClient';
+import { usePersistentState } from '../../lib/usePersistentState';
 
 interface Department {
   id: string;
@@ -22,27 +23,42 @@ interface Props {
   value: string;
   onChange: (programCourseId: string) => void;
   compact?: boolean;
+  /**
+   * When set, the department/year/sem picks persist under this namespace so the
+   * selection survives the component remounting (e.g. returning from editing in
+   * the Library). Without it, the picker is ephemeral (fresh for each new question).
+   */
+  persistKey?: string;
 }
 
-export function CourseSelect({ value, onChange, compact = false }: Props) {
+export function CourseSelect({ value, onChange, compact = false, persistKey }: Props) {
+  const ns = `courseselect.${persistKey ?? 'default'}`;
   const [departments, setDepartments] = useState<Department[]>([]);
-  const [departmentId, setDepartmentId] = useState<string>('');
-  const [year, setYear] = useState<number | ''>('');
-  const [sem, setSem] = useState<number | ''>('');
+  const [departmentId, setDepartmentId] = usePersistentState<string>(`${ns}.department`, '');
+  const [year, setYear] = usePersistentState<number | ''>(`${ns}.year`, '');
+  const [sem, setSem] = usePersistentState<number | ''>(`${ns}.sem`, '');
   const [programCourses, setProgramCourses] = useState<ProgramCourse[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(false);
+  // Skip the parent-value reset on the first run so a persisted course survives
+  // a remount; only clear when the user actually changes dept/year/sem.
+  const didMountRef = useRef(false);
 
   useEffect(() => {
     apiGet<Department[]>('/api/departments')
       .then((rows) => {
         setDepartments(rows);
-        if (rows.length === 1) setDepartmentId(rows[0].id);
+        if (rows.length === 1 && !departmentId) setDepartmentId(rows[0].id);
       })
       .catch(console.error);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    onChange('');
+    if (didMountRef.current) {
+      onChange('');
+    } else {
+      didMountRef.current = true;
+    }
     if (!departmentId || !year || !sem) {
       setProgramCourses([]);
       return;

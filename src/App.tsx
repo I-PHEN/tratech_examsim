@@ -2212,6 +2212,7 @@ function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracti
               id: it.id,
               type: it.type === 'mcq' ? 'MCQ' : 'INPUT',
               prompt: it.prompt,
+              sharedStem: it.sharedStem ?? undefined,
               options: it.options.map((o) => o.text),
               optionIds: it.options.map((o) => o.id),
               correctOptionId: correctOpt?.id,
@@ -2235,14 +2236,14 @@ function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracti
   );
 }
 
-function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
+function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: boolean }) {
   const studentAnswerText =
     it.type === 'mcq'
       ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
       : it.pickedText;
 
-  return (
-    <div className="space-y-3">
+  const questionCol = (
+    <div className="space-y-3 min-w-0">
       {it.sharedStem && (
         <div className="bg-bg-sunken/40 border-l-2 border-accent/40 rounded-r-lg px-3 py-2">
           <span className="block text-[9px] font-black uppercase tracking-widest text-accent-text mb-1">
@@ -2270,7 +2271,11 @@ function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
           ))}
         </div>
       )}
+    </div>
+  );
 
+  const answerCol = (
+    <div className="space-y-3 min-w-0">
       {it.type === 'mcq' ? (
         <div className="grid grid-cols-1 gap-2.5">
           {it.options.map((opt, optIdx) => {
@@ -2418,6 +2423,20 @@ function ReviewQuestionDetail({ it }: { it: ReviewItem }) {
       )}
     </div>
   );
+
+  return split ? (
+    // Big-screen review: question on the left, answer + worked solution on the
+    // right, so both are visible at once without scrolling.
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start">
+      {questionCol}
+      {answerCol}
+    </div>
+  ) : (
+    <div className="space-y-3">
+      {questionCol}
+      {answerCol}
+    </div>
+  );
 }
 
 function ReviewFocusModal({
@@ -2479,7 +2498,7 @@ function ReviewFocusModal({
       </header>
 
       <main className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
-        <div className="max-w-3xl mx-auto w-full px-4 md:px-6 py-5 space-y-4">
+        <div className="max-w-3xl lg:max-w-6xl mx-auto w-full px-4 md:px-6 py-5 space-y-4">
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-3">
               <span className="text-sm font-black text-text-tertiary whitespace-nowrap">
@@ -2506,7 +2525,7 @@ function ReviewFocusModal({
             </button>
           </div>
 
-          <ReviewQuestionDetail it={it} />
+          <ReviewQuestionDetail it={it} split />
         </div>
       </main>
     </div>
@@ -2556,7 +2575,7 @@ You are helping ${studentName} review ONE specific exam question they have alrea
 
 # Context (for your reasoning — do not blurt the correct answer as a bare spoiler before you explain it)
 - Question type: ${question.type === 'MCQ' ? 'Multiple choice' : 'Calculation / short answer'}
-- Question: ${question.prompt}
+${question.sharedStem ? `- Shared setup (applies to this and the other parts of the question): ${question.sharedStem}\n` : ''}- Question${question.sharedStem ? ' (this specific part)' : ''}: ${question.prompt}
 - The correct answer: ${correctAnswerText ?? '(not available)'}
 - The student's submitted answer: ${studentAnswer || '(left blank)'}
 - Outcome: the student answered ${isUnanswered ? 'nothing' : isCorrect ? 'CORRECTLY' : 'INCORRECTLY'}.
@@ -2717,10 +2736,18 @@ Stay strictly on THIS question — politely decline unrelated requests.
       {/* Conversation */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto no-scrollbar px-4 scroll-smooth">
         <div className="max-w-4xl mx-auto pb-10 space-y-5">
-          {/* The question, presented as the opening user message */}
+          {/* The question, presented as the opening user message. For a
+              multi-part question the shared setup is shown first so Jude (and
+              the student) have the full context, not just this part. */}
           <div className="flex flex-col items-end">
             <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest mb-1 mr-1">Question</span>
-            <div className="max-w-[85%] bg-bg-raised border border-border-subtle rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-text-primary leading-relaxed">
+            <div className="max-w-[85%] bg-bg-raised border border-border-subtle rounded-2xl rounded-tr-sm px-4 py-3 text-sm text-text-primary leading-relaxed space-y-2">
+              {question.sharedStem && (
+                <div className="border-l-2 border-accent/40 pl-2.5">
+                  <span className="block text-[8px] font-black uppercase tracking-widest text-accent-text mb-0.5">Setup</span>
+                  <RichText>{question.sharedStem}</RichText>
+                </div>
+              )}
               <RichText>{question.prompt}</RichText>
             </div>
           </div>
@@ -3014,16 +3041,6 @@ function ExamSimulation({
     () => computeQuestionNumbers(questions.map((q) => ({ groupId: q.groupId ?? null }))),
     [questions]
   );
-  const currentNumber = numbering.numbers[currentIdx] ?? currentIdx + 1;
-  // Session indices of every sub-part in the current question's group, in order.
-  const groupSiblings = useMemo(() => {
-    const gid = currentQuestion?.groupId;
-    if (!gid) return [] as number[];
-    return questions.reduce<number[]>((acc, q, i) => {
-      if (q.groupId === gid) acc.push(i);
-      return acc;
-    }, []);
-  }, [questions, currentQuestion]);
 
   // Hydrate timer state from the server on mount. This is the ONLY place that
   // sets startedAt / totalPausedMs from authoritative state — auto-finish is
@@ -3565,56 +3582,9 @@ function ExamSimulation({
                <div className="bg-bg-surface p-3 md:p-4 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
                   <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50 pointer-events-none" />
 
-                  {/* Header zone — pinned; never scrolls away */}
-                  <div className="relative z-10 shrink-0 space-y-1.5 border-b border-border-subtle pb-1.5">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-baseline gap-2">
-                        <span className="text-xl font-black text-text-primary">Q{currentNumber}</span>
-                        <span className="text-[9px] font-black text-text-tertiary uppercase tracking-widest">/ {numbering.total}</span>
-                      </div>
-                      <button
-                        onClick={toggleFlag}
-                        className={cn(
-                          "flex items-center gap-2 px-3 py-1.5 rounded-xl text-[9px] md:text-[10px] font-black uppercase tracking-widest transition-colors border shrink-0",
-                          flagged.has(currentIdx) ? "bg-amber-500 border-amber-500 text-white" : "border-border-subtle hover:border-border-medium hover:bg-bg-raised text-text-tertiary hover:text-text-primary"
-                        )}
-                      >
-                        <Flag className={cn("w-3 h-3", flagged.has(currentIdx) ? "fill-white" : "fill-none")} />
-                        {flagged.has(currentIdx) ? "Flagged" : "Flag"}
-                      </button>
-                    </div>
-                    {currentQuestion.groupId && (
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[9px] font-black uppercase tracking-widest text-accent-text">
-                          Multi-part question · {groupSiblings.length} parts
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {groupSiblings.map((sibIdx, n) => {
-                            const sib = questions[sibIdx];
-                            const isCurrent = sibIdx === currentIdx;
-                            const partText = sib.partLabel ?? String.fromCharCode(65 + n);
-                            return (
-                              <button
-                                key={sibIdx}
-                                onClick={() => setCurrentIdx(sibIdx)}
-                                title={`Go to Part ${partText}`}
-                                className={cn(
-                                  "min-w-[1.75rem] h-7 px-1.5 rounded-lg text-[10px] font-black uppercase transition-colors border flex items-center justify-center",
-                                  isCurrent
-                                    ? "bg-accent border-accent text-bg-page"
-                                    : isAnsweredAt(sibIdx)
-                                      ? "bg-success-bg/80 border-success-border text-success-text"
-                                      : "bg-bg-raised border-border-subtle text-text-tertiary hover:text-text-primary hover:border-border-medium"
-                                )}
-                              >
-                                {partText}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  {/* Header removed: question number + multi-part labels live in
+                      the navigator; flagging moved to the bottom controls — the
+                      question body now owns this space for long prompts. */}
 
                   {/* Scroll zone — ONLY the question text + diagrams scroll */}
                   <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-2">
@@ -3761,6 +3731,20 @@ function ExamSimulation({
                    >
                        <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
                        <span className="text-[11px] font-black uppercase tracking-widest">Previous</span>
+                    </button>
+
+                    <button
+                      onClick={toggleFlag}
+                      title={flagged.has(currentIdx) ? 'Unflag this question' : 'Flag this question'}
+                      className={cn(
+                        "shrink-0 flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-[11px] font-black uppercase tracking-widest transition-colors border active:scale-95",
+                        flagged.has(currentIdx)
+                          ? "bg-amber-500 border-amber-500 text-white"
+                          : "border-border-subtle hover:border-border-medium hover:bg-bg-raised text-text-tertiary hover:text-text-primary"
+                      )}
+                    >
+                      <Flag className={cn("w-4 h-4", flagged.has(currentIdx) ? "fill-white" : "fill-none")} />
+                      <span className="hidden sm:inline">{flagged.has(currentIdx) ? "Flagged" : "Flag"}</span>
                     </button>
 
                    <button
