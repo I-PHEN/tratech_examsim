@@ -164,7 +164,8 @@ export async function listSchedules(userUid: string): Promise<ScheduleListItem[]
   return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
     // Extract course_name: program_courses → courses(name)
     const pc = Array.isArray(row.program_courses) ? row.program_courses[0] : row.program_courses;
-    const courseObj = pc ? (Array.isArray((pc as Record<string, unknown>).courses) ? ((pc as Record<string, unknown>).courses as Array<{ name: string }>)[0] : (pc as Record<string, unknown>).courses as { name: string } | null) : null;
+    const courses = pc ? (pc as Record<string, unknown>).courses : null;
+    const courseObj = Array.isArray(courses) ? (courses as Array<{ name: string }>)[0] : (courses as { name: string } | null);
     const course_name: string | null = courseObj?.name ?? null;
 
     // Extract topic_name: topics(name)
@@ -173,7 +174,6 @@ export async function listSchedules(userUid: string): Promise<ScheduleListItem[]
 
     // Strip the embedded relation objects, spread base row fields
     const { program_courses: _pc, topics: _t, ...base } = row;
-    void _pc; void _t;
     return { ...(base as unknown as ScheduleRow), course_name, topic_name };
   });
 }

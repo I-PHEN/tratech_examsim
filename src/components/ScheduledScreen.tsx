@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, CalendarClock, Pencil, Pause, Play, Trash2, AlertTriangle, Loader2, CalendarPlus, ChevronDown, ChevronUp } from 'lucide-react';
 import { DateTime } from 'luxon';
 import { cn } from '../lib/utils';
@@ -96,6 +96,8 @@ interface FormState {
   topicId: string;
   difficulty: DifficultyOption;
   questionCount: number;
+  questionCountRaw: string; // raw string for the count input (FIX 5)
+  timezone: string; // preserved from original row on edit (FIX 2)
   recurrence: 'once' | 'weekly';
   // once
   runDate: string; // YYYY-MM-DD
@@ -112,6 +114,8 @@ const EMPTY_FORM: FormState = {
   topicId: '',
   difficulty: 'All',
   questionCount: 10,
+  questionCountRaw: '10',
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   recurrence: 'once',
   runDate: '',
   runTime: '',
@@ -135,6 +139,8 @@ function formFromRow(row: ScheduleListItem): FormState {
     topicId: row.topic_id ?? '',
     difficulty: row.difficulty ? (capitalize(row.difficulty) as DifficultyOption) : 'All',
     questionCount: row.question_count,
+    questionCountRaw: String(row.question_count),
+    timezone: row.timezone, // FIX 2: preserve original timezone on edit
     recurrence: row.recurrence,
     runDate,
     runTime,
@@ -162,6 +168,21 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
   const [formSuccess, setFormSuccess] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
+  // Unmount guard (FIX 3)
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Timer ref for success banner auto-dismiss (FIX 1)
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (successTimerRef.current !== null) clearTimeout(successTimerRef.current);
+    };
+  }, []);
+
   // Action loading per row
   const [actionLoading, setActionLoading] = useState<Record<string, boolean>>({});
 
@@ -176,13 +197,14 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
     setListLoading(true);
     setListError(null);
     apiGet<ScheduleListItem[]>('/api/schedules')
-      .then(setSchedules)
-      .catch((e) => setListError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setListLoading(false));
+      .then((data) => { if (mountedRef.current) setSchedules(data); })
+      .catch((e) => { if (mountedRef.current) setListError(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (mountedRef.current) setListLoading(false); });
   }
 
   useEffect(() => {
     loadSchedules();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ── Fetch topics when course changes ────────────────────────────────────────
@@ -192,9 +214,11 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
       setTopics([]);
       return;
     }
+    let cancelled = false;
     apiGet<ApiTopic[]>(`/api/topics?program_course_id=${form.programCourseId}`)
-      .then(setTopics)
-      .catch(() => setTopics([]));
+      .then((data) => { if (!cancelled) setTopics(data); })
+      .catch(() => { if (!cancelled) setTopics([]); });
+    return () => { cancelled = true; };
   }, [form.programCourseId]);
 
   // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -208,23 +232,25 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
     setEditingId(row.id);
     setForm(formFromRow(row));
     setFormError(null);
-    setFormSuccess(false);
+    setFormSuccess(false); // clear banner when opening a new edit
     setFormOpen(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    // FIX 7: removed dead window.scrollTo (scroll container is an overflow-y-auto div)
   }
 
   function cancelEdit() {
     setEditingId(null);
     setForm(EMPTY_FORM);
     setFormError(null);
-    setFormSuccess(false);
+    // FIX 1: do NOT clear formSuccess here — let the success banner stay visible after save
   }
 
   // ── Validate + build payload ─────────────────────────────────────────────────
 
   function validate(): string | null {
     if (!editingId && !form.programCourseId) return 'Please select a course.';
-    if (form.questionCount < 1 || form.questionCount > 50) return 'Question count must be 1–50.';
+    // FIX 5: parse the raw string to get the final count for validation
+    const parsedCount = parseInt(form.questionCountRaw, 10);
+    if (isNaN(parsedCount) || parsedCount < 1 || parsedCount > 50) return 'Question count must be 1–50.';
     if (form.recurrence === 'once') {
       if (!form.runDate) return 'Please choose a date.';
       if (!form.runTime) return 'Please choose a time.';
@@ -236,13 +262,15 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
   }
 
   function buildPayload(mode: 'create' | 'update'): Record<string, unknown> {
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    // FIX 5: parse and clamp the raw count string
+    const parsedCount = Math.min(50, Math.max(1, parseInt(form.questionCountRaw, 10) || 1));
+    // FIX 2: use form.timezone (preserved from original row on edit) — never re-read Intl here
     const base: Record<string, unknown> = {
       topic_id: form.topicId || undefined,
       difficulty: form.difficulty === 'All' ? undefined : form.difficulty.toLowerCase(),
-      question_count: form.questionCount,
+      question_count: parsedCount,
       label: form.label.trim() || undefined,
-      timezone: tz,
+      timezone: form.timezone,
     };
     if (form.recurrence === 'once') {
       base.recurrence = 'once';
@@ -271,11 +299,16 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
       } else {
         await apiPost('/api/schedules', payload);
       }
-      setFormSuccess(true);
+      // FIX 1: call cancelEdit first (resets edit/form state), then set success true so
+      // cancelEdit's omission of formSuccess-clear means the banner actually appears.
       cancelEdit();
       setFormOpen(false);
+      setFormSuccess(true);
       loadSchedules();
-      setTimeout(() => setFormSuccess(false), 3000);
+      if (successTimerRef.current !== null) clearTimeout(successTimerRef.current);
+      successTimerRef.current = setTimeout(() => {
+        if (mountedRef.current) setFormSuccess(false);
+      }, 3000);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'SCHEDULE_LIMIT') {
         setFormError('You have reached the 50 schedule limit. Cancel or delete an existing schedule to add a new one.');
@@ -295,8 +328,9 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
     try {
       await apiPost(`/api/schedules/${row.id}/${action}`, {});
       loadSchedules();
-    } catch {
-      // silently ignore for now; list will not refresh
+    } catch (e) {
+      // FIX 4: surface the error rather than swallowing it silently
+      if (mountedRef.current) setListError(e instanceof Error ? e.message : 'Failed to update schedule. Please try again.');
     } finally {
       setActionLoading((prev) => ({ ...prev, [row.id]: false }));
     }
@@ -334,7 +368,7 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  const inputCls = 'w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none placeholder:text-text-tertiary';
+  const inputCls = 'w-full bg-bg-sunken border border-border-subtle rounded-xl px-3 py-2 text-sm text-text-primary focus:border-primary focus:outline-none placeholder:text-text-tertiary';
   const labelCls = 'text-xs font-bold uppercase tracking-wider text-text-secondary mb-1 block';
 
   return (
@@ -460,7 +494,11 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
                 <div className="flex items-center gap-3">
                   <button
                     type="button"
-                    onClick={() => updateForm({ questionCount: Math.max(1, form.questionCount - 1) })}
+                    onClick={() => {
+                      // FIX 5: stepper adjusts numeric value and keeps raw string in sync
+                      const next = Math.max(1, form.questionCount - 1);
+                      updateForm({ questionCount: next, questionCountRaw: String(next) });
+                    }}
                     className="w-8 h-8 rounded-lg bg-bg-sunken border border-border-subtle flex items-center justify-center text-text-secondary hover:text-text-primary hover:border-border-medium transition-colors"
                   >
                     −
@@ -469,16 +507,26 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
                     type="number"
                     min={1}
                     max={50}
-                    value={form.questionCount}
+                    value={form.questionCountRaw}
                     onChange={(e) => {
-                      const v = parseInt(e.target.value, 10);
-                      if (!isNaN(v)) updateForm({ questionCount: Math.min(50, Math.max(1, v)) });
+                      // FIX 5: store raw string — allow clearing and free typing
+                      updateForm({ questionCountRaw: e.target.value });
                     }}
-                    className="w-16 text-center bg-bg-sunken border border-border-subtle rounded-xl px-2 py-2 text-sm text-text-primary focus:border-accent focus:outline-none"
+                    onBlur={() => {
+                      // FIX 5: parse + clamp on blur, keep both raw and numeric in sync
+                      const parsed = parseInt(form.questionCountRaw, 10);
+                      const clamped = isNaN(parsed) ? 10 : Math.min(50, Math.max(1, parsed));
+                      updateForm({ questionCount: clamped, questionCountRaw: String(clamped) });
+                    }}
+                    className="w-16 text-center bg-bg-sunken border border-border-subtle rounded-xl px-2 py-2 text-sm text-text-primary focus:border-primary focus:outline-none"
                   />
                   <button
                     type="button"
-                    onClick={() => updateForm({ questionCount: Math.min(50, form.questionCount + 1) })}
+                    onClick={() => {
+                      // FIX 5: stepper adjusts numeric value and keeps raw string in sync
+                      const next = Math.min(50, form.questionCount + 1);
+                      updateForm({ questionCount: next, questionCountRaw: String(next) });
+                    }}
                     className="w-8 h-8 rounded-lg bg-bg-sunken border border-border-subtle flex items-center justify-center text-text-secondary hover:text-text-primary hover:border-border-medium transition-colors"
                   >
                     +
