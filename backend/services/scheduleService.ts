@@ -272,8 +272,13 @@ export async function updateSchedule(userUid: string, id: string, patch: Schedul
     const mergedTz = (updates.timezone ?? row.timezone) as string;
 
     if (mergedRecurrence === 'once') {
-      // once: next_run_at = the run_at UTC instant (already computed above).
-      updates.next_run_at = updates.run_at;
+      // once: next_run_at tracks the absolute run_at instant. Only move it when
+      // the recurrence was actually replaced (so run_at was recomputed above);
+      // a timezone-only change to a stored once schedule leaves the fixed
+      // instant untouched (don't emit the key, so the DB retains it).
+      if (updates.run_at !== undefined) {
+        updates.next_run_at = updates.run_at as string | null;
+      }
     } else {
       const mergedSpec: RecurrenceSpec = {
         recurrence: 'weekly',
@@ -285,6 +290,7 @@ export async function updateSchedule(userUid: string, id: string, patch: Schedul
       updates.next_run_at = computeNextRunAt(mergedSpec, new Date());
     }
   } else if (effectiveStatus === 'paused') {
+    // A paused schedule keeps next_run_at null regardless of which fields changed.
     updates.next_run_at = null;
   }
 
@@ -295,7 +301,9 @@ export async function updateSchedule(userUid: string, id: string, patch: Schedul
     .eq('user_uid', userUid)
     .select()
     .single();
-  if (error) throw error;
+  if (error || !data) {
+    throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  }
   return data as ScheduleRow;
 }
 
