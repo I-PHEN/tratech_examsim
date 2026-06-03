@@ -61,7 +61,8 @@ import {
   StopCircle,
   Maximize2,
   Minimize2,
-  ArrowLeft
+  ArrowLeft,
+  CalendarClock
 } from 'lucide-react';
 import { AppState, StudyMode, Course, Topic, Question, TimerSession } from './types';
 import { cn } from './lib/utils';
@@ -69,6 +70,7 @@ import { MySessionsScreen } from './components/MySessionsScreen';
 import { PerformanceScreen } from './components/PerformanceScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { HelpScreen } from './components/HelpScreen';
+import { ScheduledScreen } from './components/ScheduledScreen';
 import { Button } from './components/ui/Button';
 import { Card } from './components/ui/Card';
 import { EmptyState } from './components/ui/EmptyState';
@@ -768,7 +770,7 @@ export default function App() {
       setActiveSession(null);
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
-    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP') {
+    if (state.step === 'TARGETED_PRACTICE' || state.step === 'SESSIONS_HISTORY' || state.step === 'PERFORMANCE' || state.step === 'SETTINGS' || state.step === 'HELP' || state.step === 'SCHEDULED') {
       setState(prev => ({ ...prev, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined }));
     }
   };
@@ -858,8 +860,9 @@ export default function App() {
             </div>
 
             <div className="flex-1 px-3 space-y-2">
-              <NavItem onClick={() => { setActiveSession(null); setState(p => ({ ...p, returnStep: undefined, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setActiveSession(null); setState(p => ({ ...p, returnStep: undefined, step: 'MODE_SELECT', mode: null, selectedCourse: null, selectedTopic: null, reviewSessionId: undefined })); setIsMobileMenuOpen(false); }} icon={Home} label="Home" active={state.step !== 'TARGETED_PRACTICE' && state.step !== 'SESSIONS_HISTORY' && state.step !== 'PERFORMANCE' && state.step !== 'SETTINGS' && state.step !== 'HELP' && state.step !== 'SCHEDULED'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'TARGETED_PRACTICE' })); setIsMobileMenuOpen(false); }} icon={Target} label="Targeted Practice" active={state.step === 'TARGETED_PRACTICE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
+              <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SCHEDULED' })); setIsMobileMenuOpen(false); }} icon={CalendarClock} label="Scheduled" active={state.step === 'SCHEDULED'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'SESSIONS_HISTORY' })); setIsMobileMenuOpen(false); }} icon={History} label="My Sessions" active={state.step === 'SESSIONS_HISTORY'} expanded={isSidebarExpanded || isMobileMenuOpen} />
               <NavItem onClick={() => { setState(p => ({ ...p, returnStep: p.step, step: 'PERFORMANCE' })); setIsMobileMenuOpen(false); }} icon={Activity} label="Performance" active={state.step === 'PERFORMANCE'} expanded={isSidebarExpanded || isMobileMenuOpen} />
             </div>
@@ -969,6 +972,8 @@ export default function App() {
               }))
             }
           />
+        ) : state.step === 'SCHEDULED' ? (
+          <ScheduledScreen onBack={goBack} />
         ) : state.step === 'SESSIONS_HISTORY' ? (
           <MySessionsScreen
              onBack={goBack}

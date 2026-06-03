@@ -60,8 +60,8 @@ export interface Course {
 }
 
 export interface AppState {
-  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
-  returnStep?: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP';
+  step: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP' | 'SCHEDULED';
+  returnStep?: 'MODE_SELECT' | 'COURSE_SELECT' | 'TOPIC_SELECT' | 'READY' | 'EXAM' | 'REVIEW' | 'TARGETED_PRACTICE' | 'SESSIONS_HISTORY' | 'PERFORMANCE' | 'SETTINGS' | 'HELP' | 'SCHEDULED';
   mode: StudyMode | null;
   selectedCourse: Course | null;
   selectedTopic: Topic | null;

@@ -147,15 +147,35 @@ export function rowToRecurrenceSpec(row: Pick<ScheduleRow, 'recurrence' | 'timez
 // DB CRUD
 // ---------------------------------------------------------------------------
 
-export async function listSchedules(userUid: string): Promise<ScheduleRow[]> {
+export interface ScheduleListItem extends ScheduleRow {
+  course_name: string | null;
+  topic_name: string | null;
+}
+
+export async function listSchedules(userUid: string): Promise<ScheduleListItem[]> {
   const { data, error } = await supabase
     .from('practice_schedules')
-    .select('*')
+    .select('*, program_courses(courses(name)), topics(name)')
     .eq('user_uid', userUid)
     .order('next_run_at', { ascending: true, nullsFirst: false })
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as ScheduleRow[];
+
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
+    // Extract course_name: program_courses → courses(name)
+    const pc = Array.isArray(row.program_courses) ? row.program_courses[0] : row.program_courses;
+    const courseObj = pc ? (Array.isArray((pc as Record<string, unknown>).courses) ? ((pc as Record<string, unknown>).courses as Array<{ name: string }>)[0] : (pc as Record<string, unknown>).courses as { name: string } | null) : null;
+    const course_name: string | null = courseObj?.name ?? null;
+
+    // Extract topic_name: topics(name)
+    const topicObj = Array.isArray(row.topics) ? row.topics[0] : row.topics;
+    const topic_name: string | null = (topicObj as { name?: string } | null)?.name ?? null;
+
+    // Strip the embedded relation objects, spread base row fields
+    const { program_courses: _pc, topics: _t, ...base } = row;
+    void _pc; void _t;
+    return { ...(base as unknown as ScheduleRow), course_name, topic_name };
+  });
 }
 
 export async function createSchedule(userUid: string, input: ScheduleCreateInput): Promise<ScheduleRow> {
