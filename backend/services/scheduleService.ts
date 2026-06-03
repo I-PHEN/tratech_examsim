@@ -38,12 +38,10 @@ function nextWeeklyAfter(spec: RecurrenceSpec, after: DateTime): DateTime | null
   for (let i = 0; i <= 7; i++) {
     const candidate = after
       .plus({ days: i })
-      .setZone(spec.timezone)
       .set({ hour, minute, second: 0, millisecond: 0 });
 
     const specWeekday = luxonWeekdayToSpec(candidate.weekday);
     if (!daysOfWeek.includes(specWeekday)) continue;
-    if (!candidate.isValid) continue;
     if (candidate <= after) continue; // must be strictly after
 
     // Check ends_on (inclusive last date in the schedule's timezone)

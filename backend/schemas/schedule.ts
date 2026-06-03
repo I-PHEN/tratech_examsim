@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { uuid } from './common';
+import { uuid, Difficulty } from './common';
 
 const naiveDatetime = z
   .string()
@@ -39,7 +39,7 @@ export const ScheduleCreate = z
   .object({
     program_course_id: uuid,
     topic_id: uuid.nullable().optional(),
-    difficulty: z.enum(['easy', 'medium', 'hard']).nullable().optional(),
+    difficulty: Difficulty.nullable().optional(),
     question_count: z.number().int().min(1).max(50).default(10),
     label: z.string().trim().max(120).nullable().optional(),
     timezone: z.string().min(1, 'timezone is required'),
@@ -53,7 +53,7 @@ export type ScheduleCreateInput = z.infer<typeof ScheduleCreate>;
 // ---------------------------------------------------------------------------
 const ScalarUpdate = z.object({
   topic_id: uuid.nullable().optional(),
-  difficulty: z.enum(['easy', 'medium', 'hard']).nullable().optional(),
+  difficulty: Difficulty.nullable().optional(),
   question_count: z.number().int().min(1).max(50).optional(),
   label: z.string().trim().max(120).nullable().optional(),
   timezone: z.string().min(1).optional(),
