@@ -47,7 +47,12 @@ function buildItems(rows: QuestionRow[]): LibraryItem[] {
       const parts = rows
         .filter((x) => x.question_group_id === r.question_group_id)
         .sort((a, b) => (a.part_index ?? 0) - (b.part_index ?? 0));
-      items.push({ kind: 'group', groupId: r.question_group_id, parts });
+      // A group with a single surviving member is really a standalone question.
+      if (parts.length === 1) {
+        items.push({ kind: 'single', row: parts[0] });
+      } else {
+        items.push({ kind: 'group', groupId: r.question_group_id, parts });
+      }
     } else {
       items.push({ kind: 'single', row: r });
     }

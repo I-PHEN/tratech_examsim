@@ -180,3 +180,20 @@
 .glass-panel {
   @apply bg-surface-container-high/80 backdrop-blur-xl border border-outline-variant/10 shadow-2xl;
 }
+
+/* RichText (markdown + KaTeX) overflow handling — keep wide content readable on
+   small screens instead of clipping it. Long display equations and wide blocks
+   scroll horizontally; long words/tokens wrap rather than forcing the page wide. */
+.rich-text {
+  overflow-wrap: anywhere;
+}
+.rich-text .katex-display {
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+}
+/* Keep the equation on one line so it can scroll within katex-display. */
+.rich-text .katex-display > .katex {
+  white-space: nowrap;
+}

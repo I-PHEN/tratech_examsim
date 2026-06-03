@@ -179,9 +179,9 @@ export function MySessionsScreen({
   const paginatedHistory = filteredHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
-    <div className="flex-1 w-full flex justify-center py-5 md:py-6 px-4 h-full overflow-y-auto">
-      <div className="w-full max-w-4xl space-y-8 animate-fade-in pb-12">
-        <header className="flex flex-col gap-5">
+    <div className="flex-1 w-full flex justify-center py-5 md:py-6 px-3 md:px-4 h-full overflow-y-auto">
+      <div className="w-full max-w-4xl space-y-5 md:space-y-6 animate-fade-in pb-12">
+        <header className="flex flex-col gap-4">
           <div className="flex items-center justify-between md:justify-end">
             <button
               onClick={onBack}
@@ -196,10 +196,10 @@ export function MySessionsScreen({
           </div>
 
           <div>
-            <h1 className="text-3xl md:text-4xl leading-tight font-display italic text-text-primary mb-2">
+            <h1 className="text-2xl md:text-4xl leading-tight font-display italic text-text-primary mb-1.5">
               My Sessions
             </h1>
-            <p className="text-text-secondary text-base">Review your past performance, analyze mistakes, and track your growth over time.</p>
+            <p className="text-text-secondary text-sm md:text-base">Review your past performance, analyze mistakes, and track your growth over time.</p>
           </div>
         </header>
 
@@ -223,25 +223,25 @@ export function MySessionsScreen({
 
         {view === 'sessions' ? (
         <>
-        <Card variant="default" padding="none" className="flex flex-col md:flex-row gap-4 p-3">
+        <Card variant="default" padding="none" className="flex flex-col md:flex-row gap-2.5 p-2.5">
           <div className="flex-1 relative">
-            <Search className="w-5 h-5 absolute left-4 top-1/2 -translate-y-1/2 text-text-tertiary" />
+            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-text-tertiary" />
             <input
               type="text"
               placeholder="Search by course, topic, or mode..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-bg-page border border-border-subtle rounded-xl py-3 pl-12 pr-4 text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent transition-colors"
+              className="w-full bg-bg-page border border-border-subtle rounded-xl py-2.5 pl-10 pr-4 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:border-accent transition-colors"
             />
           </div>
-          <div className="flex gap-2 overflow-x-auto pb-2 md:pb-0 scrollbar-hide shrink-0 items-center px-1">
-            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary mr-2 shrink-0">Filter by</span>
+          <div className="flex gap-1.5 overflow-x-auto scrollbar-hide shrink-0 items-center px-0.5">
+            <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-text-tertiary mr-1 shrink-0">Filter by</span>
             {(['ALL', 'PRACTICE', 'DIAGNOSTIC', 'MIDSEM', 'FULL_EXAM'] as const).map((mode) => (
               <button
                 key={mode}
                 onClick={() => setFilterMode(mode as StudyMode | 'ALL')}
                 className={cn(
-                  'px-4 py-2 rounded-full text-xs font-semibold whitespace-nowrap transition-colors border',
+                  'px-3 py-1.5 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors border',
                   filterMode === mode
                     ? 'bg-accent text-slate-950 border-accent'
                     : 'bg-bg-surface text-text-secondary border-border-subtle hover:bg-bg-raised hover:text-text-primary hover:border-border-medium'
@@ -253,7 +253,7 @@ export function MySessionsScreen({
           </div>
         </Card>
 
-        <div className="space-y-4">
+        <div className="space-y-3">
           {loading ? (
             <Spinner size="md" className="py-20" />
           ) : error ? (
@@ -268,12 +268,12 @@ export function MySessionsScreen({
                 <Card
                   key={session.id}
                   variant="interactive"
-                  padding="md"
+                  padding="sm"
                   onClick={() => onReview(session.id)}
-                  className="group flex flex-col md:flex-row md:items-center gap-6"
+                  className="group flex flex-col md:flex-row md:items-center gap-3 md:gap-4"
                 >
-                  <div className="flex items-center gap-6 flex-1">
-                    <div className="w-16 h-16 rounded-2xl bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative transition-transform">
+                  <div className="flex items-center gap-3.5 flex-1">
+                    <div className="w-11 h-11 rounded-xl bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative transition-transform">
                       <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
                         <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
                         <circle
@@ -305,12 +305,12 @@ export function MySessionsScreen({
                       </span>
                     </div>
 
-                    <div className="flex-1 space-y-1.5">
+                    <div className="flex-1 space-y-0.5">
                       <div className="flex items-center gap-2">
                         <Pill tone="neutral">{MODE_DISPLAY[session.mode].replace('_', ' ')}</Pill>
                         <span className="text-[11px] text-text-tertiary">{formatDate(session.started_at)}</span>
                       </div>
-                      <h3 className="font-semibold text-lg text-text-primary flex items-center gap-2">
+                      <h3 className="font-semibold text-base text-text-primary flex items-center gap-2">
                         {session.course_name ?? 'Unknown course'}
                       </h3>
                       <p className="text-sm text-text-secondary line-clamp-1">
@@ -319,7 +319,7 @@ export function MySessionsScreen({
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-between gap-2 md:gap-6 border-t md:border-t-0 md:border-l border-border-subtle pt-4 md:pt-0 md:pl-6 w-full md:w-auto">
+                  <div className="flex items-center justify-between gap-2 md:gap-6 border-t md:border-t-0 md:border-l border-border-subtle pt-3 md:pt-0 md:pl-6 w-full md:w-auto">
                     <div className="flex flex-col gap-1 items-start md:items-end md:w-24">
                       <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em] flex items-center gap-1">
                         <Clock className="w-3 h-3" /> Time
@@ -421,9 +421,9 @@ export function MySessionsScreen({
                 <Card
                   key={q.id}
                   variant={q.session_id ? 'interactive' : 'default'}
-                  padding="md"
+                  padding="sm"
                   onClick={q.session_id ? () => onReviewQuestion(q.session_id!, q.id) : undefined}
-                  className="group flex items-center gap-4"
+                  className="group flex items-center gap-3"
                 >
                   <Bookmark className="w-4 h-4 shrink-0" style={{ color: 'var(--accent)', fill: 'var(--accent)' }} />
                   <div className="flex-1 min-w-0">

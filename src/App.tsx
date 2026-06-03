@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'firebase/auth';
 import { doc, updateDoc } from 'firebase/firestore';
@@ -11,6 +11,7 @@ import { auth, db } from './lib/firebase';
 import { useAuth } from './lib/AuthContext';
 import { RichText } from './components/ui/RichText';
 import { ThinkingDots } from './components/ui/JudeBlocks';
+import { preloadMermaid } from './components/ui/MermaidBlock';
 import { AutoGrowTextarea } from './components/ui/AutoGrowTextarea';
 import 'katex/dist/katex.min.css';
 import {
@@ -328,7 +329,15 @@ const ACCENT_COLORS: Record<string, { light: any, dark: any }> = {
 export default function App() {
   const navigate = useNavigate();
   const { currentUser, isAdmin, userProfile, updateProfileLocal } = useAuth();
-  
+
+  // Warm the mermaid engine during idle so the first diagram (in a review,
+  // exam, or Jude answer) renders without waiting on the ~500KB import.
+  useEffect(() => {
+    const w = window as typeof window & { requestIdleCallback?: (cb: () => void) => number };
+    if (typeof w.requestIdleCallback === 'function') w.requestIdleCallback(() => preloadMermaid());
+    else { const t = setTimeout(() => preloadMermaid(), 2000); return () => clearTimeout(t); }
+  }, []);
+
   useEffect(() => {
     const handleThemeChange = () => {
       const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
@@ -1981,21 +1990,20 @@ function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracti
       className="flex flex-col h-full bg-bg-page text-text-primary font-sans overflow-hidden"
     >
       {/* Header HUD */}
-      <header className="h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between px-6 shrink-0 z-50">
-        <div className="flex items-center gap-4">
-          <button onClick={onBack} className="p-2 hover:bg-bg-raised rounded-lg transition-colors group">
+      <header className="h-16 bg-bg-surface border-b border-border-subtle flex items-center justify-between gap-3 px-4 md:px-6 shrink-0 z-50">
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className="p-2 -ml-1 hover:bg-bg-raised rounded-lg transition-colors group shrink-0">
             <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary" />
           </button>
-          <div className="flex flex-col">
+          <div className="flex flex-col min-w-0">
             <span className="text-[10px] font-black text-accent-text uppercase tracking-widest leading-none">Session Review</span>
-            <h1 className="text-sm font-black text-text-primary uppercase tracking-widest mt-1">{headerCourseName}</h1>
+            <h1 className="text-sm font-black text-text-primary uppercase tracking-wide mt-1 truncate">{headerCourseName}</h1>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-           <ThemeToggle />
-           <div className="px-4 py-1.5 bg-bg-sunken border border-border-subtle rounded-xl flex items-center gap-2">
+        <div className="flex items-center shrink-0">
+           <div className="px-3 py-1.5 bg-bg-sunken border border-border-subtle rounded-xl flex items-center gap-2">
               <div className={cn("w-2 h-2 rounded-full", gradeTone.dot)} />
-              <span className="text-[10px] font-black uppercase tracking-widest">{grade.label}</span>
+              <span className="text-[10px] font-black uppercase tracking-widest whitespace-nowrap">{grade.label}</span>
            </div>
         </div>
       </header>
@@ -2102,7 +2110,7 @@ function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracti
             ) : (
               filteredQuestions.map((it) => {
                 const isOpen = expandedId === it.id;
-                const qLabel = it.groupId
+                const qLabel = it.groupId && it.groupSize > 1
                   ? `Q${it.displayNumber} · Part ${it.partLabel ?? '?'}`
                   : `Q${it.displayNumber}`;
                 return (
@@ -2223,11 +2231,42 @@ function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracti
   );
 }
 
+// Defer mounting heavy content (markdown + KaTeX) until after the dropdown has
+// painted, so expanding a question opens instantly instead of blocking on the
+// synchronous parse of a long worked solution.
+function DeferredMount({ children, fallback }: { children: ReactNode; fallback: ReactNode }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setReady(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  return <>{ready ? children : fallback}</>;
+}
+
 function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: boolean }) {
   const studentAnswerText =
     it.type === 'mcq'
       ? it.options.find((o) => o.id === it.pickedOptionId)?.text ?? null
       : it.pickedText;
+
+  // DEV-only diagnostic: how long this detail takes to render+commit (the
+  // synchronous markdown + KaTeX cost). Shown on-screen so it's readable on a
+  // phone. Remove once the perf issue is pinned down.
+  const _renderStart = performance.now();
+  const [renderMs, setRenderMs] = useState<number | null>(null);
+  const _measured = useRef(false);
+  useEffect(() => {
+    if (!_measured.current && import.meta.env.DEV) {
+      _measured.current = true;
+      setRenderMs(Math.round(performance.now() - _renderStart));
+    }
+  });
+  const devBadge =
+    import.meta.env.DEV && renderMs != null ? (
+      <div className="inline-block text-[10px] font-mono text-amber-500 bg-amber-500/10 border border-amber-500/30 rounded px-1.5 py-0.5">
+        ⏱ render {renderMs}ms
+      </div>
+    ) : null;
 
   const questionCol = (
     <div className="space-y-3 min-w-0">
@@ -2405,9 +2444,20 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
         </span>
       </div>
       <div className="px-4 md:px-5 py-4">
-        <RichText className="text-sm text-text-secondary leading-relaxed">
-          {it.explanation}
-        </RichText>
+        {/* The worked solution is the equation-heavy part — defer it one frame
+            so the question + answer paint immediately and only the solution
+            fills in behind a small spinner. */}
+        <DeferredMount
+          fallback={
+            <div className="py-3 flex justify-center">
+              <Loader2 className="w-4 h-4 animate-spin text-text-tertiary" />
+            </div>
+          }
+        >
+          <RichText className="text-sm text-text-secondary leading-relaxed">
+            {it.explanation}
+          </RichText>
+        </DeferredMount>
       </div>
     </div>
   ) : null;
@@ -2418,6 +2468,7 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
     // ONLY the worked solution scrolls between them. Mobile stays stacked.
     <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6 lg:h-full lg:min-h-0">
       <div className="lg:h-full lg:min-h-0 lg:overflow-y-auto no-scrollbar lg:pr-1">
+        {devBadge}
         {questionCol}
       </div>
       <div className="lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:gap-3 space-y-3 lg:space-y-0">
@@ -2433,6 +2484,7 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
     </div>
   ) : (
     <div className="space-y-3">
+      {devBadge}
       {questionCol}
       {answerBlock}
       {solutionBlock}
@@ -2503,7 +2555,7 @@ function ReviewFocusModal({
           <div className="flex items-center justify-between gap-3 shrink-0 mb-4">
             <div className="flex items-center gap-3">
               <span className="text-sm font-black text-text-tertiary whitespace-nowrap">
-                {it.groupId ? `Q${it.displayNumber} · Part ${it.partLabel ?? '?'}` : `Q${it.displayNumber}`}
+                {it.groupId && it.groupSize > 1 ? `Q${it.displayNumber} · Part ${it.partLabel ?? '?'}` : `Q${it.displayNumber}`}
               </span>
               <div
                 className={cn(
@@ -2626,7 +2678,13 @@ Stay strictly on THIS question — politely decline unrelated requests.
     [isUnanswered, isCorrect]
   );
 
-  useEffect(() => () => { aliveRef.current = false; }, []);
+  useEffect(() => {
+    // Set true on mount (not just false on unmount) so StrictMode's
+    // mount→unmount→mount double-invoke in dev doesn't leave this stuck false,
+    // which would silently drop every streamed Jude reply.
+    aliveRef.current = true;
+    return () => { aliveRef.current = false; };
+  }, []);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -3313,7 +3371,7 @@ function ExamSimulation({
          {questions.map((q, i) => {
             // Grouped sub-parts read as "3a / 3b"; standalone questions as "3".
             const dnum = numbering.numbers[i] ?? i + 1;
-            const label = q.groupId ? `${dnum}${q.partLabel ?? ''}` : `${dnum}`;
+            const label = q.groupId && (q.groupSize ?? 0) > 1 ? `${dnum}${q.partLabel ?? ''}` : `${dnum}`;
             const isActive = currentIdx === i;
             const isDone = isAnsweredAt(i);
             const isFlagged = flagged.has(i);
@@ -3671,7 +3729,7 @@ function ExamSimulation({
                               key={a.id}
                               type="button"
                               onClick={() => setLightboxSrc(a.url)}
-                              className="group relative block mx-auto cursor-zoom-in"
+                              className="group flex flex-col items-center gap-1.5 mx-auto cursor-zoom-in"
                               aria-label="Tap to enlarge diagram"
                             >
                               <img
@@ -3679,7 +3737,7 @@ function ExamSimulation({
                                 alt="diagram"
                                 className="rounded-xl border border-border-subtle max-h-[60vh] lg:max-h-[58vh] w-auto lg:max-w-[460px]"
                               />
-                              <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-colors group-hover:bg-black/80">
+                              <span className="flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-text-tertiary transition-colors group-hover:text-text-secondary">
                                 <Maximize2 className="w-3 h-3" /> Tap to enlarge
                               </span>
                             </button>

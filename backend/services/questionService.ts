@@ -459,7 +459,33 @@ export async function updateQuestion(
   return await getQuestionById(id);
 }
 
+/**
+ * If a multi-part group has exactly one remaining member, clear that member's
+ * group/part metadata so it becomes a standalone question (no stale "2a" label).
+ * `shared_stem` is kept — it's still valid context for the lone question.
+ */
+export async function collapseSingletonGroup(groupId: string): Promise<void> {
+  const { data: rows, error } = await supabase
+    .from('questions')
+    .select('id')
+    .eq('question_group_id', groupId);
+  if (error) throw error;
+  if (!rows || rows.length !== 1) return;
+  const { error: upErr } = await supabase
+    .from('questions')
+    .update({ question_group_id: null, part_label: null, part_index: null })
+    .eq('id', rows[0].id);
+  if (upErr) throw upErr;
+}
+
 export async function deleteQuestion(id: string): Promise<void> {
+  // Capture the group before deleting so we can collapse a leftover singleton.
+  const { data: row } = await supabase
+    .from('questions')
+    .select('question_group_id')
+    .eq('id', id)
+    .maybeSingle();
+
   const { data: assets } = await supabase
     .from('question_assets')
     .select('storage_path')
@@ -471,6 +497,10 @@ export async function deleteQuestion(id: string): Promise<void> {
 
   const { error } = await supabase.from('questions').delete().eq('id', id);
   if (error) throw error;
+
+  if (row?.question_group_id) {
+    await collapseSingletonGroup(row.question_group_id);
+  }
 }
 
 /**

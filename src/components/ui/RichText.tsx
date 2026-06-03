@@ -1,5 +1,6 @@
-import { Fragment, useEffect, useState, type ReactNode } from 'react';
+import { Fragment, memo, useEffect, useMemo, useState, type ReactNode } from 'react';
 import ReactMarkdown, { defaultUrlTransform, type Components } from 'react-markdown';
+import type { PluggableList } from 'unified';
 import remarkMath from 'remark-math';
 import remarkGfm from 'remark-gfm';
 import rehypeKatex from 'rehype-katex';
@@ -8,7 +9,10 @@ import { MermaidBlock } from './MermaidBlock';
 import { JudeStep, JudeTabs } from './JudeBlocks';
 
 const remarkPlugins = [remarkMath, remarkGfm];
-const rehypePlugins = [rehypeKatex];
+// `output: 'html'` skips KaTeX's hidden MathML copy of every equation — visually
+// identical, but roughly halves the per-equation render + DOM cost, which is the
+// dominant expense for equation-heavy worked solutions.
+const rehypePlugins: PluggableList = [[rehypeKatex, { output: 'html' }]];
 
 const CUSTOM_LANGS = /language-(mermaid|jude-step|jude-tabs)/;
 const MAX_BLOCK_DEPTH = 2;
@@ -212,7 +216,7 @@ function buildComponents(streaming: boolean, depth: number): Components {
  * diagrams and the interactive `jude-step` / `jude-tabs` blocks. Raw HTML is
  * intentionally NOT enabled (no rehype-raw), so no extra sanitizer is needed.
  */
-export function RichText({
+function RichTextImpl({
   children,
   className,
   inline = false,
@@ -225,14 +229,23 @@ export function RichText({
   streaming?: boolean;
   depth?: number;
 }) {
-  if (!children || !children.trim()) return null;
+  // Memoise the component map and the parsed source so identical content never
+  // re-parses on a parent re-render. This is the hot path: a review list with
+  // many KaTeX-heavy prompts/solutions, and the streaming tutor chat.
+  const components = useMemo<Components>(() => {
+    const base = buildComponents(streaming, depth);
+    return inline
+      ? { ...base, p: ({ children }) => <Fragment>{children}</Fragment> }
+      : base;
+  }, [streaming, depth, inline]);
 
-  let source = normalizeMath(children);
-  if (streaming) source = closeOpenBlocks(source);
-  const base = buildComponents(streaming, depth);
-  const components: Components = inline
-    ? { ...base, p: ({ children }) => <Fragment>{children}</Fragment> }
-    : base;
+  const source = useMemo(() => {
+    if (!children || !children.trim()) return '';
+    const normalized = normalizeMath(children);
+    return streaming ? closeOpenBlocks(normalized) : normalized;
+  }, [children, streaming]);
+
+  if (!source) return null;
 
   const md = (
     <ReactMarkdown
@@ -252,3 +265,8 @@ export function RichText({
   }
   return <div className={cn('rich-text', className)}>{md}</div>;
 }
+
+// Memoised: props are primitives (string children, booleans, depth), so the
+// default shallow compare skips re-render whenever the content is unchanged —
+// expanding one review row no longer re-parses every other row's markdown.
+export const RichText = memo(RichTextImpl);
