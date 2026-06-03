@@ -1,4 +1,7 @@
 import { DateTime } from 'luxon';
+import { supabase } from '../lib/supabase';
+import { ApiError } from '../lib/errors';
+import type { ScheduleCreateInput, ScheduleUpdateInput } from '../schemas/schedule';
 
 export interface RecurrenceSpec {
   recurrence: 'once' | 'weekly';
@@ -93,4 +96,267 @@ export function advanceNextRunAt(spec: RecurrenceSpec, after: Date): string | nu
   const afterLuxon = DateTime.fromJSDate(after, { zone: spec.timezone });
   const next = nextWeeklyAfter(spec, afterLuxon);
   return next ? next.toUTC().toISO() : null;
+}
+
+// ---------------------------------------------------------------------------
+// DB row type
+// ---------------------------------------------------------------------------
+
+export interface ScheduleRow {
+  id: string;
+  user_uid: string;
+  program_course_id: string;
+  topic_id: string | null;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+  question_count: number;
+  label: string | null;
+  timezone: string;
+  recurrence: 'once' | 'weekly';
+  run_at: string | null;
+  days_of_week: number[] | null;
+  time_of_day: string | null;
+  ends_on: string | null;
+  next_run_at: string | null;
+  status: 'active' | 'paused' | 'completed' | 'cancelled';
+  last_fired_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a RecurrenceSpec from a stored row so we can recompute next_run_at.
+ * For `once` schedules, the caller should use row.run_at directly rather than
+ * round-tripping through computeNextRunAt (which expects a naive local string).
+ */
+export function rowToRecurrenceSpec(row: Pick<ScheduleRow, 'recurrence' | 'timezone' | 'run_at' | 'days_of_week' | 'time_of_day' | 'ends_on'>): RecurrenceSpec {
+  return {
+    recurrence: row.recurrence,
+    timezone: row.timezone,
+    run_at: row.run_at ?? undefined,
+    days_of_week: row.days_of_week ?? undefined,
+    time_of_day: row.time_of_day ?? undefined,
+    ends_on: row.ends_on ?? undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// DB CRUD
+// ---------------------------------------------------------------------------
+
+export async function listSchedules(userUid: string): Promise<ScheduleRow[]> {
+  const { data, error } = await supabase
+    .from('practice_schedules')
+    .select('*')
+    .eq('user_uid', userUid)
+    .order('next_run_at', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as ScheduleRow[];
+}
+
+export async function createSchedule(userUid: string, input: ScheduleCreateInput): Promise<ScheduleRow> {
+  // Enforce cap: at most 50 active or paused schedules.
+  const { count, error: countError } = await supabase
+    .from('practice_schedules')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_uid', userUid)
+    .in('status', ['active', 'paused']);
+  if (countError) throw countError;
+  if ((count ?? 0) >= 50) {
+    throw new ApiError(400, 'SCHEDULE_LIMIT', 'You can have at most 50 schedules.');
+  }
+
+  const spec: RecurrenceSpec = {
+    recurrence: input.recurrence,
+    timezone: input.timezone,
+    ...(input.recurrence === 'once'
+      ? { run_at: input.run_at }
+      : {
+          days_of_week: input.days_of_week,
+          time_of_day: input.time_of_day,
+          ends_on: input.ends_on ?? undefined,
+        }),
+  };
+
+  const next_run_at = computeNextRunAt(spec, new Date());
+
+  const row: Record<string, unknown> = {
+    user_uid: userUid,
+    program_course_id: input.program_course_id,
+    topic_id: input.topic_id ?? null,
+    difficulty: input.difficulty ?? null,
+    question_count: input.question_count,
+    label: input.label ?? null,
+    timezone: input.timezone,
+    recurrence: input.recurrence,
+    next_run_at,
+    status: 'active',
+  };
+
+  if (input.recurrence === 'once') {
+    // Store the absolute UTC instant as run_at; leave weekly fields null.
+    row.run_at = next_run_at;
+    row.days_of_week = null;
+    row.time_of_day = null;
+    row.ends_on = null;
+  } else {
+    row.run_at = null;
+    row.days_of_week = input.days_of_week;
+    row.time_of_day = input.time_of_day;
+    row.ends_on = input.ends_on ?? null;
+  }
+
+  const { data, error } = await supabase
+    .from('practice_schedules')
+    .insert(row)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ScheduleRow;
+}
+
+export async function updateSchedule(userUid: string, id: string, patch: ScheduleUpdateInput): Promise<ScheduleRow> {
+  // Load existing row (scoped by user).
+  const { data: existing, error: fetchError } = await supabase
+    .from('practice_schedules')
+    .select('*')
+    .eq('id', id)
+    .eq('user_uid', userUid)
+    .single();
+  if (fetchError || !existing) {
+    throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  }
+  const row = existing as ScheduleRow;
+
+  // Build the update object by merging scalar fields.
+  const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+
+  if ('topic_id' in patch) updates.topic_id = patch.topic_id ?? null;
+  if ('difficulty' in patch) updates.difficulty = patch.difficulty ?? null;
+  if (patch.question_count !== undefined) updates.question_count = patch.question_count;
+  if ('label' in patch) updates.label = patch.label ?? null;
+  if (patch.timezone !== undefined) updates.timezone = patch.timezone;
+
+  // If recurrence is being replaced, update recurrence-specific columns.
+  // Narrow the patch union to the recurrence branch before accessing recurrence fields.
+  if (patch.recurrence === 'once') {
+    updates.recurrence = 'once';
+    const oncePatch = patch as { recurrence: 'once'; run_at: string; timezone?: string };
+    const absUtc = computeNextRunAt(
+      { recurrence: 'once', timezone: oncePatch.timezone ?? row.timezone, run_at: oncePatch.run_at },
+      new Date()
+    );
+    updates.run_at = absUtc;
+    updates.days_of_week = null;
+    updates.time_of_day = null;
+    updates.ends_on = null;
+  } else if (patch.recurrence === 'weekly') {
+    updates.recurrence = 'weekly';
+    const weeklyPatch = patch as { recurrence: 'weekly'; days_of_week: number[]; time_of_day: string; ends_on?: string | null };
+    updates.run_at = null;
+    updates.days_of_week = weeklyPatch.days_of_week;
+    updates.time_of_day = weeklyPatch.time_of_day;
+    updates.ends_on = weeklyPatch.ends_on ?? null;
+  }
+
+  // Recompute next_run_at when active and something recurrence-related changed.
+  const effectiveStatus = row.status;
+  const recurrenceChanged = patch.recurrence !== undefined || patch.timezone !== undefined;
+  if (effectiveStatus === 'active' && recurrenceChanged) {
+    // Merge to get the final spec state.
+    const mergedRecurrence = (updates.recurrence ?? row.recurrence) as 'once' | 'weekly';
+    const mergedTz = (updates.timezone ?? row.timezone) as string;
+
+    if (mergedRecurrence === 'once') {
+      // once: next_run_at = the run_at UTC instant (already computed above).
+      updates.next_run_at = updates.run_at;
+    } else {
+      const mergedSpec: RecurrenceSpec = {
+        recurrence: 'weekly',
+        timezone: mergedTz,
+        days_of_week: (updates.days_of_week ?? row.days_of_week) as number[],
+        time_of_day: (updates.time_of_day ?? row.time_of_day) as string,
+        ends_on: ((updates.ends_on ?? row.ends_on) as string | null | undefined) ?? undefined,
+      };
+      updates.next_run_at = computeNextRunAt(mergedSpec, new Date());
+    }
+  } else if (effectiveStatus === 'paused') {
+    updates.next_run_at = null;
+  }
+
+  const { data, error } = await supabase
+    .from('practice_schedules')
+    .update(updates)
+    .eq('id', id)
+    .eq('user_uid', userUid)
+    .select()
+    .single();
+  if (error) throw error;
+  return data as ScheduleRow;
+}
+
+export async function pauseSchedule(userUid: string, id: string): Promise<ScheduleRow> {
+  const { data, error } = await supabase
+    .from('practice_schedules')
+    .update({ status: 'paused', next_run_at: null, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('user_uid', userUid)
+    .select()
+    .single();
+  if (error || !data) {
+    throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  }
+  return data as ScheduleRow;
+}
+
+export async function resumeSchedule(userUid: string, id: string): Promise<ScheduleRow> {
+  // Load existing row to build the spec.
+  const { data: existing, error: fetchError } = await supabase
+    .from('practice_schedules')
+    .select('*')
+    .eq('id', id)
+    .eq('user_uid', userUid)
+    .single();
+  if (fetchError || !existing) {
+    throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  }
+  const row = existing as ScheduleRow;
+
+  // For once: reuse the stored absolute UTC instant directly.
+  // For weekly: recompute from the stored spec.
+  let next_run_at: string | null;
+  if (row.recurrence === 'once') {
+    next_run_at = row.run_at;
+  } else {
+    const spec = rowToRecurrenceSpec(row);
+    next_run_at = computeNextRunAt(spec, new Date());
+  }
+
+  const { data, error } = await supabase
+    .from('practice_schedules')
+    .update({ status: 'active', next_run_at, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('user_uid', userUid)
+    .select()
+    .single();
+  if (error || !data) {
+    throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  }
+  return data as ScheduleRow;
+}
+
+export async function deleteSchedule(userUid: string, id: string): Promise<void> {
+  const { error, count } = await supabase
+    .from('practice_schedules')
+    .delete({ count: 'exact' })
+    .eq('id', id)
+    .eq('user_uid', userUid);
+  if (error) throw error;
+  if ((count ?? 0) === 0) {
+    throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  }
 }

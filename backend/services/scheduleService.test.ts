@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { computeNextRunAt, advanceNextRunAt, type RecurrenceSpec } from './scheduleService';
+import { computeNextRunAt, advanceNextRunAt, rowToRecurrenceSpec, type RecurrenceSpec, type ScheduleRow } from './scheduleService';
 
 // ---------------------------------------------------------------------------
 // once
@@ -271,5 +271,90 @@ describe('weekly ends_on', () => {
     const after = new Date('2026-06-03T12:00:00Z');
     const result = advanceNextRunAt(spec, after);
     expect(result).toBe('2026-06-10T12:00:00.000Z');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// rowToRecurrenceSpec
+// ---------------------------------------------------------------------------
+
+function makeRow(overrides: Partial<ScheduleRow>): ScheduleRow {
+  return {
+    id: '00000000-0000-0000-0000-000000000001',
+    user_uid: 'user1',
+    program_course_id: '00000000-0000-0000-0000-000000000002',
+    topic_id: null,
+    difficulty: null,
+    question_count: 10,
+    label: null,
+    timezone: 'UTC',
+    recurrence: 'weekly',
+    run_at: null,
+    days_of_week: [1, 3],
+    time_of_day: '09:00',
+    ends_on: null,
+    next_run_at: null,
+    status: 'active',
+    last_fired_at: null,
+    created_at: '2026-06-01T00:00:00.000Z',
+    updated_at: '2026-06-01T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
+describe('rowToRecurrenceSpec', () => {
+  it('maps a weekly row to a valid RecurrenceSpec', () => {
+    const row = makeRow({
+      recurrence: 'weekly',
+      timezone: 'America/New_York',
+      days_of_week: [1, 3, 5],
+      time_of_day: '08:00',
+      ends_on: '2026-12-31',
+    });
+    const spec = rowToRecurrenceSpec(row);
+    expect(spec).toEqual({
+      recurrence: 'weekly',
+      timezone: 'America/New_York',
+      days_of_week: [1, 3, 5],
+      time_of_day: '08:00',
+      ends_on: '2026-12-31',
+    });
+  });
+
+  it('maps a once row to a spec (run_at preserved)', () => {
+    const row = makeRow({
+      recurrence: 'once',
+      timezone: 'Asia/Tokyo',
+      run_at: '2026-06-10T00:00:00.000Z',
+      days_of_week: null,
+      time_of_day: null,
+      ends_on: null,
+    });
+    const spec = rowToRecurrenceSpec(row);
+    expect(spec.recurrence).toBe('once');
+    expect(spec.run_at).toBe('2026-06-10T00:00:00.000Z');
+    expect(spec.days_of_week).toBeUndefined();
+    expect(spec.time_of_day).toBeUndefined();
+    expect(spec.ends_on).toBeUndefined();
+  });
+
+  it('maps null ends_on to undefined (not included in spec)', () => {
+    const row = makeRow({ ends_on: null });
+    const spec = rowToRecurrenceSpec(row);
+    expect(spec.ends_on).toBeUndefined();
+  });
+
+  it('weekly spec from row feeds correctly into computeNextRunAt', () => {
+    const row = makeRow({
+      recurrence: 'weekly',
+      timezone: 'UTC',
+      days_of_week: [3], // Wednesday
+      time_of_day: '12:00',
+      ends_on: null,
+    });
+    const spec = rowToRecurrenceSpec(row);
+    // now: Monday 2026-06-01T10:00Z — next Wednesday = 2026-06-03T12:00Z
+    const result = computeNextRunAt(spec, new Date('2026-06-01T10:00:00Z'));
+    expect(result).toBe('2026-06-03T12:00:00.000Z');
   });
 });

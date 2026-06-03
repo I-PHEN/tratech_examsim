@@ -20,6 +20,7 @@ import topicSuggestionsRouter from './routes/topicSuggestions';
 import analyticsRouter from './routes/analytics';
 import masteryRouter from './routes/mastery';
 import bookmarksRouter from './routes/bookmarks';
+import schedulesRouter from './routes/schedules';
 import adminsRouter from './routes/admins';
 import adminAnalyticsRouter from './routes/adminAnalytics';
 import profileRouter from './routes/profile';
@@ -45,6 +46,7 @@ async function startServer() {
   app.use('/api/analytics', requireAuth, analyticsRouter);
   app.use('/api/mastery', requireAuth, masteryRouter);
   app.use('/api/bookmarks', requireAuth, bookmarksRouter);
+  app.use('/api/schedules', requireAuth, schedulesRouter);
   app.use('/api/admins', requireAuth, adminsRouter);
   app.use('/api/admin/analytics', requireAuth, adminAnalyticsRouter);
   app.use('/api/profile', requireAuth, profileRouter);
