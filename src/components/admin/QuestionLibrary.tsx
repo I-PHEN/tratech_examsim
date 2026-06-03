@@ -7,6 +7,7 @@ import { RichText } from '../ui/RichText';
 import { CourseSelect } from './CourseSelect';
 import { ManualQuestionEntry } from './ManualQuestionEntry';
 import { QuestionGroupEditor } from './QuestionGroupEditor';
+import { useAuth } from '../../lib/AuthContext';
 
 interface Topic {
   id: string;
@@ -57,6 +58,7 @@ function buildItems(rows: QuestionRow[]): LibraryItem[] {
 const PAGE_SIZE = 25;
 
 export function QuestionLibrary() {
+  const { isOwner } = useAuth();
   const [programCourseId, setProgramCourseId] = usePersistentState('library.programCourseId', '');
   const [courseLabel, setCourseLabel] = useState<string>('');
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -310,6 +312,7 @@ export function QuestionLibrary() {
                       <Pencil className="w-3.5 h-3.5" />
                       Edit
                     </button>
+                    {isOwner && (
                     <button
                       onClick={() => handleDeleteGroup(item.groupId, item.parts.length)}
                       disabled={deletingGroup === item.groupId}
@@ -322,6 +325,7 @@ export function QuestionLibrary() {
                       )}
                       Delete
                     </button>
+                    )}
                   </div>
                 </div>
               ) : (
@@ -350,6 +354,7 @@ export function QuestionLibrary() {
                       <Pencil className="w-3.5 h-3.5" />
                       Edit
                     </button>
+                    {isOwner && (
                     <button
                       onClick={() => handleDelete(item.row.id)}
                       disabled={deleting === item.row.id}
@@ -362,6 +367,7 @@ export function QuestionLibrary() {
                       )}
                       Delete
                     </button>
+                    )}
                   </div>
                 </div>
               )

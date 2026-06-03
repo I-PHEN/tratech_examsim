@@ -115,7 +115,7 @@ function ZoomableImage({ src, alt }: { src: string; alt: string }) {
             src={src}
             alt={alt}
             onClick={(e) => e.stopPropagation()}
-            className="max-h-[92vh] max-w-[92vw] rounded-xl shadow-2xl cursor-default"
+            className="h-[92vh] w-[92vw] object-contain select-none cursor-default"
           />
           <button
             type="button"

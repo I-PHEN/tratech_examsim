@@ -94,6 +94,7 @@ interface ApiTopic {
   name: string;
   description?: string | null;
   question_count?: number;
+  question_counts?: { easy: number; medium: number; hard: number };
 }
 
 interface ApiMastery {
@@ -108,6 +109,13 @@ interface ApiAsset {
   url: string;
   mime_type: string;
   position: number;
+}
+
+/** Question count for a topic under the selected difficulty ("All" = total). */
+function topicCountFor(topic: Topic, difficulty: 'Easy' | 'Medium' | 'Hard' | 'All'): number {
+  if (difficulty === 'All') return topic.questionsCount ?? 0;
+  const key = difficulty.toLowerCase() as 'easy' | 'medium' | 'hard';
+  return topic.questionCounts?.[key] ?? 0;
 }
 
 interface ApiOption {
@@ -480,6 +488,7 @@ export default function App() {
               id: r.id,
               name: r.name,
               questionsCount: r.question_count ?? 0,
+              questionCounts: r.question_counts ?? { easy: 0, medium: 0, hard: 0 },
               mastery: m?.mastery ?? 0,
               masteryState: m?.state ?? 'not_started',
             };
@@ -498,6 +507,16 @@ export default function App() {
       cancelled = true;
     };
   }, [state.selectedCourse?.id]);
+
+  // If the selected topic has no questions at the chosen difficulty, clear it —
+  // its card is disabled, so the user shouldn't be able to proceed with it.
+  useEffect(() => {
+    if (!state.selectedTopic) return;
+    const t = availableTopics.find((x) => x.id === state.selectedTopic!.id) ?? state.selectedTopic;
+    if (topicCountFor(t, state.difficulty) === 0) {
+      setState((s) => ({ ...s, selectedTopic: null }));
+    }
+  }, [state.difficulty, availableTopics, state.selectedTopic]);
 
   useEffect(() => {
     if (state.step !== 'MODE_SELECT') return;
@@ -557,6 +576,8 @@ export default function App() {
   const [openSelect, setOpenSelect] = useState<'year' | 'semester' | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  // Which Settings tab to open on next navigation (chip → Academics, menu → Account).
+  const [settingsTab, setSettingsTab] = useState<'account' | 'academics'>('account');
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const profileButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -810,7 +831,7 @@ export default function App() {
             isSidebarExpanded || isMobileMenuOpen ? "w-64" : "w-16"
           )}
         >
-            <div className="px-3 mb-8 flex items-center gap-2 h-10 shrink-0 overflow-hidden cursor-default" onClick={(e) => e.stopPropagation()}>
+            <div className="px-3 mb-4 flex items-center gap-2 h-10 shrink-0 overflow-hidden cursor-default" onClick={(e) => e.stopPropagation()}>
               <button 
                 onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
                 className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors cursor-pointer"
@@ -847,7 +868,7 @@ export default function App() {
                      <div className="px-3 py-2 border-b border-border-subtle mb-1">
                         <span className="text-sm font-semibold text-text-primary truncate block">{currentUser?.email || 'User'}</span>
                      </div>
-                     <button onClick={() => { setIsProfileMenuOpen(false); setIsMobileMenuOpen(false); setState(p => ({ ...p, returnStep: p.step, step: 'SETTINGS' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left">
+                     <button onClick={() => { setIsProfileMenuOpen(false); setIsMobileMenuOpen(false); setSettingsTab('account'); setState(p => ({ ...p, returnStep: p.step, step: 'SETTINGS' })); }} className="flex items-center gap-3 px-3 py-2 hover:bg-bg-raised/50 rounded-xl transition-colors text-text-secondary hover:text-text-primary text-sm font-medium w-full text-left">
                         <Settings className="w-4 h-4" />
                         Settings
                      </button>
@@ -977,8 +998,9 @@ export default function App() {
              semester={semStringToNumber(state.semester)}
           />
         ) : state.step === 'SETTINGS' ? (
-          <SettingsScreen 
+          <SettingsScreen
              onBack={goBack}
+             initialTab={settingsTab}
           />
         ) : state.step === 'HELP' ? (
           <HelpScreen 
@@ -987,7 +1009,13 @@ export default function App() {
         ) : (
           <>
             {/* Header */}
-        <header className="h-20 flex items-center justify-between px-4 md:px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-outline-variant">
+        <header className={cn(
+          "h-14 flex items-center justify-between px-4 md:px-8 bg-surface-container-low/50 backdrop-blur-md sticky top-0 z-40 border-b border-outline-variant",
+          // The top bar only matters on Home. On Targeted Practice it's noise, so
+          // hide it from md up (where the rail is always visible); keep it below
+          // md where it carries the hamburger that opens the rail drawer.
+          state.step === 'TARGETED_PRACTICE' && 'md:hidden'
+        )}>
           <div className="flex items-center gap-3 md:gap-6">
             {state.step === 'MODE_SELECT' || state.step === 'TARGETED_PRACTICE' ? (
               <button 
@@ -1004,65 +1032,18 @@ export default function App() {
                 <ChevronLeft className="w-5 h-5 text-text-secondary group-hover:text-text-primary group-hover:-translate-x-1 transition-[transform,opacity,box-shadow]" />
               </button>
             )}
-            <div className="flex items-center gap-2 md:gap-6">
-              <div className="flex items-center gap-1 md:gap-4">
-                <div className="flex flex-col relative w-[5.5rem] md:w-24">
-                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-semibold uppercase tracking-[0.18em] pl-1 mb-1">Year</span>
-                   {/* Desktop Select */}
-                   <select
-                     value={state.year}
-                     onChange={(e) => persistYearSemester({ year: e.target.value })}
-                     className="hidden md:block appearance-none bg-bg-surface border border-border-subtle rounded-xl px-3 py-1.5 text-sm font-semibold text-text-primary cursor-pointer focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors pr-8 hover:border-border-medium"
-                   >
-                     <option value="Year 1" className="bg-bg-page text-text-primary">Year 1</option>
-                     <option value="Year 2" className="bg-bg-page text-text-primary">Year 2</option>
-                     <option value="Year 3" className="bg-bg-page text-text-primary">Year 3</option>
-                     <option value="Year 4" className="bg-bg-page text-text-primary">Year 4</option>
-                   </select>
-                   <ChevronDown className="hidden md:block absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
-
-                   {/* Mobile Button */}
-                   <button 
-                     onClick={() => setOpenSelect('year')}
-                     className={cn(
-                       "md:hidden flex items-center justify-between w-full bg-bg-surface border rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
-                       openSelect === 'year' ? "border-accent text-accent-text" : "border-border-subtle text-text-primary"
-                     )}
-                   >
-                     {state.year}
-                     <ChevronDown className={cn("w-3 h-3", openSelect === 'year' ? "text-primary" : "text-text-secondary")} />
-                   </button>
-                </div>
-                <div className="flex flex-col relative w-[6rem] md:w-36">
-                   <span className="hidden md:inline-block text-[10px] text-text-tertiary font-semibold uppercase tracking-[0.18em] pl-1 mb-1">Semester</span>
-                   {/* Desktop Select */}
-                   <select
-                     value={state.semester}
-                     onChange={(e) => persistYearSemester({ semester: e.target.value })}
-                     className="hidden md:block appearance-none bg-bg-surface border border-border-subtle rounded-xl px-3 py-1.5 text-sm font-semibold text-text-primary cursor-pointer focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent transition-colors pr-8 hover:border-border-medium"
-                   >
-                     <option value="Sem 1" className="bg-bg-page text-text-primary">Sem 1</option>
-                     <option value="Sem 2" className="bg-bg-page text-text-primary">Sem 2</option>
-                   </select>
-                   <ChevronDown className="hidden md:block absolute right-1.5 md:right-2 bottom-1.5 md:bottom-2 w-3 h-3 md:w-4 md:h-4 text-text-secondary pointer-events-none" />
-
-                   {/* Mobile Button */}
-                   <button 
-                     onClick={() => setOpenSelect('semester')}
-                     className={cn(
-                       "md:hidden flex items-center justify-between w-full bg-bg-surface border rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
-                       openSelect === 'semester' ? "border-accent text-accent-text" : "border-border-subtle text-text-primary"
-                     )}
-                   >
-                     {state.semester}
-                     <ChevronDown className={cn("w-3 h-3", openSelect === 'semester' ? "text-primary" : "text-text-secondary")} />
-                   </button>
-                </div>
-              </div>
-              <div className="text-xs font-medium text-text-secondary hidden sm:block">
-                 Department of Chemical Engineering
-              </div>
-            </div>
+            {/* Year/Semester live in Settings → Academics now; the header shows a
+                compact read-only context chip that taps through to change them. */}
+            <button
+              onClick={() => { setSettingsTab('academics'); setState((p) => ({ ...p, returnStep: p.step, step: 'SETTINGS' })); }}
+              title="Change year & semester in Settings"
+              className="flex items-center gap-1.5 bg-bg-surface border border-border-subtle rounded-full px-3 py-1.5 text-xs font-semibold hover:border-border-medium transition-colors"
+            >
+              <span className="text-text-primary">{state.year}</span>
+              <span className="text-text-tertiary">·</span>
+              <span className="text-text-primary">{state.semester}</span>
+              <Settings className="w-3.5 h-3.5 ml-0.5 text-text-tertiary" />
+            </button>
           </div>
           <div className="flex items-center gap-1 md:gap-2">
             <ThemeToggle />
@@ -1227,9 +1208,9 @@ export default function App() {
                     );
                   })()}
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-                    <ModeCard 
-                      title="Practice by Topic" 
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <ModeCard
+                      title="Practice by Topic"
                       description="Target specific weaknesses. Choose concepts and set your own pace without time pressure."
                       tag="Flexible"
                       icon={Microscope}
@@ -1547,14 +1528,20 @@ export default function App() {
                     />
                   ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-5">
-                      {availableTopics.map(topic => (
-                        <TopicCard
-                          key={topic.id}
-                          topic={topic}
-                          active={state.selectedTopic?.id === topic.id}
-                          onClick={() => handleTopicSelect(topic)}
-                        />
-                      ))}
+                      {availableTopics.map(topic => {
+                        const count = topicCountFor(topic, state.difficulty);
+                        const disabled = count === 0;
+                        return (
+                          <TopicCard
+                            key={topic.id}
+                            topic={topic}
+                            count={count}
+                            disabled={disabled}
+                            active={state.selectedTopic?.id === topic.id}
+                            onClick={() => handleTopicSelect(topic)}
+                          />
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2274,7 +2261,7 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
     </div>
   );
 
-  const answerCol = (
+  const answerBlock = (
     <div className="space-y-3 min-w-0">
       {it.type === 'mcq' ? (
         <div className="grid grid-cols-1 gap-2.5">
@@ -2337,7 +2324,7 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
             </div>
           )}
           <div className="space-y-1.5">
-            <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
+            <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Answer</span>
             <div className="p-3.5 bg-success-bg/10 border border-success-border rounded-xl text-sm text-success-text leading-relaxed">
               {it.correctAnswer ? <RichText>{it.correctAnswer}</RichText> : '—'}
             </div>
@@ -2348,7 +2335,7 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
           <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 px-3 text-[10px] font-black text-text-tertiary uppercase tracking-widest">
             <span>Field</span>
             <span>Your Value</span>
-            <span>Model</span>
+            <span>Answer</span>
             <span className="text-right">Result</span>
           </div>
           {(it.fields ?? []).map((f, i) => (
@@ -2395,7 +2382,7 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
             </div>
           </div>
           <div className="space-y-1.5">
-            <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Model Answer</span>
+            <span className="text-[10px] font-black text-success-text uppercase tracking-widest">Answer</span>
             <div className="p-3.5 bg-success-bg/10 border border-success-border rounded-xl font-mono text-sm text-success-text">
               {it.correctAnswer ? (
                 <RichText inline>{`${it.correctAnswer}${it.unit ? ` ${it.unit}` : ''}`}</RichText>
@@ -2407,34 +2394,48 @@ function ReviewQuestionDetail({ it, split = false }: { it: ReviewItem; split?: b
         </div>
       )}
 
-      {it.explanation && (
-        <div className="bg-bg-sunken border border-border-subtle rounded-2xl overflow-hidden">
-          <div className="px-4 md:px-5 py-3 border-b border-border-subtle">
-            <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
-              <Sigma className="w-3.5 h-3.5" /> Worked Solution
-            </span>
-          </div>
-          <div className="px-4 md:px-5 py-4">
-            <RichText className="text-sm text-text-secondary leading-relaxed">
-              {it.explanation}
-            </RichText>
-          </div>
-        </div>
-      )}
     </div>
   );
 
+  const solutionBlock = it.explanation ? (
+    <div className="bg-bg-sunken border border-border-subtle rounded-2xl overflow-hidden">
+      <div className="px-4 md:px-5 py-3 border-b border-border-subtle">
+        <span className="text-[10px] font-black text-accent-text uppercase tracking-widest flex items-center gap-2">
+          <Sigma className="w-3.5 h-3.5" /> Worked Solution
+        </span>
+      </div>
+      <div className="px-4 md:px-5 py-4">
+        <RichText className="text-sm text-text-secondary leading-relaxed">
+          {it.explanation}
+        </RichText>
+      </div>
+    </div>
+  ) : null;
+
   return split ? (
-    // Big-screen review: question on the left, answer + worked solution on the
-    // right, so both are visible at once without scrolling.
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 items-start">
-      {questionCol}
-      {answerCol}
+    // Wide-screen focused review: the question pane scrolls on its own (left);
+    // the right pane pins the Answer at the top and Ask Jude at the bottom, and
+    // ONLY the worked solution scrolls between them. Mobile stays stacked.
+    <div className="space-y-3 lg:space-y-0 lg:grid lg:grid-cols-2 lg:gap-6 lg:h-full lg:min-h-0">
+      <div className="lg:h-full lg:min-h-0 lg:overflow-y-auto no-scrollbar lg:pr-1">
+        {questionCol}
+      </div>
+      <div className="lg:h-full lg:min-h-0 lg:flex lg:flex-col lg:gap-3 space-y-3 lg:space-y-0">
+        <div className="lg:shrink-0 lg:max-h-[42%] lg:overflow-y-auto no-scrollbar lg:pr-1">
+          {answerBlock}
+        </div>
+        {solutionBlock && (
+          <div className="lg:flex-1 lg:min-h-0 lg:overflow-y-auto no-scrollbar lg:pr-1">
+            {solutionBlock}
+          </div>
+        )}
+      </div>
     </div>
   ) : (
     <div className="space-y-3">
       {questionCol}
-      {answerCol}
+      {answerBlock}
+      {solutionBlock}
     </div>
   );
 }
@@ -2497,9 +2498,9 @@ function ReviewFocusModal({
         </button>
       </header>
 
-      <main className="flex-1 min-h-0 overflow-y-auto no-scrollbar">
-        <div className="max-w-3xl lg:max-w-6xl mx-auto w-full px-4 md:px-6 py-5 space-y-4">
-          <div className="flex items-center justify-between gap-3">
+      <main className="flex-1 min-h-0 overflow-y-auto lg:overflow-hidden no-scrollbar">
+        <div className="max-w-3xl lg:max-w-6xl mx-auto w-full px-4 md:px-6 py-5 flex flex-col lg:h-full">
+          <div className="flex items-center justify-between gap-3 shrink-0 mb-4">
             <div className="flex items-center gap-3">
               <span className="text-sm font-black text-text-tertiary whitespace-nowrap">
                 {it.groupId ? `Q${it.displayNumber} · Part ${it.partLabel ?? '?'}` : `Q${it.displayNumber}`}
@@ -2525,7 +2526,9 @@ function ReviewFocusModal({
             </button>
           </div>
 
-          <ReviewQuestionDetail it={it} split />
+          <div className="lg:flex-1 lg:min-h-0">
+            <ReviewQuestionDetail it={it} split />
+          </div>
         </div>
       </main>
     </div>
@@ -2942,6 +2945,11 @@ function ExamSimulation({
   const [navFilter, setNavFilter] = useState<'All' | 'Flagged' | 'Unanswered'>('All');
   const [showTimer, setShowTimer] = useState(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  // Tracks which diagram URLs have decoded. The arena gate (assetsReady) is
+  // derived from this DURING render, so a question whose image hasn't decoded
+  // shows the loading overlay on its very first paint — no flash of the prompt
+  // before the overlay, and no layout shift when the image lands.
+  const [loadedUrls, setLoadedUrls] = useState<Set<string>>(() => new Set());
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
@@ -3034,6 +3042,48 @@ function ExamSimulation({
 
   const currentQuestion = questions[currentIdx];
   const hasAssets = !!currentQuestion.assets?.length;
+  // Derived DURING render so the gate is correct on the first paint (no flash).
+  const assetsReady = (currentQuestion.assets ?? []).every((a) => loadedUrls.has(a.url));
+
+  // Decode the current diagram(s) — and warm the neighbours — then record their
+  // URLs as loaded so the gate above opens. Cached/warmed images decode
+  // immediately, so navigation between diagram questions doesn't re-flash.
+  useEffect(() => {
+    const urls = new Set<string>();
+    [currentIdx - 1, currentIdx, currentIdx + 1].forEach((i) => {
+      questions[i]?.assets?.forEach((a) => urls.add(a.url));
+    });
+    let cancelled = false;
+    const markLoaded = (url: string) => {
+      if (cancelled) return;
+      setLoadedUrls((prev) => {
+        if (prev.has(url)) return prev;
+        const next = new Set(prev);
+        next.add(url);
+        return next;
+      });
+    };
+    urls.forEach((url) => {
+      if (loadedUrls.has(url)) return;
+      const img = new Image();
+      img.src = url;
+      img.decode().then(
+        () => markLoaded(url),
+        () => {
+          if (img.complete) markLoaded(url);
+          else {
+            img.onload = () => markLoaded(url);
+            img.onerror = () => markLoaded(url);
+          }
+        }
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+    // loadedUrls intentionally omitted: a stale read only re-requests cached
+    // images (harmless); including it would re-run on every decode.
+  }, [currentIdx, questions]);
 
   // Multi-part sub-parts share ONE display number so the student reads them as
   // a single question; the counter only advances when leaving a group.
@@ -3247,7 +3297,7 @@ function ExamSimulation({
               key={f}
               onClick={() => setNavFilter(f)}
               className={cn(
-                "flex-1 py-1.5 rounded-lg transition-colors",
+                "flex-1 py-1.5 rounded-lg transition-colors whitespace-nowrap",
                 active
                   ? "bg-bg-surface text-text-primary shadow-sm border border-outline-variant/10"
                   : "text-text-secondary hover:text-text-primary"
@@ -3345,7 +3395,7 @@ function ExamSimulation({
               src={lightboxSrc}
               alt="diagram"
               onClick={(e) => e.stopPropagation()}
-              className="max-h-[92vh] max-w-[92vw] rounded-xl shadow-2xl cursor-default"
+              className="h-[92vh] w-[92vw] object-contain select-none cursor-default"
             />
             <button
               type="button"
@@ -3582,6 +3632,12 @@ function ExamSimulation({
                <div className="bg-bg-surface p-3 md:p-4 rounded-3xl border border-border-subtle shadow-2xl relative overflow-hidden group flex flex-col flex-1 min-h-0">
                   <div className="absolute inset-0 bg-gradient-to-br from-accent/5 via-transparent to-transparent opacity-50 pointer-events-none" />
 
+                  {hasAssets && !assetsReady && (
+                    <div className="absolute inset-0 z-30 flex items-center justify-center bg-bg-surface rounded-3xl">
+                      <Loader2 className="w-6 h-6 animate-spin text-text-tertiary" />
+                    </div>
+                  )}
+
                   {/* Header removed: question number + multi-part labels live in
                       the navigator; flagging moved to the bottom controls — the
                       question body now owns this space for long prompts. */}
@@ -3590,7 +3646,7 @@ function ExamSimulation({
                   <div className="relative z-10 flex-1 min-h-0 overflow-y-auto no-scrollbar py-2">
                     <div className={cn(
                       'space-y-3',
-                      hasAssets && 'lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)] lg:gap-4 lg:space-y-0'
+                      hasAssets && 'lg:grid lg:grid-cols-[minmax(0,36rem)_auto] lg:justify-center lg:gap-6 lg:space-y-0 lg:items-start'
                     )}>
                       <div className="space-y-3 min-w-0">
                         {currentQuestion.sharedStem && (
@@ -3615,15 +3671,17 @@ function ExamSimulation({
                               key={a.id}
                               type="button"
                               onClick={() => setLightboxSrc(a.url)}
-                              className="block mx-auto cursor-zoom-in"
-                              aria-label="Click to zoom"
+                              className="group relative block mx-auto cursor-zoom-in"
+                              aria-label="Tap to enlarge diagram"
                             >
                               <img
                                 src={a.url}
                                 alt="diagram"
-                                loading="lazy"
-                                className="rounded-xl border border-border-subtle max-h-[60vh] lg:max-h-[50vh] w-auto"
+                                className="rounded-xl border border-border-subtle max-h-[60vh] lg:max-h-[58vh] w-auto lg:max-w-[460px]"
                               />
+                              <span className="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-black/60 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white backdrop-blur-sm transition-colors group-hover:bg-black/80">
+                                <Maximize2 className="w-3 h-3" /> Tap to enlarge
+                              </span>
                             </button>
                           ))}
                         </div>

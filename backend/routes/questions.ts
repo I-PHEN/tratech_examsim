@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { ApiError, asyncHandler } from '../lib/errors';
-import { requireAdmin } from '../lib/auth';
+import { requireAdmin, requireOwner } from '../lib/auth';
 import { parse } from '../lib/validate';
 import { IdParam, uuid } from '../schemas/common';
 import {
@@ -112,7 +112,7 @@ router.post(
 
 router.delete(
   '/by-group/:groupId',
-  requireAdmin,
+  requireOwner,
   asyncHandler(async (req, res) => {
     const { groupId } = parse(z.object({ groupId: uuid }), req.params);
     await deleteQuestionGroup(groupId);
@@ -122,7 +122,7 @@ router.delete(
 
 router.delete(
   '/:id',
-  requireAdmin,
+  requireOwner,
   asyncHandler(async (req, res) => {
     const { id } = parse(IdParam, req.params);
     await deleteQuestion(id);

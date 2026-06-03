@@ -79,11 +79,30 @@ diagrams look small.
 **Where:** exam question arena [src/App.tsx](../../../src/App.tsx) ~lines 3590–3631
 (`lg:grid-cols-[minmax(0,1fr)_minmax(0,400px)]`).
 
-**Design (chosen: wider side-by-side + clear zoom affordance):**
-- Widen the diagram column (e.g. `minmax(0,1fr)_minmax(0,520px)` or a ~45% share) and raise
-  `max-h` so it's bigger by default while question + answer stay visible.
-- Add an explicit "tap to enlarge" badge/hint over the diagram so students discover the
-  existing full-screen lightbox (`setLightboxSrc`, ~line 3337). Lightbox behaviour unchanged.
+**Design (chosen: comfortable reading width + clear zoom affordance):**
+- **Keep the arena at its original width** (`max-w-7xl`). Going wider made question lines too
+  long to read comfortably.
+- **Comfortable reading measure + no dead space.** The diagram previously sat in a fixed grid
+  track (`minmax(0,480px)`) with a centered image much narrower than the track, reserving a
+  large dead block between text and diagram. New split: `minmax(0,36rem)_auto` with
+  `justify-center` and a small fixed `gap-6`. The question text is capped to ~36rem (a
+  readable line length), the diagram column hugs the image, and the leftover width becomes
+  **balanced side margins** around the centered pair — not one big gap between elements.
+- Cap the diagram image (`max-h` ~`58vh`, `lg:max-w-[460px]`) so it stays a sensible inline size.
+- **Diagram column is `auto`** (hugs the image) so the gap between question and diagram stays
+  tight — a fixed-width track padded the small image and reopened the gap.
+- **Preload + gate to avoid pop-in and shift.** An `auto` column that hugs a late-loading
+  image re-centers when the image lands (visible slide), and the question would otherwise show
+  before its diagram. Fix: an `assetsReady` gate — on each question, `new Image()` + `.decode()`
+  the current diagram(s); a brief loading overlay covers the arena until they're ready, so the
+  prompt and image reveal **together** with no shift. Neighbour questions' images are warmed in
+  the background so navigation stays instant. (`loading="lazy"` dropped — we control loading.)
+- Add an explicit "tap to enlarge" badge over the diagram so students discover the full-screen
+  lightbox (`setLightboxSrc`, ~line 3337).
+- **Lightbox fills the screen.** Both lightboxes (exam `setLightboxSrc` and `ZoomableImage` in
+  [RichText.tsx](../../../src/components/ui/RichText.tsx)) used `max-h/max-w` only, so a small
+  source image displayed at native size surrounded by dark. Switch to `h-[92vh] w-[92vw]
+  object-contain` so small diagrams scale **up** to fill (aspect-preserved, centered).
 
 **Tables:** No work needed. `RichText` already renders GFM tables via `remark-gfm` with styled
 `table`/`th`/`td` and horizontal scroll ([src/components/ui/RichText.tsx](../../../src/components/ui/RichText.tsx#L198-L206)).

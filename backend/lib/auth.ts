@@ -1,6 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
-import { getFirebaseAdmin } from './firebase-admin';
+import { getFirebaseAdmin, getDb } from './firebase-admin';
+import { retryTransient } from './retry';
 import { ApiError } from './errors';
+
+export type AdminRole = 'owner' | 'editor';
 
 export interface AuthUser {
   uid: string;
@@ -12,16 +15,19 @@ declare global {
   namespace Express {
     interface Request {
       user?: AuthUser;
+      adminRole?: AdminRole;
     }
   }
 }
 
-// Bootstrap admins: hardcoded so the project owner can never be locked out
-// of admin access, even if the Firestore `admins/` collection is empty or
-// unreachable. Day-to-day admin grants happen through the in-app UI
-// ("Admin Console → Manage Admins"), which writes to `admins/{uid}`.
+// Bootstrap OWNERS: hardcoded so the project's builders can never be locked
+// out, even if the Firestore `admins/` collection is empty or unreachable.
+// Any email here resolves as an 'owner'. Day-to-day grants happen through the
+// in-app UI ("Admin Console → Manage Admins") and default to 'editor'.
 const ADMIN_EMAILS = new Set<string>([
   'iphhennom@gmail.com',
+  // TODO(owners): add the three other builder emails here so they resolve as
+  // owners on sign-in (they can also be promoted via Manage Admins).
 ]);
 
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
@@ -49,36 +55,61 @@ export async function requireAuth(req: Request, _res: Response, next: NextFuncti
   }
 }
 
+/**
+ * Resolves a user's admin role, or null for non-admins.
+ *
+ * Bootstrap emails are always owners. Otherwise the `admins/{uid}` doc decides:
+ * an explicit `role: 'editor'` is an editor; anything else (an explicit
+ * `role: 'owner'`, or a legacy doc with no `role` field — those were full
+ * admins before tiering existed) resolves as an owner.
+ */
+export async function getAdminRole(
+  uid?: string,
+  email?: string | null
+): Promise<AdminRole | null> {
+  if (email && ADMIN_EMAILS.has(email)) return 'owner';
+  if (!uid) return null;
+  try {
+    const snap = await retryTransient(() => getDb().collection('admins').doc(uid).get());
+    if (!snap.exists) return null;
+    return snap.data()?.role === 'editor' ? 'editor' : 'owner';
+  } catch (err) {
+    // Fail closed if Firestore is unreachable — surface a clear error.
+    throw new ApiError(
+      503,
+      'ADMIN_CHECK_UNAVAILABLE',
+      'Admin check failed: ' + (err instanceof Error ? err.message : 'unknown error')
+    );
+  }
+}
+
 export async function requireAdmin(
   req: Request,
   _res: Response,
   next: NextFunction
 ): Promise<void> {
-  const email = req.user?.email;
-  const uid = req.user?.uid;
-
-  // Bootstrap path: hardcoded email allowlist always wins.
-  if (email && ADMIN_EMAILS.has(email)) return next();
-
-  // Firestore path: in-app "Manage Admins" writes a doc at admins/{uid}.
-  // We check existence — the doc's contents (addedBy, addedAt) are audit
-  // metadata, not gate values.
-  if (uid) {
-    try {
-      const snap = await getFirebaseAdmin()
-        .firestore()
-        .collection('admins')
-        .doc(uid)
-        .get();
-      if (snap.exists) return next();
-    } catch (err) {
-      // Fail closed if Firestore is unreachable — surface the error so the
-      // user gets a clear message rather than a generic 403.
-      return next(
-        new ApiError(503, 'ADMIN_CHECK_UNAVAILABLE', 'Admin check failed: ' + (err instanceof Error ? err.message : 'unknown error'))
-      );
-    }
+  try {
+    const role = await getAdminRole(req.user?.uid, req.user?.email ?? null);
+    if (!role) return next(new ApiError(403, 'FORBIDDEN', 'Admin access required'));
+    req.adminRole = role;
+    next();
+  } catch (err) {
+    next(err instanceof ApiError ? err : new ApiError(403, 'FORBIDDEN', 'Admin access required'));
   }
+}
 
-  next(new ApiError(403, 'FORBIDDEN', 'Admin access required'));
+/** Owner-only gate. Use in place of `requireAdmin` on destructive / admin-management routes. */
+export async function requireOwner(
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): Promise<void> {
+  try {
+    const role = req.adminRole ?? (await getAdminRole(req.user?.uid, req.user?.email ?? null));
+    if (role !== 'owner') return next(new ApiError(403, 'FORBIDDEN', 'Owner access required'));
+    req.adminRole = role;
+    next();
+  } catch (err) {
+    next(err instanceof ApiError ? err : new ApiError(403, 'FORBIDDEN', 'Owner access required'));
+  }
 }

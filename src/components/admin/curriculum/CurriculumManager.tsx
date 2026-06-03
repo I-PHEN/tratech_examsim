@@ -11,6 +11,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import { apiGet, apiPost, apiPut, apiDelete } from '../../../lib/apiClient';
+import { useAuth } from '../../../lib/AuthContext';
 import { TopicList, type Topic } from '../topics/TopicList';
 import { AddTopicModal } from '../topics/AddTopicModal';
 import { SuggestTopicsModal } from '../topics/SuggestTopicsModal';
@@ -52,6 +53,7 @@ const rowBtn =
 type EditKind = 'department' | 'course';
 
 export function CurriculumManager() {
+  const { isOwner } = useAuth();
   const [departments, setDepartments] = useState<Department[]>([]);
   const [deptsLoading, setDeptsLoading] = useState(true);
   const [departmentId, setDepartmentId] = useState('');
@@ -355,6 +357,7 @@ export function CurriculumManager() {
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
+                    {isOwner && (
                     <button
                       onClick={() =>
                         del(
@@ -371,6 +374,7 @@ export function CurriculumManager() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                    )}
                   </>
                 )}
               </div>
@@ -527,6 +531,7 @@ export function CurriculumManager() {
                               >
                                 <Pencil className="w-3.5 h-3.5" />
                               </button>
+                              {isOwner && (
                               <button
                                 onClick={() =>
                                   del(
@@ -540,6 +545,7 @@ export function CurriculumManager() {
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
+                              )}
                             </>
                           )}
                         </div>

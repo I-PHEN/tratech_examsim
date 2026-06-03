@@ -179,13 +179,13 @@ export function MySessionsScreen({
   const paginatedHistory = filteredHistory.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 
   return (
-    <div className="flex-1 w-full flex justify-center py-6 md:py-12 px-4 h-full overflow-y-auto">
+    <div className="flex-1 w-full flex justify-center py-5 md:py-6 px-4 h-full overflow-y-auto">
       <div className="w-full max-w-4xl space-y-8 animate-fade-in pb-12">
-        <header className="flex flex-col gap-6">
-          <div className="flex items-center justify-between">
+        <header className="flex flex-col gap-5">
+          <div className="flex items-center justify-between md:justify-end">
             <button
               onClick={onBack}
-              className="flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors hover:-translate-x-1 duration-200"
+              className="md:hidden flex items-center gap-2 text-text-secondary hover:text-text-primary transition-colors hover:-translate-x-1 duration-200"
             >
               <ArrowLeft className="w-5 h-5" />
               <span className="font-semibold text-sm">Back</span>

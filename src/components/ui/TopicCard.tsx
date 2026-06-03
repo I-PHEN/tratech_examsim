@@ -20,20 +20,30 @@ export function TopicCard({
   topic,
   active,
   onClick,
+  count,
+  disabled = false,
 }: {
   topic: Topic;
   active: boolean;
   onClick: () => void;
+  /** Question count to display (e.g. filtered by difficulty). Defaults to the topic total. */
+  count?: number;
+  /** Greyed, non-clickable — e.g. no questions at the selected difficulty. */
+  disabled?: boolean;
   key?: string | number;
 }) {
   const Icon = getIcon(topic.name);
+  const shownCount = count ?? topic.questionsCount ?? 0;
 
   return (
     <button
       onClick={onClick}
+      disabled={disabled}
       className={cn(
-        'group flex flex-col p-6 rounded-2xl transition-[transform,opacity,box-shadow,background-color,border-color] duration-150 relative overflow-hidden h-auto min-h-40 text-left',
-        active
+        'group flex flex-col p-4 rounded-2xl transition-[transform,opacity,box-shadow,background-color,border-color] duration-150 relative overflow-hidden text-left',
+        disabled
+          ? 'bg-bg-surface border border-border-subtle opacity-45 cursor-not-allowed'
+          : active
           ? 'bg-accent-muted border-2 border-accent'
           : 'bg-bg-surface border border-border-subtle hover:border-border-medium hover:bg-bg-raised',
       )}
@@ -41,33 +51,33 @@ export function TopicCard({
       {active && (
         <div className="absolute top-0 right-0 w-24 h-24 bg-accent/10 blur-3xl rounded-full pointer-events-none" />
       )}
-      <div className="flex justify-between items-start mb-auto">
+      <div className="flex items-start gap-3">
         <div
           className={cn(
-            'w-10 h-10 rounded-xl flex items-center justify-center transition-colors',
+            'w-9 h-9 shrink-0 rounded-lg flex items-center justify-center transition-colors',
             active
               ? 'bg-accent text-bg-page'
               : 'bg-bg-page text-text-tertiary group-hover:text-accent-text',
           )}
         >
-          <Icon className="w-5 h-5" />
+          <Icon className="w-[18px] h-[18px]" />
         </div>
+        <h3 className="flex-1 text-sm font-semibold leading-snug text-text-primary line-clamp-2">
+          {topic.name}
+        </h3>
         {topic.difficulty && (
           <span
-            className="w-2 h-2 rounded-full mt-1"
+            className="w-2 h-2 shrink-0 rounded-full mt-1.5"
             style={{ backgroundColor: DIFFICULTY_VAR[topic.difficulty] }}
           />
         )}
       </div>
 
-      <div className="mt-4">
-        <h3 className="text-base font-semibold mb-4 leading-tight text-text-primary">
-          {topic.name}
-        </h3>
-        <div className="pt-4 border-t border-border-subtle space-y-2">
+      <div className="mt-3">
+        <div className="space-y-1.5">
           <div className="flex justify-between items-center text-[11px] font-semibold tracking-[0.14em] uppercase">
             <span className={active ? 'text-accent-text' : 'text-text-tertiary'}>
-              {topic.questionsCount ?? 0} Questions
+              {shownCount} Questions
             </span>
             <span className={active ? 'text-accent-text' : 'text-text-tertiary'}>
               {topic.masteryState === 'scored'

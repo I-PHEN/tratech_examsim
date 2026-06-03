@@ -35,6 +35,8 @@ export interface Topic {
   id: string;
   name: string;
   questionsCount?: number;
+  /** Per-difficulty question counts; `questionsCount` is the total ("All"). */
+  questionCounts?: { easy: number; medium: number; hard: number };
   mastery?: number;
   masteryState?: 'not_started' | 'in_progress' | 'scored';
   difficulty?: 'Easy' | 'Medium' | 'Hard';

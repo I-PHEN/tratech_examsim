@@ -2,6 +2,9 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 import { User, onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { apiGet } from './apiClient';
+
+type AdminRole = 'owner' | 'editor' | null;
 
 interface UserProfile {
   department?: string;
@@ -16,6 +19,8 @@ interface AuthContextType {
   currentUser: User | null;
   userProfile: UserProfile | null;
   isAdmin: boolean;
+  isOwner: boolean;
+  role: AdminRole;
   isLoading: boolean;
   refreshProfile: () => Promise<void>;
   updateProfileLocal: (updates: Partial<UserProfile>) => void;
@@ -25,6 +30,8 @@ const AuthContext = createContext<AuthContextType>({
   currentUser: null,
   userProfile: null,
   isAdmin: false,
+  isOwner: false,
+  role: null,
   isLoading: true,
   refreshProfile: async () => {},
   updateProfileLocal: () => {},
@@ -33,7 +40,7 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
+  const [role, setRole] = useState<AdminRole>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const fetchProfile = async (uid: string) => {
@@ -70,20 +77,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUserProfile({});
         });
 
-        // Check if admin
+        // Resolve admin role server-side (owner / editor / null). This is the
+        // single source of truth for what admin UI the user may see; the server
+        // re-checks on every privileged request regardless.
         try {
-          const adminDoc = await getDoc(doc(db, 'admins', user.uid));
-          setIsAdmin(adminDoc.exists() || user.email === 'iphhennom@gmail.com');
+          const { role } = await apiGet<{ role: AdminRole }>('/api/admins/me');
+          setRole(role);
         } catch (error) {
-          console.error("Error checking admin status", error);
-          setIsAdmin(user.email === 'iphhennom@gmail.com');
+          console.error('Error checking admin role', error);
+          setRole(null);
         }
       } else {
         if (unsubscribeProfile) {
           unsubscribeProfile();
         }
         setUserProfile(null);
-        setIsAdmin(false);
+        setRole(null);
       }
       
       setIsLoading(false);
@@ -110,7 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ currentUser, userProfile, isAdmin, isLoading, refreshProfile, updateProfileLocal }}>
+    <AuthContext.Provider value={{ currentUser, userProfile, isAdmin: role !== null, isOwner: role === 'owner', role, isLoading, refreshProfile, updateProfileLocal }}>
       {children}
     </AuthContext.Provider>
   );

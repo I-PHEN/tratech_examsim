@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { supabase } from '../lib/supabase';
 import { ApiError, asyncHandler } from '../lib/errors';
-import { requireAdmin } from '../lib/auth';
+import { requireAdmin, requireOwner } from '../lib/auth';
 import { parse } from '../lib/validate';
 import { IdParam } from '../schemas/common';
 import { TopicCreate, TopicListQuery, TopicUpdate } from '../schemas/topic';
@@ -23,14 +23,34 @@ router.get(
 
     const { data: qRows, error: qErr } = await supabase
       .from('questions')
-      .select('topic_id')
+      .select('topic_id, difficulty')
       .in('topic_id', rows.map((t) => t.id));
     if (qErr) throw qErr;
-    const counts = new Map<string, number>();
-    for (const r of (qRows ?? []) as Array<{ topic_id: string }>) {
-      counts.set(r.topic_id, (counts.get(r.topic_id) ?? 0) + 1);
+    // Per-topic total + per-difficulty buckets. A question with a null/unknown
+    // difficulty counts toward the total only (drives the "All" filter).
+    type Bucket = { total: number; easy: number; medium: number; hard: number };
+    const counts = new Map<string, Bucket>();
+    for (const r of (qRows ?? []) as Array<{ topic_id: string; difficulty: string | null }>) {
+      let b = counts.get(r.topic_id);
+      if (!b) {
+        b = { total: 0, easy: 0, medium: 0, hard: 0 };
+        counts.set(r.topic_id, b);
+      }
+      b.total++;
+      if (r.difficulty === 'easy' || r.difficulty === 'medium' || r.difficulty === 'hard') {
+        b[r.difficulty]++;
+      }
     }
-    res.json(rows.map((t) => ({ ...t, question_count: counts.get(t.id) ?? 0 })));
+    res.json(
+      rows.map((t) => {
+        const b = counts.get(t.id);
+        return {
+          ...t,
+          question_count: b?.total ?? 0,
+          question_counts: { easy: b?.easy ?? 0, medium: b?.medium ?? 0, hard: b?.hard ?? 0 },
+        };
+      })
+    );
   })
 );
 
@@ -76,7 +96,7 @@ router.put(
 
 router.delete(
   '/:id',
-  requireAdmin,
+  requireOwner,
   asyncHandler(async (req, res) => {
     const { id } = parse(IdParam, req.params);
     const { error } = await supabase.from('topics').delete().eq('id', id);

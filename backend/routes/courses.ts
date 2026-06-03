@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { supabase } from '../lib/supabase';
 import { ApiError, asyncHandler } from '../lib/errors';
-import { requireAdmin } from '../lib/auth';
+import { requireAdmin, requireOwner } from '../lib/auth';
 import { parse } from '../lib/validate';
 import { IdParam } from '../schemas/common';
 import { CourseCreate, CourseListQuery, CourseUpdate } from '../schemas/course';
@@ -62,7 +62,7 @@ router.put(
 
 router.delete(
   '/:id',
-  requireAdmin,
+  requireOwner,
   asyncHandler(async (req, res) => {
     const { id } = parse(IdParam, req.params);
     const { error } = await supabase.from('courses').delete().eq('id', id);
