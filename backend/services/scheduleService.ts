@@ -1,6 +1,9 @@
 import { DateTime } from 'luxon';
 import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
+import { createNotification } from './notificationService';
+import { sendReminderEmail } from '../lib/email';
+import { getFirebaseAdmin } from '../lib/firebase-admin';
 import type { ScheduleCreateInput, ScheduleUpdateInput } from '../schemas/schedule';
 
 export interface RecurrenceSpec {
@@ -387,4 +390,131 @@ export async function deleteSchedule(userUid: string, id: string): Promise<void>
   if ((count ?? 0) === 0) {
     throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
   }
+}
+
+// ---------------------------------------------------------------------------
+// Firing engine
+// ---------------------------------------------------------------------------
+
+/**
+ * Atomically claims all due active schedules, fires an in-app notification for
+ * each, attempts a best-effort email, then advances (or completes) the schedule.
+ *
+ * Idempotency: the claim UPDATE sets next_run_at = null in the same statement,
+ * so a concurrent cron run's `.lte('next_run_at', now)` no longer matches these
+ * rows (NULL fails the comparison) — each due instant is processed exactly once.
+ */
+export async function runDueReminders(): Promise<{
+  fired: number;
+  emailed: number;
+  failed_emails: number;
+}> {
+  // Step 1 — atomic claim
+  const nowIso = new Date().toISOString();
+  const { data: claimed, error: claimError } = await supabase
+    .from('practice_schedules')
+    .update({ next_run_at: null, last_fired_at: nowIso })
+    .eq('status', 'active')
+    .lte('next_run_at', nowIso)
+    .select('*');
+  if (claimError) throw claimError;
+
+  const rows = (claimed ?? []) as ScheduleRow[];
+  if (rows.length === 0) return { fired: 0, emailed: 0, failed_emails: 0 };
+
+  // Batch-fetch course + topic names for all claimed rows in one query.
+  const ids = rows.map((r) => r.id);
+  const { data: nameRows } = await supabase
+    .from('practice_schedules')
+    .select('id, program_courses(courses(name)), topics(name)')
+    .in('id', ids);
+
+  // Build a lookup: schedule id → { courseName, topicName }
+  type NameLookup = { courseName: string | null; topicName: string | null };
+  const nameMap = new Map<string, NameLookup>();
+  for (const nr of (nameRows ?? []) as unknown as Array<Record<string, unknown>>) {
+    const pc = Array.isArray(nr.program_courses) ? nr.program_courses[0] : nr.program_courses;
+    const courses = pc ? (pc as Record<string, unknown>).courses : null;
+    const courseObj = Array.isArray(courses)
+      ? (courses as Array<{ name: string }>)[0]
+      : (courses as { name: string } | null);
+    const courseName: string | null = courseObj?.name ?? null;
+
+    const topicObj = Array.isArray(nr.topics) ? nr.topics[0] : nr.topics;
+    const topicName: string | null = (topicObj as { name?: string } | null)?.name ?? null;
+
+    nameMap.set(nr.id as string, { courseName, topicName });
+  }
+
+  let fired = 0;
+  let emailed = 0;
+  let failedEmails = 0;
+
+  // Step 2 — process each claimed row
+  for (const row of rows) {
+    // a. Compute next occurrence
+    const next = advanceNextRunAt(rowToRecurrenceSpec(row), new Date());
+    const newStatus: ScheduleRow['status'] = next ? 'active' : 'completed';
+
+    // b. Resolve display names
+    const { courseName, topicName } = nameMap.get(row.id) ?? { courseName: null, topicName: null };
+    const courseLabel = topicName
+      ? `${courseName ?? 'your course'} · ${topicName}`
+      : (courseName ?? 'your course');
+
+    const title = `Time to practice — ${courseLabel}`;
+    const body = `${row.question_count} question${row.question_count === 1 ? '' : 's'}${row.difficulty ? ' · ' + row.difficulty : ''}`;
+    const payload: Record<string, unknown> = {
+      program_course_id: row.program_course_id,
+      topic_id: row.topic_id,
+      difficulty: row.difficulty,
+      question_count: row.question_count,
+      mode: 'practice',
+    };
+
+    // c. Write in-app notification FIRST (never lost even if email fails)
+    const { id: notifId } = await createNotification({
+      user_uid: row.user_uid,
+      type: 'practice_reminder',
+      title,
+      body,
+      schedule_id: row.id,
+      payload,
+    });
+
+    // d. Send email best-effort (never fatal)
+    let email: string | undefined;
+    try {
+      email = (await getFirebaseAdmin().auth().getUser(row.user_uid)).email ?? undefined;
+    } catch {
+      email = undefined;
+    }
+
+    if (email) {
+      try {
+        const startUrl = `${process.env.APP_URL ?? ''}/?start=${row.id}`;
+        const { sent } = await sendReminderEmail({ to: email, courseLabel, startUrl });
+        if (sent) {
+          await supabase
+            .from('notifications')
+            .update({ email_sent_at: new Date().toISOString() })
+            .eq('id', notifId);
+          emailed++;
+        }
+      } catch (e) {
+        console.error('[reminder] email failed for schedule', row.id, e);
+        failedEmails++;
+      }
+    }
+
+    // e. Advance the schedule
+    await supabase
+      .from('practice_schedules')
+      .update({ next_run_at: next, status: newStatus })
+      .eq('id', row.id);
+
+    fired++;
+  }
+
+  return { fired, emailed, failed_emails: failedEmails };
 }

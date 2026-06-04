@@ -25,6 +25,7 @@ import notificationsRouter from './routes/notifications';
 import adminsRouter from './routes/admins';
 import adminAnalyticsRouter from './routes/adminAnalytics';
 import profileRouter from './routes/profile';
+import internalRouter from './routes/internal';
 
 async function startServer() {
   const app = express();
@@ -52,6 +53,9 @@ async function startServer() {
   app.use('/api/admins', requireAuth, adminsRouter);
   app.use('/api/admin/analytics', requireAuth, adminAnalyticsRouter);
   app.use('/api/profile', requireAuth, profileRouter);
+
+  // Internal endpoints — auth is the CRON_SECRET header, NOT requireAuth
+  app.use('/api/internal', internalRouter);
 
   app.use('/api', errorMiddleware);
 
