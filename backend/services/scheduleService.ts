@@ -472,48 +472,57 @@ export async function runDueReminders(): Promise<{
       mode: 'practice',
     };
 
-    // c. Write in-app notification FIRST (never lost even if email fails)
-    const { id: notifId } = await createNotification({
-      user_uid: row.user_uid,
-      type: 'practice_reminder',
-      title,
-      body,
-      schedule_id: row.id,
-      payload,
-    });
-
-    // d. Send email best-effort (never fatal)
-    let email: string | undefined;
+    // c+d. Write the in-app notification FIRST (so it's never lost if email
+    // fails), then a best-effort email. Guarded together so a transient failure
+    // here can't skip the advance below — which would orphan the claimed row at
+    // next_run_at=null, never to be re-claimed.
     try {
-      email = (await getFirebaseAdmin().auth().getUser(row.user_uid)).email ?? undefined;
-    } catch {
-      email = undefined;
-    }
+      const { id: notifId } = await createNotification({
+        user_uid: row.user_uid,
+        type: 'practice_reminder',
+        title,
+        body,
+        schedule_id: row.id,
+        payload,
+      });
 
-    if (email) {
+      // Email best-effort (never fatal).
+      let email: string | undefined;
       try {
-        const startUrl = `${process.env.APP_URL ?? ''}/?start=${row.id}`;
-        const { sent } = await sendReminderEmail({ to: email, courseLabel, startUrl });
-        if (sent) {
-          await supabase
-            .from('notifications')
-            .update({ email_sent_at: new Date().toISOString() })
-            .eq('id', notifId);
-          emailed++;
-        }
-      } catch (e) {
-        console.error('[reminder] email failed for schedule', row.id, e);
-        failedEmails++;
+        email = (await getFirebaseAdmin().auth().getUser(row.user_uid)).email ?? undefined;
+      } catch {
+        email = undefined;
       }
+
+      if (email) {
+        try {
+          const startUrl = `${process.env.APP_URL ?? ''}/?start=${row.id}`;
+          const { sent } = await sendReminderEmail({ to: email, courseLabel, startUrl });
+          if (sent) {
+            await supabase
+              .from('notifications')
+              .update({ email_sent_at: new Date().toISOString() })
+              .eq('id', notifId);
+            emailed++;
+          }
+        } catch (e) {
+          console.error('[reminder] email failed for schedule', row.id, e);
+          failedEmails++;
+        }
+      }
+
+      fired++;
+    } catch (e) {
+      // Notification write failed — log, but still advance the schedule below so
+      // it isn't left permanently stuck (claimed with next_run_at = null).
+      console.error('[reminder] failed to record notification for schedule', row.id, e);
     }
 
-    // e. Advance the schedule
+    // e. Advance the schedule (always — even if the notification failed above).
     await supabase
       .from('practice_schedules')
       .update({ next_run_at: next, status: newStatus })
       .eq('id', row.id);
-
-    fired++;
   }
 
   return { fired, emailed, failed_emails: failedEmails };
