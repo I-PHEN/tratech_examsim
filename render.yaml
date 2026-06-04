@@ -33,3 +33,20 @@ services:
         sync: false
       - key: MISTRAL_API_KEY
         sync: false
+      # Public base URL of this web service — used in reminder deep links
+      # (e.g. https://tratech-examsim.onrender.com). Required for scheduled
+      # practice reminders.
+      - key: APP_URL
+        sync: false
+      # Shared secret the external cron (cron-job.org) sends as the
+      # `x-cron-secret` header to POST /api/internal/run-due-reminders.
+      # Set the SAME value here and in the cron-job.org job. Required for
+      # reminders to fire.
+      - key: CRON_SECRET
+        sync: false
+      # Resend email (https://resend.com) — OPTIONAL. Without these the in-app
+      # notification bell still works; set them to also send reminder emails.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
