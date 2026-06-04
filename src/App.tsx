@@ -3016,7 +3016,13 @@ function ExamSimulation({
   const [questionStartTime, setQuestionStartTime] = useState<number>(Date.now());
   const [sessionMenuOpen, setSessionMenuOpen] = useState(false);
   const [endConfirmOpen, setEndConfirmOpen] = useState(false);
+  // Confirm before finishing when questions are unanswered or some answers
+  // failed to save — so a hurried submit can't silently produce a 0%.
+  const [submitConfirmOpen, setSubmitConfirmOpen] = useState(false);
   const [sessionActionBusy, setSessionActionBusy] = useState<'pause' | 'end' | null>(null);
+  // Question positions whose latest /answer POST failed (after a retry). Drives
+  // a visible "couldn't save" banner so a dropped answer is never invisible.
+  const [unsavedPositions, setUnsavedPositions] = useState<Set<number>>(() => new Set());
   // In-flight answer submissions: handleFinish must wait for these before
   // posting /finish, otherwise the server may finalise the session while a
   // late /answer is still in flight (which then 400s with SESSION_FINISHED and
@@ -3191,7 +3197,19 @@ function ExamSimulation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
+  // Manual submit: if anything's unanswered or failed to save, confirm first.
+  // The timer auto-submit calls handleFinish directly (time's up, no prompt).
+  const requestFinish = () => {
+    const unanswered = totalQuestions - answeredCount;
+    if (unanswered > 0 || unsavedPositions.size > 0) {
+      setSubmitConfirmOpen(true);
+    } else {
+      handleFinish();
+    }
+  };
+
   const handleFinish = async () => {
+    setSubmitConfirmOpen(false);
     // Drain any pending /answer requests first — otherwise the server may
     // accept /finish before the last answer reaches the DB, which then 400s
     // with SESSION_FINISHED and leaves the review screen empty.
@@ -3249,10 +3267,33 @@ function ExamSimulation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hydrated, timeLeftMs, questions.length]);
 
+  const markSaved = (pos: number) =>
+    setUnsavedPositions((prev) => {
+      if (!prev.has(pos)) return prev;
+      const next = new Set(prev);
+      next.delete(pos);
+      return next;
+    });
+  const markUnsaved = (pos: number) =>
+    setUnsavedPositions((prev) => {
+      if (prev.has(pos)) return prev;
+      const next = new Set(prev);
+      next.add(pos);
+      return next;
+    });
+
   const postAnswer = (payload: Record<string, unknown>) => {
-    const p = apiPost(`/api/sessions/${sessionId}/answer`, payload).catch((e) =>
-      console.error('answer submit failed', e)
-    );
+    const pos = Number(payload.position);
+    const send = () => apiPost(`/api/sessions/${sessionId}/answer`, payload);
+    // One retry covers a transient network blip; a second failure is surfaced
+    // to the user rather than swallowed (silent loss → mystery 0%).
+    const p = send()
+      .catch(() => send())
+      .then(() => markSaved(pos))
+      .catch((e) => {
+        console.error('answer submit failed', e);
+        markUnsaved(pos);
+      });
     pendingAnswersRef.current.add(p);
     p.finally(() => pendingAnswersRef.current.delete(p));
   };
@@ -3309,7 +3350,7 @@ function ExamSimulation({
       setCurrentIdx(currentIdx + 1);
       setQuestionStartTime(Date.now());
     } else {
-      handleFinish();
+      requestFinish();
     }
   };
 
@@ -3415,7 +3456,7 @@ function ExamSimulation({
         <p className="text-[10px] text-text-tertiary text-center py-1">Every question is answered.</p>
       )}
 
-      <button onClick={() => { setIsMobileNavOpen(false); handleFinish(); }} className="w-full py-3.5 mt-2 bg-primary hover:bg-primary/90 text-slate-950 font-black text-xs uppercase tracking-widest rounded-[1rem] shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow]">
+      <button onClick={() => { setIsMobileNavOpen(false); requestFinish(); }} className="w-full py-3.5 mt-2 bg-primary hover:bg-primary/90 text-slate-950 font-black text-xs uppercase tracking-widest rounded-[1rem] shadow-lg hover:-translate-y-0.5 transition-[transform,opacity,box-shadow]">
         Submit Exam
       </button>
     </div>
@@ -3655,6 +3696,16 @@ function ExamSimulation({
       {/* Main Container */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="max-w-7xl mx-auto w-full px-3 md:px-6 py-2 md:py-4 flex-1 min-h-0 flex flex-col overflow-hidden">
+          {unsavedPositions.size > 0 && (
+            <div className="mb-2 flex items-start gap-3 px-3 py-2 rounded-xl bg-[color:var(--danger-bg)] text-[color:var(--accent-danger)] border border-[color:var(--danger-border)] text-xs">
+              <span className="font-bold uppercase tracking-wider shrink-0">Not saved</span>
+              <span className="flex-1">
+                {unsavedPositions.size} answer{unsavedPositions.size === 1 ? '' : 's'} couldn’t be
+                saved — check your connection, then re-open and edit{' '}
+                {unsavedPositions.size === 1 ? 'it' : 'them'} to retry before submitting.
+              </span>
+            </div>
+          )}
           {showFallbackBanner && (
             <div className="mb-2 flex items-start gap-3 px-3 py-2 rounded-xl bg-amber-500/10 text-amber-500 border border-amber-500/30 text-xs">
               <span className="font-bold uppercase tracking-wider shrink-0">Heads up</span>
@@ -3901,6 +3952,57 @@ function ExamSimulation({
           </div>
         </div>
       </div>
+
+      {submitConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 animate-fade-in"
+          onClick={() => setSubmitConfirmOpen(false)}
+        >
+          <div
+            className="w-full max-w-md bg-bg-surface border border-border-subtle rounded-2xl p-6 space-y-4 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/15 text-amber-500 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+              </div>
+              <div className="flex-1">
+                <h3 className="text-base font-bold text-text-primary mb-1">Submit now?</h3>
+                <div className="text-sm text-text-secondary leading-relaxed space-y-1.5">
+                  {totalQuestions - answeredCount > 0 && (
+                    <p>
+                      <span className="font-semibold text-text-primary">
+                        {totalQuestions - answeredCount} of {totalQuestions}
+                      </span>{' '}
+                      question{totalQuestions - answeredCount === 1 ? '' : 's'}{' '}
+                      {totalQuestions - answeredCount === 1 ? 'is' : 'are'} unanswered —{' '}
+                      {totalQuestions - answeredCount === 1 ? "it'll" : "they'll"} be marked wrong.
+                    </p>
+                  )}
+                  {unsavedPositions.size > 0 && (
+                    <p>
+                      <span className="font-semibold text-[color:var(--accent-danger)]">
+                        {unsavedPositions.size} answer{unsavedPositions.size === 1 ? '' : 's'}
+                      </span>{' '}
+                      failed to save and won’t count. Check your connection and re-edit before
+                      submitting.
+                    </p>
+                  )}
+                  <p>You can keep working, or submit and see your score now.</p>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="secondary" size="sm" onClick={() => setSubmitConfirmOpen(false)}>
+                Keep working
+              </Button>
+              <Button variant="primary" size="sm" onClick={handleFinish}>
+                Submit anyway
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {endConfirmOpen && (
         <div
