@@ -118,3 +118,30 @@ export async function markAllRead(userUid: string): Promise<{ updated: number }>
   if (error) throw error;
   return { updated: (data ?? []).length };
 }
+
+/** Hard-delete one notification, scoped to its owner. 404 if not found / not theirs. */
+export async function deleteNotification(userUid: string, id: string): Promise<void> {
+  const { error, count } = await supabase
+    .from('notifications')
+    .delete({ count: 'exact' })
+    .eq('id', id)
+    .eq('user_uid', userUid);
+  if (error) throw error;
+  if ((count ?? 0) === 0) throw new ApiError(404, 'NOT_FOUND', 'Notification not found.');
+}
+
+/**
+ * Hard-delete a user's notifications — all of them, or (when `scheduleId` is
+ * given) just those for one schedule. Used by "Clear all" and by the deep-link
+ * auto-dismiss when a reminder is opened.
+ */
+export async function clearNotifications(
+  userUid: string,
+  scheduleId?: string
+): Promise<{ deleted: number }> {
+  let q = supabase.from('notifications').delete({ count: 'exact' }).eq('user_uid', userUid);
+  if (scheduleId) q = q.eq('schedule_id', scheduleId);
+  const { error, count } = await q;
+  if (error) throw error;
+  return { deleted: count ?? 0 };
+}

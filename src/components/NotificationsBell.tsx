@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, BellOff } from 'lucide-react';
+import { Bell, BellOff, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { EmptyState } from './ui/EmptyState';
-import { apiGet, apiPost } from '../lib/apiClient';
+import { apiGet, apiDelete } from '../lib/apiClient';
 
 interface NotificationItem {
   id: string;
@@ -103,31 +103,25 @@ export function NotificationsBell({ onOpenReminder }: NotificationsBellProps = {
     };
   }, [open]);
 
-  const handleMarkOne = (id: string) => {
-    // Optimistic update
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
-    );
-    setUnreadCount((c) => Math.max(0, c - 1));
+  // Remove one notification (the × button, and auto-dismiss when a reminder is opened).
+  const handleDelete = (id: string) => {
+    const target = notifications.find((n) => n.id === id);
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    if (target && !target.read) setUnreadCount((c) => Math.max(0, c - 1));
 
-    apiPost<{ ok: boolean }>(`/api/notifications/${id}/read`, {}).catch((err) => {
-      console.error('NotificationsBell: mark-read failed', err);
-      // Roll back optimistic update on failure
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === id ? { ...n, read: false } : n)),
-      );
-      setUnreadCount((c) => c + 1);
+    apiDelete(`/api/notifications/${id}`).catch((err) => {
+      console.error('NotificationsBell: delete failed', err);
+      loadNotifications(); // re-sync on failure
     });
   };
 
-  const handleMarkAll = () => {
-    // Optimistic update
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  const handleClearAll = () => {
+    setNotifications([]);
     setUnreadCount(0);
+    setOpen(false);
 
-    apiPost<{ updated: number }>('/api/notifications/read-all', {}).catch((err) => {
-      console.error('NotificationsBell: mark-all-read failed', err);
-      // Re-fetch real state on failure
+    apiDelete('/api/notifications').catch((err) => {
+      console.error('NotificationsBell: clear-all failed', err);
       loadNotifications();
     });
   };
@@ -161,19 +155,21 @@ export function NotificationsBell({ onOpenReminder }: NotificationsBellProps = {
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
             <h3 className="font-display italic text-lg text-text-primary">Notifications</h3>
-            {unreadCount > 0 && (
-              <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2">
+              {unreadCount > 0 && (
                 <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-text">
                   {unreadCount} new
                 </span>
+              )}
+              {notifications.length > 0 && (
                 <button
-                  onClick={handleMarkAll}
+                  onClick={handleClearAll}
                   className="text-[11px] font-medium text-text-secondary hover:text-text-primary transition-colors underline underline-offset-2"
                 >
-                  Mark all read
+                  Clear all
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="p-3">
@@ -191,24 +187,30 @@ export function NotificationsBell({ onOpenReminder }: NotificationsBellProps = {
                   <li
                     key={n.id}
                     onClick={() => {
-                      if (!n.read) handleMarkOne(n.id);
+                      // Open the pre-filled practice, then auto-dismiss this reminder.
                       if (onOpenReminder) {
                         onOpenReminder(n.schedule_id, n.payload);
                         setOpen(false);
                       }
+                      handleDelete(n.id);
                     }}
-                    className={cn(
-                      'rounded-xl px-3 py-2.5 transition-colors',
-                      n.read
-                        ? onOpenReminder ? 'opacity-60 cursor-pointer hover:opacity-100 hover:bg-bg-surface' : 'opacity-60'
-                        : 'bg-bg-surface cursor-pointer hover:bg-bg-raised',
-                    )}
+                    className="rounded-xl px-3 py-2.5 transition-colors bg-bg-surface cursor-pointer hover:bg-bg-raised"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <p className="text-sm font-semibold text-text-primary leading-snug">{n.title}</p>
-                      <span className="text-[10px] text-text-secondary shrink-0 mt-0.5">
-                        {timeAgo(n.created_at)}
-                      </span>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] text-text-secondary mt-0.5">
+                          {timeAgo(n.created_at)}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label="Dismiss notification"
+                          onClick={(e) => { e.stopPropagation(); handleDelete(n.id); }}
+                          className="p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-bg-raised transition-colors"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                     {n.body && (
                       <p className="text-xs text-text-secondary mt-0.5 leading-relaxed">{n.body}</p>

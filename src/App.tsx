@@ -711,6 +711,9 @@ export default function App() {
           difficulty: sched.difficulty,
           question_count: sched.question_count,
         });
+        // Auto-dismiss this schedule's reminders from the bell (opened via the
+        // email/calendar link — no bell row was clicked to clear it).
+        apiDelete('/api/notifications?schedule_id=' + id).catch(() => {});
       })
       .catch((err) => {
         console.warn('openScheduledStart: could not resolve schedule', id, err);
