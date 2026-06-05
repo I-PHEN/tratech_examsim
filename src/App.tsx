@@ -84,6 +84,20 @@ import { NotificationsBell } from './components/NotificationsBell';
 import { ApiError, apiDelete, apiGet, apiPost } from './lib/apiClient';
 import { Bookmark, Loader2 } from 'lucide-react';
 
+interface ScheduleListItem {
+  id: string;
+  program_course_id: string;
+  topic_id: string | null;
+  difficulty: 'easy' | 'medium' | 'hard' | null;
+  question_count: number;
+  course_name: string | null;
+  topic_name: string | null;
+  label: string | null;
+  timezone: string;
+  recurrence: 'once' | 'weekly';
+  status: 'active' | 'paused' | 'completed' | 'cancelled';
+}
+
 interface ApiProgramCourse {
   id: string;
   year_level: number;
@@ -645,6 +659,68 @@ export default function App() {
     };
   }, [touchStartX, isMobileMenuOpen]);
 
+  // ── Scheduled-practice deep-link ─────────────────────────────────────────
+  // Processed start ids are tracked in a ref so the effect never fires twice
+  // for the same id, even if currentUser flickers.
+  const processedStartRef = useRef<Set<string>>(new Set());
+
+  function openScheduledStart(p: {
+    program_course_id: string; course_name: string | null;
+    topic_id: string | null; topic_name: string | null;
+    difficulty: 'easy' | 'medium' | 'hard' | null; question_count: number;
+  }) {
+    const diffMap = { easy: 'Easy', medium: 'Medium', hard: 'Hard' } as const;
+    setState(prev => ({
+      ...prev,
+      mode: 'PRACTICE',
+      selectedCourse: { id: p.program_course_id, name: p.course_name ?? 'Course' } as Course,
+      selectedTopic: p.topic_id ? ({ id: p.topic_id, name: p.topic_name ?? 'Topic' } as Topic) : null,
+      difficulty: p.difficulty ? diffMap[p.difficulty] : 'All',
+      questionCount: p.question_count,
+      step: 'READY',
+      returnStep: undefined,
+    }));
+  }
+
+  useEffect(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('start');
+    const fromStorage = localStorage.getItem('pendingStart');
+    const id = fromUrl ?? fromStorage;
+
+    if (!id) return; // no-op when no start id present
+
+    if (processedStartRef.current.has(id)) return; // already handled
+
+    if (!currentUser) {
+      // Not signed in — stash and clean URL so it survives the sign-in redirect
+      localStorage.setItem('pendingStart', id);
+      if (fromUrl) window.history.replaceState({}, '', window.location.pathname);
+      return;
+    }
+
+    // Signed in — mark as processed immediately to prevent double-fire
+    processedStartRef.current.add(id);
+
+    apiGet<ScheduleListItem>('/api/schedules/' + id)
+      .then((sched) => {
+        openScheduledStart({
+          program_course_id: sched.program_course_id,
+          course_name: sched.course_name,
+          topic_id: sched.topic_id,
+          topic_name: sched.topic_name,
+          difficulty: sched.difficulty,
+          question_count: sched.question_count,
+        });
+      })
+      .catch((err) => {
+        console.warn('openScheduledStart: could not resolve schedule', id, err);
+      })
+      .finally(() => {
+        localStorage.removeItem('pendingStart');
+        if (fromUrl) window.history.replaceState({}, '', window.location.pathname);
+      });
+  }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleModeSelect = (mode: StudyMode) => {
     setState(prev => ({ ...prev, mode, step: 'COURSE_SELECT' }));
   };
@@ -1061,7 +1137,38 @@ export default function App() {
           </div>
           <div className="flex items-center gap-1 md:gap-2">
             <ThemeToggle />
-            <NotificationsBell />
+            <NotificationsBell onOpenReminder={(scheduleId, payload) => {
+              const resolveAndOpen = async () => {
+                if (scheduleId) {
+                  try {
+                    const sched = await apiGet<ScheduleListItem>('/api/schedules/' + scheduleId);
+                    openScheduledStart({
+                      program_course_id: sched.program_course_id,
+                      course_name: sched.course_name,
+                      topic_id: sched.topic_id,
+                      topic_name: sched.topic_name,
+                      difficulty: sched.difficulty,
+                      question_count: sched.question_count,
+                    });
+                    return;
+                  } catch (err) {
+                    console.warn('NotificationsBell: schedule lookup failed, falling back to payload', err);
+                  }
+                }
+                // Fall back to payload (no names, but has the ids we need)
+                if (payload) {
+                  openScheduledStart({
+                    program_course_id: String(payload.program_course_id ?? ''),
+                    course_name: null,
+                    topic_id: payload.topic_id ? String(payload.topic_id) : null,
+                    topic_name: null,
+                    difficulty: (payload.difficulty as 'easy' | 'medium' | 'hard' | null) ?? null,
+                    question_count: Number(payload.question_count ?? 10),
+                  });
+                }
+              };
+              resolveAndOpen().catch((err) => console.error('onOpenReminder failed', err));
+            }} />
           </div>
         </header>
 

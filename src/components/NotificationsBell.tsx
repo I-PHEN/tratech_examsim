@@ -33,7 +33,11 @@ function timeAgo(iso: string): string {
   return `${diffDay}d`;
 }
 
-export function NotificationsBell() {
+interface NotificationsBellProps {
+  onOpenReminder?: (scheduleId: string | null, payload: Record<string, unknown> | null) => void;
+}
+
+export function NotificationsBell({ onOpenReminder }: NotificationsBellProps = {}) {
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -186,11 +190,17 @@ export function NotificationsBell() {
                 {notifications.map((n) => (
                   <li
                     key={n.id}
-                    onClick={() => !n.read && handleMarkOne(n.id)}
+                    onClick={() => {
+                      if (!n.read) handleMarkOne(n.id);
+                      if (onOpenReminder) {
+                        onOpenReminder(n.schedule_id, n.payload);
+                        setOpen(false);
+                      }
+                    }}
                     className={cn(
                       'rounded-xl px-3 py-2.5 transition-colors',
                       n.read
-                        ? 'opacity-60'
+                        ? onOpenReminder ? 'opacity-60 cursor-pointer hover:opacity-100 hover:bg-bg-surface' : 'opacity-60'
                         : 'bg-bg-surface cursor-pointer hover:bg-bg-raised',
                     )}
                   >
