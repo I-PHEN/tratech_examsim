@@ -155,6 +155,20 @@ export interface ScheduleListItem extends ScheduleRow {
   topic_name: string | null;
 }
 
+/** Flatten a row joined with program_courses(courses(name)), topics(name) into a ScheduleListItem. */
+function mapScheduleListItem(row: Record<string, unknown>): ScheduleListItem {
+  const pc = Array.isArray(row.program_courses) ? row.program_courses[0] : row.program_courses;
+  const courses = pc ? (pc as Record<string, unknown>).courses : null;
+  const courseObj = Array.isArray(courses) ? (courses as Array<{ name: string }>)[0] : (courses as { name: string } | null);
+  const course_name: string | null = courseObj?.name ?? null;
+
+  const topicObj = Array.isArray(row.topics) ? row.topics[0] : row.topics;
+  const topic_name: string | null = (topicObj as { name?: string } | null)?.name ?? null;
+
+  const { program_courses: _pc, topics: _t, ...base } = row;
+  return { ...(base as unknown as ScheduleRow), course_name, topic_name };
+}
+
 export async function listSchedules(userUid: string): Promise<ScheduleListItem[]> {
   const { data, error } = await supabase
     .from('practice_schedules')
@@ -164,21 +178,20 @@ export async function listSchedules(userUid: string): Promise<ScheduleListItem[]
     .order('created_at', { ascending: false });
   if (error) throw error;
 
-  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map((row) => {
-    // Extract course_name: program_courses → courses(name)
-    const pc = Array.isArray(row.program_courses) ? row.program_courses[0] : row.program_courses;
-    const courses = pc ? (pc as Record<string, unknown>).courses : null;
-    const courseObj = Array.isArray(courses) ? (courses as Array<{ name: string }>)[0] : (courses as { name: string } | null);
-    const course_name: string | null = courseObj?.name ?? null;
+  return ((data ?? []) as unknown as Array<Record<string, unknown>>).map(mapScheduleListItem);
+}
 
-    // Extract topic_name: topics(name)
-    const topicObj = Array.isArray(row.topics) ? row.topics[0] : row.topics;
-    const topic_name: string | null = (topicObj as { name?: string } | null)?.name ?? null;
-
-    // Strip the embedded relation objects, spread base row fields
-    const { program_courses: _pc, topics: _t, ...base } = row;
-    return { ...(base as unknown as ScheduleRow), course_name, topic_name };
-  });
+/** A single schedule (with course/topic names), scoped to its owner. For the reminder deep link. */
+export async function getScheduleById(userUid: string, id: string): Promise<ScheduleListItem> {
+  const { data, error } = await supabase
+    .from('practice_schedules')
+    .select('*, program_courses(courses(name)), topics(name)')
+    .eq('id', id)
+    .eq('user_uid', userUid)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) throw new ApiError(404, 'NOT_FOUND', 'Schedule not found.');
+  return mapScheduleListItem(data as unknown as Record<string, unknown>);
 }
 
 export async function createSchedule(userUid: string, input: ScheduleCreateInput): Promise<ScheduleRow> {

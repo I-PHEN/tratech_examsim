@@ -3,7 +3,7 @@ import { ArrowLeft, CalendarClock, Pencil, Pause, Play, Trash2, AlertTriangle, L
 import { DateTime } from 'luxon';
 import { cn } from '../lib/utils';
 import { ApiError, apiGet, apiPost, apiPatch, apiDelete } from '../lib/apiClient';
-import { buildScheduleIcs, downloadIcs } from '../lib/calendarIcs';
+import { buildScheduleIcs, buildGoogleCalendarUrl, downloadIcs } from '../lib/calendarIcs';
 import { Card } from './ui/Card';
 import { Spinner } from './ui/Spinner';
 import { EmptyState } from './ui/EmptyState';
@@ -190,6 +190,8 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
   // Confirm delete
   const [pendingDelete, setPendingDelete] = useState<ScheduleListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Which row's "Add to calendar" menu is open (Google Calendar vs .ics download).
+  const [calMenuFor, setCalMenuFor] = useState<string | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // ── Fetch list ──────────────────────────────────────────────────────────────
@@ -740,16 +742,49 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
                         </button>
                       )}
 
-                      {/* Add to calendar */}
+                      {/* Add to calendar — Google (one-click) or .ics download */}
                       {row.status === 'active' && (
-                        <button
-                          type="button"
-                          title="Add to calendar"
-                          onClick={() => downloadIcs(`practice-${row.id}.ics`, buildScheduleIcs(row, window.location.origin))}
-                          className="w-8 h-8 rounded-full bg-bg-raised flex items-center justify-center border border-border-subtle text-text-tertiary hover:text-accent hover:border-accent transition-colors"
-                        >
-                          <CalendarPlus className="w-3.5 h-3.5" />
-                        </button>
+                        <div className="relative">
+                          <button
+                            type="button"
+                            title="Add to calendar"
+                            onClick={() => setCalMenuFor(calMenuFor === row.id ? null : row.id)}
+                            className="w-8 h-8 rounded-full bg-bg-raised flex items-center justify-center border border-border-subtle text-text-tertiary hover:text-accent hover:border-accent transition-colors"
+                          >
+                            <CalendarPlus className="w-3.5 h-3.5" />
+                          </button>
+                          {calMenuFor === row.id && (
+                            <>
+                              <button
+                                type="button"
+                                aria-label="Close menu"
+                                className="fixed inset-0 z-40 cursor-default"
+                                onClick={() => setCalMenuFor(null)}
+                              />
+                              <div className="absolute right-0 mt-1 z-50 w-44 rounded-xl bg-bg-raised border border-border-medium shadow-xl overflow-hidden animate-fade-in">
+                                <a
+                                  href={buildGoogleCalendarUrl(row, window.location.origin)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  onClick={() => setCalMenuFor(null)}
+                                  className="block px-3 py-2 text-xs text-text-primary hover:bg-bg-surface text-left"
+                                >
+                                  Google Calendar
+                                </a>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    downloadIcs(`practice-${row.id}.ics`, buildScheduleIcs(row, window.location.origin));
+                                    setCalMenuFor(null);
+                                  }}
+                                  className="block w-full px-3 py-2 text-xs text-text-secondary hover:bg-bg-surface text-left border-t border-border-subtle"
+                                >
+                                  Download .ics (Apple/Outlook)
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       )}
 
                       {/* Delete */}

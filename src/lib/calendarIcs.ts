@@ -120,6 +120,31 @@ export function buildScheduleIcs(s: IcsSchedule, appOrigin: string): string {
 }
 
 /**
+ * Build a Google Calendar "create event" template URL — opens a prefilled event
+ * the user saves in one click (no file download). Times use the schedule's tz
+ * via the `ctz` param so recurring events fire at the right local wall-clock time.
+ */
+export function buildGoogleCalendarUrl(s: IcsSchedule, appOrigin: string): string {
+  const iso = s.recurrence === 'once' ? (s.run_at ?? '') : (s.next_run_at ?? '');
+  const startDt = DateTime.fromISO(iso, { zone: 'utc' }).setZone(s.timezone);
+  const fmt = (dt: DateTime) => dt.toFormat("yyyyLLdd'T'HHmmss");
+  const params = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: buildTitle(s),
+    dates: `${fmt(startDt)}/${fmt(startDt.plus({ minutes: 30 }))}`,
+    ctz: s.timezone,
+    details: buildDescription(s, appOrigin),
+  });
+  if (s.recurrence === 'weekly' && s.days_of_week && s.days_of_week.length > 0) {
+    const days = [...s.days_of_week].sort((a, b) => a - b).map((d) => DOW_LABELS[d]).join(',');
+    let rule = `RRULE:FREQ=WEEKLY;BYDAY=${days}`;
+    if (s.ends_on) rule += `;UNTIL=${s.ends_on.replace(/-/g, '')}T235959Z`;
+    params.set('recur', rule);
+  }
+  return `https://calendar.google.com/calendar/render?${params.toString()}`;
+}
+
+/**
  * Trigger a browser download of an .ics file.
  */
 export function downloadIcs(filename: string, icsContent: string): void {

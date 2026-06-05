@@ -5,6 +5,7 @@ import { IdParam } from '../schemas/common';
 import { ScheduleCreate, ScheduleUpdate } from '../schemas/schedule';
 import {
   listSchedules,
+  getScheduleById,
   createSchedule,
   updateSchedule,
   pauseSchedule,
@@ -31,6 +32,16 @@ router.post(
     const body = parse(ScheduleCreate, req.body);
     const row = await createSchedule(uid, body);
     res.status(201).json(row);
+  })
+);
+
+router.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const { id } = parse(IdParam, req.params);
+    res.json(await getScheduleById(uid, id));
   })
 );
 
