@@ -3,6 +3,7 @@ import { ArrowLeft, CalendarClock, Pencil, Pause, Play, Trash2, AlertTriangle, L
 import { DateTime } from 'luxon';
 import { cn } from '../lib/utils';
 import { ApiError, apiGet, apiPost, apiPatch, apiDelete } from '../lib/apiClient';
+import { buildScheduleIcs, downloadIcs } from '../lib/calendarIcs';
 import { Card } from './ui/Card';
 import { Spinner } from './ui/Spinner';
 import { EmptyState } from './ui/EmptyState';
@@ -736,6 +737,18 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
                               ? <Pause className="w-3.5 h-3.5" />
                               : <Play className="w-3.5 h-3.5" />
                           }
+                        </button>
+                      )}
+
+                      {/* Add to calendar */}
+                      {row.status === 'active' && (
+                        <button
+                          type="button"
+                          title="Add to calendar"
+                          onClick={() => downloadIcs(`practice-${row.id}.ics`, buildScheduleIcs(row, window.location.origin))}
+                          className="w-8 h-8 rounded-full bg-bg-raised flex items-center justify-center border border-border-subtle text-text-tertiary hover:text-accent hover:border-accent transition-colors"
+                        >
+                          <CalendarPlus className="w-3.5 h-3.5" />
                         </button>
                       )}
 
