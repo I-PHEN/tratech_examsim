@@ -9,13 +9,21 @@ import { Spinner } from './ui/Spinner';
 import { EmptyState } from './ui/EmptyState';
 import { Pill } from './ui/Pill';
 import { Button } from './ui/Button';
-import { CourseSelect } from './admin/CourseSelect';
+import { useAuth } from '../lib/AuthContext';
+import { toYearLevel, toSemester } from '../lib/period';
+import { AiScheduleAssistant } from './AiScheduleAssistant';
+import { draftToForm, type AiScheduleProposal } from '../lib/scheduleDraft';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ApiTopic {
   id: string;
   name: string;
+}
+
+interface ApiProgramCourse {
+  id: string;
+  courses: { name: string } | null;
 }
 
 interface ScheduleListItem {
@@ -169,6 +177,15 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
   const [formSuccess, setFormSuccess] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
 
+  // Courses for the user's profile period (year + semester from Settings).
+  const { userProfile } = useAuth();
+  const [courses, setCourses] = useState<ApiProgramCourse[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+
+  // When a draft from the AI assistant is loaded into the create form, the course
+  // is fixed (the model already chose a valid one) — show it read-only.
+  const [draftCourseName, setDraftCourseName] = useState<string | null>(null);
+
   // Unmount guard (FIX 3)
   const mountedRef = useRef(true);
   useEffect(() => {
@@ -210,6 +227,19 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load the courses for the user's profile period (matches how App.tsx lists them).
+  useEffect(() => {
+    const yl = toYearLevel(userProfile?.year);
+    const sm = toSemester(userProfile?.semester);
+    let cancelled = false;
+    setCoursesLoading(true);
+    apiGet<ApiProgramCourse[]>(`/api/program-courses?year_level=${yl}&semester=${sm}`)
+      .then((rows) => { if (!cancelled) setCourses(rows); })
+      .catch(() => { if (!cancelled) setCourses([]); })
+      .finally(() => { if (!cancelled) setCoursesLoading(false); });
+    return () => { cancelled = true; };
+  }, [userProfile?.year, userProfile?.semester]);
+
   // ── Fetch topics when course changes ────────────────────────────────────────
 
   useEffect(() => {
@@ -233,6 +263,7 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
 
   function enterEditMode(row: ScheduleListItem) {
     setEditingId(row.id);
+    setDraftCourseName(null);
     setForm(formFromRow(row));
     setFormError(null);
     setFormSuccess(false); // clear banner when opening a new edit
@@ -243,6 +274,7 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
   function cancelEdit() {
     setEditingId(null);
     setForm(EMPTY_FORM);
+    setDraftCourseName(null);
     setFormError(null);
     // FIX 1: do NOT clear formSuccess here — let the success banner stay visible after save
   }
@@ -366,6 +398,39 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
     setFormError(null);
   }
 
+  // ── AI draft handlers ────────────────────────────────────────────────────────
+
+  // Pre-fill the create form from an AI draft (course locked, create mode).
+  function prefillFromDraft(d: AiScheduleProposal) {
+    setEditingId(null);
+    setForm({ ...EMPTY_FORM, ...draftToForm(d) });
+    setDraftCourseName(d.course_name ?? 'Selected course');
+    setFormError(null);
+    setFormSuccess(false);
+    setFormOpen(true);
+  }
+
+  // Persist a single AI draft via the existing create API.
+  async function saveDraft(d: AiScheduleProposal) {
+    const payload: Record<string, unknown> = {
+      program_course_id: d.program_course_id,
+      topic_id: d.topic_id ?? undefined,
+      difficulty: d.difficulty ?? undefined,
+      question_count: d.question_count,
+      label: d.label ?? undefined,
+      timezone: d.timezone,
+      recurrence: d.recurrence,
+    };
+    if (d.recurrence === 'once') {
+      payload.run_at = d.run_at;
+    } else {
+      payload.days_of_week = d.days_of_week;
+      payload.time_of_day = d.time_of_day;
+      if (d.ends_on) payload.ends_on = d.ends_on;
+    }
+    await apiPost('/api/schedules', payload);
+  }
+
   // ── Editing row lookup ───────────────────────────────────────────────────────
   const editingRow = editingId ? schedules.find((s) => s.id === editingId) ?? null : null;
 
@@ -409,6 +474,13 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
           </div>
         )}
 
+        {/* AI assistant */}
+        <AiScheduleAssistant
+          onEditDraft={prefillFromDraft}
+          onSaveDraft={saveDraft}
+          onSaved={() => { setFormSuccess(true); loadSchedules(); }}
+        />
+
         {/* Form card */}
         <Card variant="default" padding="none">
           <button
@@ -432,22 +504,36 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
           {formOpen && (
             <div className="px-5 pb-5 space-y-4 border-t border-border-subtle pt-4">
 
-              {/* Course */}
-              {editingId ? (
+              {/* Course — read-only when editing or draft-locked, else a period dropdown */}
+              {editingId || draftCourseName ? (
                 <div>
                   <span className={labelCls}>Course</span>
                   <div className="px-3 py-2 bg-bg-sunken border border-border-subtle rounded-xl text-sm text-text-primary">
-                    {editingRow?.course_name ?? '—'}
+                    {editingId ? (editingRow?.course_name ?? '—') : draftCourseName}
                   </div>
                 </div>
               ) : (
                 <div>
-                  <span className={labelCls}>Course</span>
-                  <CourseSelect
-                    value={form.programCourseId}
-                    onChange={(id) => updateForm({ programCourseId: id, topicId: '' })}
-                    persistKey="schedule"
-                  />
+                  <label className={labelCls}>Course</label>
+                  {!coursesLoading && courses.length === 0 ? (
+                    <div className="px-3 py-2 bg-bg-sunken border border-border-subtle rounded-xl text-xs text-text-secondary">
+                      No courses for {userProfile?.year ?? 'your year'}, {userProfile?.semester ?? 'your semester'} yet. Set your year &amp; semester in Settings.
+                    </div>
+                  ) : (
+                    <select
+                      value={form.programCourseId}
+                      onChange={(e) => updateForm({ programCourseId: e.target.value, topicId: '' })}
+                      disabled={coursesLoading}
+                      className={inputCls}
+                    >
+                      <option value="" disabled hidden>
+                        {coursesLoading ? 'Loading…' : '— pick a course —'}
+                      </option>
+                      {courses.map((c) => (
+                        <option key={c.id} value={c.id}>{c.courses?.name ?? 'Course'}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
 
