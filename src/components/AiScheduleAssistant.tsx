@@ -94,7 +94,7 @@ export function AiScheduleAssistant({ onEditDraft, onSaveDraft, onSaved }: Props
         className="w-full flex items-center gap-2 px-5 py-4 text-left hover:bg-bg-raised/40 transition-colors"
       >
         <Sparkles className="w-4 h-4 text-accent" />
-        <span className="font-semibold text-sm text-text-primary">Ask AI to schedule</span>
+        <span className="font-semibold text-sm text-text-primary">Ask Jude to schedule</span>
       </button>
 
       {open && (
@@ -116,7 +116,7 @@ export function AiScheduleAssistant({ onEditDraft, onSaveDraft, onSaved }: Props
           </div>
 
           <p className="text-[11px] text-text-tertiary">
-            I only help schedule practice — I can’t answer exam questions.
+            Here, Jude only helps you schedule practice — for tutoring, open a question in Review and tap “Ask Jude”.
           </p>
 
           {error && (

@@ -54,7 +54,7 @@ const FAQS = [
   },
   {
     q: 'Who is Jude?',
-    a: 'Jude is the built-in AI tutor. While reviewing a submitted question, tap "Ask Jude" to get an explanation and ask follow-up questions about that specific question.',
+    a: 'Jude is the built-in AI assistant. While reviewing a submitted question, tap "Ask Jude" to get an explanation and ask follow-ups. On the Scheduled screen, "Ask Jude to schedule" turns plain English (e.g. "thermo Mon & Wed 6pm") into ready-to-save practice schedules — there, Jude only helps with scheduling.',
   },
   {
     q: 'How do I review my mistakes?',
