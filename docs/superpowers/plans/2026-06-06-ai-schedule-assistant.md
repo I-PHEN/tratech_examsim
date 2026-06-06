@@ -12,33 +12,35 @@
 
 ## Design decisions that refine the spec
 
-The spec says gather "the user's available program-courses + topics for the current period." Determining a user's "period" from the Firestore profile is unreliable (`year`/`semester` are stored inconsistently as `"3"`/`"Sem 1"`/`"Year 3"` per CLAUDE.md, and `department` shape is uncertain). To stay robust and fully server-side, **the candidate course set is the union of the program-courses the user has actually engaged with**: distinct `program_course_id` from their `sessions` plus their existing `practice_schedules`. This is user-scoped, needs no profile parsing, and aligns with the mastery-driven planning angle (planning needs prior answers anyway). If the set is empty, the assistant returns no proposals and a polite "practice or create a schedule first" message.
+**Course scope comes from the profile's year + semester (the "global" period set in Settings).** The main app already lists a student's courses purely by `year_level` + `semester` (`App.tsx`: `GET /api/program-courses?year_level=…&semester=…`, no department filter), reading both from `userProfile`. The Scheduled screen now follows the same model: we **drop the department→year→sem pickers (`CourseSelect`) entirely** and show just **Course → Topic**, where the course list is the program-courses for the user's profile period. The backend AI-context gatherer reads the identical period from the Firestore profile, so the AI proposes from exactly the same course set the manual dropdown shows — no mismatch. Year/semester strings are normalised with the same `\D`-stripping helper the app already uses (`"Year 3"`/`"Sem 1"`/`"3"` → `3`/`1`). If no courses are linked to the user's period, the assistant returns no proposals and a polite "no courses for your year/semester yet" message.
 
-Editing a draft puts the create form in a **draft-locked-course** mode: the course is shown read-only (the model already picked a valid one) and the user edits timing/topic/difficulty/count. To change the course, they Remove the draft and use the manual picker. This avoids reverse-mapping a `program_course_id` back into the `CourseSelect` department→year→sem path.
+Editing a draft puts the create form in a **draft-locked-course** mode: the course is shown read-only (the model already picked a valid one) and the user edits timing/topic/difficulty/count. To change the course, they Remove the draft and pick from the course dropdown.
 
 ---
 
 ## File structure
 
 **Backend (new):**
+- `backend/lib/period.ts` — pure year/semester normalisers (shared by the context gatherer).
 - `backend/schemas/scheduleAi.ts` — Zod for the request body (`AiDraftRequest`).
 - `backend/services/scheduleAiParse.ts` — pure: parse model JSON → `{ message, proposals[] }`.
 - `backend/services/scheduleAiValidate.ts` — pure: validate one raw proposal against `ScheduleCreate` + allowed ids.
 - `backend/services/scheduleAiPrompt.ts` — pure: build system + user prompts.
-- `backend/services/scheduleAiContext.ts` — gather candidate courses/topics/mastery (DB).
+- `backend/services/scheduleAiContext.ts` — gather the profile-period courses/topics/mastery (DB + Firestore).
 - `backend/services/scheduleAiService.ts` — orchestrator: context → prompt → Groq → parse → validate → attach names → cap.
-- Tests: `scheduleAiParse.test.ts`, `scheduleAiValidate.test.ts`, `scheduleAiPrompt.test.ts`.
+- Tests: `period.test.ts`, `scheduleAiParse.test.ts`, `scheduleAiValidate.test.ts`, `scheduleAiPrompt.test.ts`.
 
 **Backend (modified):**
 - `backend/routes/schedules.ts` — add `POST /ai-draft`.
 
 **Frontend (new):**
+- `src/lib/period.ts` — pure year/semester normalisers (frontend copy; backend can't import from `src/`).
 - `src/lib/scheduleDraft.ts` — pure: `AiScheduleProposal` type, `draftToForm`, `describeDraft`.
 - `src/lib/scheduleDraft.test.ts` — vitest.
 - `src/components/AiScheduleAssistant.tsx` — the input box + draft cards.
 
 **Frontend (modified):**
-- `src/components/ScheduledScreen.tsx` — mount the assistant, prefill the form from a draft, render a read-only course label in draft mode.
+- `src/components/ScheduledScreen.tsx` — **replace `CourseSelect` with a profile-period course `<select>`** (Course → Topic only), mount the assistant, prefill the form from a draft, render a read-only course label in edit/draft mode.
 
 ---
 
@@ -480,53 +482,96 @@ git commit -m "feat: prompt builders for AI schedule assistant"
 
 ---
 
-### Task 5: Context gatherer (DB)
+### Task 5: Period normaliser + context gatherer (DB)
 
-Builds the candidate course set (sessions ∪ schedules), their topics, and per-topic mastery. No unit test (DB-bound) — verified in Task 8 manual E2E.
+The context set = program-courses for the user's **profile period** (`year_level` + `semester` from their Firestore profile), matching how the main app lists courses. For each: course name, topics, per-topic mastery. The period normaliser is pure (TDD); the gatherer is DB/Firestore-bound (verified in Task 8 manual E2E).
 
 **Files:**
+- Create: `backend/lib/period.ts`
+- Test: `backend/lib/period.test.ts`
 - Create: `backend/services/scheduleAiContext.ts`
 
-- [ ] **Step 1: Write the implementation**
+- [ ] **Step 1: Write the failing period test**
+
+```ts
+import { describe, it, expect } from 'vitest';
+import { toYearLevel, toSemester } from './period';
+
+describe('period normalisers', () => {
+  it('parses "Year 3" → 3', () => expect(toYearLevel('Year 3')).toBe(3));
+  it('parses bare "3" → 3', () => expect(toYearLevel('3')).toBe(3));
+  it('parses "Sem 2" → 2', () => expect(toSemester('Sem 2')).toBe(2));
+  it('defaults missing/blank → 1', () => {
+    expect(toYearLevel(undefined)).toBe(1);
+    expect(toYearLevel('')).toBe(1);
+    expect(toSemester(null)).toBe(1);
+  });
+});
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `npx vitest run backend/lib/period.test.ts`
+Expected: FAIL with module not found.
+
+- [ ] **Step 3: Implement `backend/lib/period.ts`**
+
+```ts
+/** "Year 3" | "3" | "Y3" → 3 ; blank/invalid → 1. Mirrors App.tsx. */
+export function toYearLevel(raw: string | undefined | null): number {
+  if (!raw) return 1;
+  return parseInt(String(raw).replace(/\D/g, ''), 10) || 1;
+}
+
+/** "Sem 1" | "1" → 1 ; blank/invalid → 1. */
+export function toSemester(raw: string | undefined | null): number {
+  if (!raw) return 1;
+  return parseInt(String(raw).replace(/\D/g, ''), 10) || 1;
+}
+```
+
+- [ ] **Step 4: Run test to verify it passes**
+
+Run: `npx vitest run backend/lib/period.test.ts`
+Expected: PASS (4 tests).
+
+- [ ] **Step 5: Implement `backend/services/scheduleAiContext.ts`**
 
 ```ts
 import { supabase } from '../lib/supabase';
+import { getDb } from '../lib/firebase-admin';
 import { getCourseMastery } from './masteryService';
+import { toYearLevel, toSemester } from '../lib/period';
 import type { CourseContext } from './scheduleAiPrompt';
 
 /**
- * Candidate courses = program-courses the user has engaged with (distinct ids
- * from their sessions ∪ their practice_schedules). For each, fetch the course
- * name, its topics, and the user's per-topic mastery. Returns the context list
- * plus the `allowed` map (course id → set of topic ids) used by the validator.
+ * Context = program-courses for the user's profile period (year_level +
+ * semester, read from Firestore), matching how App.tsx lists courses (no
+ * department filter). For each course: name, topics, and the user's per-topic
+ * mastery. Returns the context list plus the `allowed` map (course id → set of
+ * its topic ids) used by the validator.
  */
 export async function gatherScheduleContext(
   uid: string,
 ): Promise<{ courses: CourseContext[]; allowed: Map<string, Set<string>> }> {
-  // 1. Course ids from sessions + existing schedules.
-  const [{ data: sess }, { data: sched }] = await Promise.all([
-    supabase.from('sessions').select('program_course_id').eq('user_uid', uid),
-    supabase.from('practice_schedules').select('program_course_id').eq('user_uid', uid),
-  ]);
+  // 1. Read the user's period from their Firestore profile.
+  const snap = await getDb().collection('users').doc(uid).get();
+  const profile = (snap.data() ?? {}) as { year?: string; semester?: string };
+  const yl = toYearLevel(profile.year);
+  const sm = toSemester(profile.semester);
 
-  const courseIds = new Set<string>();
-  for (const r of (sess ?? []) as Array<{ program_course_id: string | null }>) {
-    if (r.program_course_id) courseIds.add(r.program_course_id);
-  }
-  for (const r of (sched ?? []) as Array<{ program_course_id: string | null }>) {
-    if (r.program_course_id) courseIds.add(r.program_course_id);
-  }
-  if (courseIds.size === 0) return { courses: [], allowed: new Map() };
-
-  const ids = Array.from(courseIds);
-
-  // 2. Course names.
+  // 2. Program-courses for that period (no department filter — matches App.tsx).
   const { data: pcRows } = await supabase
     .from('program_courses')
     .select('id, courses(name)')
-    .in('id', ids);
+    .eq('year_level', yl)
+    .eq('semester', sm);
+  const pcs = (pcRows ?? []) as Array<Record<string, unknown>>;
+  if (pcs.length === 0) return { courses: [], allowed: new Map() };
+
+  const ids = pcs.map((r) => r.id as string);
   const nameById = new Map<string, string | null>();
-  for (const row of (pcRows ?? []) as Array<Record<string, unknown>>) {
+  for (const row of pcs) {
     const courses = row.courses;
     const courseObj = Array.isArray(courses)
       ? (courses as Array<{ name: string }>)[0]
@@ -534,7 +579,7 @@ export async function gatherScheduleContext(
     nameById.set(row.id as string, courseObj?.name ?? null);
   }
 
-  // 3. Topics for all candidate courses in one query.
+  // 3. Topics for all those courses in one query.
   const { data: topicRows } = await supabase
     .from('topics')
     .select('id, name, program_course_id')
@@ -547,7 +592,7 @@ export async function gatherScheduleContext(
     topicsByCourse.set(t.program_course_id, arr);
   }
 
-  // 4. Mastery per course (one call each; small candidate set).
+  // 4. Mastery per course (one call each; small period set).
   const masteryByCourse = await Promise.all(
     ids.map(async (pcId) => {
       const m = await getCourseMastery(uid, pcId);
@@ -582,16 +627,16 @@ export async function gatherScheduleContext(
 }
 ```
 
-- [ ] **Step 2: Typecheck**
+- [ ] **Step 6: Typecheck**
 
 Run: `npm run lint`
 Expected: PASS.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add backend/services/scheduleAiContext.ts
-git commit -m "feat: schedule-AI context gatherer (engaged courses + mastery)"
+git add backend/lib/period.ts backend/lib/period.test.ts backend/services/scheduleAiContext.ts
+git commit -m "feat: period normaliser + profile-period schedule-AI context gatherer"
 ```
 
 ---
@@ -1173,49 +1218,94 @@ git commit -m "feat: AiScheduleAssistant component (input + draft cards)"
 
 ---
 
-### Task 11: Wire the assistant into ScheduledScreen
+### Task 11: Profile-period course picker + wire in the assistant
 
-The assistant mounts above the "+ New schedule" card. Editing a draft pre-fills the create form with the course shown read-only (draft-locked). Saving a draft posts to the existing create API.
+Two changes to ScheduledScreen: (a) replace the `CourseSelect` (department→year→sem→course) with a simple **course `<select>`** populated from the user's profile period — Course → Topic only; and (b) mount the AI assistant. Editing a draft pre-fills the create form with the course shown read-only. Saving a draft posts to the existing create API.
 
 **Files:**
+- Create: `src/lib/period.ts`
 - Modify: `src/components/ScheduledScreen.tsx`
 
-- [ ] **Step 1: Add imports**
+- [ ] **Step 1: Create the frontend period helpers**
 
-At the top of `src/components/ScheduledScreen.tsx`, add to the existing imports:
+Create `src/lib/period.ts` (identical logic to `backend/lib/period.ts`; backend can't import from `src/`):
 
 ```ts
+/** "Year 3" | "3" | "Y3" → 3 ; blank/invalid → 1. */
+export function toYearLevel(raw: string | undefined | null): number {
+  if (!raw) return 1;
+  return parseInt(String(raw).replace(/\D/g, ''), 10) || 1;
+}
+
+/** "Sem 1" | "1" → 1 ; blank/invalid → 1. */
+export function toSemester(raw: string | undefined | null): number {
+  if (!raw) return 1;
+  return parseInt(String(raw).replace(/\D/g, ''), 10) || 1;
+}
+```
+
+- [ ] **Step 2: Update imports**
+
+At the top of `src/components/ScheduledScreen.tsx`: **remove** the `CourseSelect` import (`import { CourseSelect } from './admin/CourseSelect';`) and **add**:
+
+```ts
+import { useAuth } from '../lib/AuthContext';
+import { toYearLevel, toSemester } from '../lib/period';
 import { AiScheduleAssistant } from './AiScheduleAssistant';
 import { draftToForm, type AiScheduleProposal } from '../lib/scheduleDraft';
 ```
 
-- [ ] **Step 2: Add draft-locked-course state**
+- [ ] **Step 3: Add a ProgramCourse type**
+
+Next to the existing `interface ApiTopic` near the top of the file, add:
+
+```ts
+interface ApiProgramCourse {
+  id: string;
+  courses: { name: string } | null;
+}
+```
+
+- [ ] **Step 4: Add course-list + draft-lock state**
 
 Immediately after the `const [formOpen, setFormOpen] = useState(false);` line, add:
 
 ```ts
+  // Courses for the user's profile period (year + semester from Settings).
+  const { userProfile } = useAuth();
+  const [courses, setCourses] = useState<ApiProgramCourse[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+
   // When a draft from the AI assistant is loaded into the create form, the course
   // is fixed (the model already chose a valid one) — show it read-only.
   const [draftCourseName, setDraftCourseName] = useState<string | null>(null);
 ```
 
-- [ ] **Step 3: Clear draft-lock in cancelEdit**
+- [ ] **Step 5: Fetch the period courses**
 
-In `cancelEdit`, after `setForm(EMPTY_FORM);`, add:
-
-```ts
-    setDraftCourseName(null);
-```
-
-- [ ] **Step 4: Clear draft-lock when entering edit mode**
-
-In `enterEditMode`, after `setEditingId(row.id);`, add:
+Add this effect right after the existing `useEffect(() => { loadSchedules(); ... }, []);` block:
 
 ```ts
-    setDraftCourseName(null);
+  // Load the courses for the user's profile period (matches how App.tsx lists them).
+  useEffect(() => {
+    const yl = toYearLevel(userProfile?.year);
+    const sm = toSemester(userProfile?.semester);
+    let cancelled = false;
+    setCoursesLoading(true);
+    apiGet<ApiProgramCourse[]>(`/api/program-courses?year_level=${yl}&semester=${sm}`)
+      .then((rows) => { if (!cancelled) setCourses(rows); })
+      .catch(() => { if (!cancelled) setCourses([]); })
+      .finally(() => { if (!cancelled) setCoursesLoading(false); });
+    return () => { cancelled = true; };
+  }, [userProfile?.year, userProfile?.semester]);
 ```
 
-- [ ] **Step 5: Add the draft handlers**
+- [ ] **Step 6: Clear draft-lock in cancelEdit and enterEditMode**
+
+In `cancelEdit`, after `setForm(EMPTY_FORM);`, add `setDraftCourseName(null);`.
+In `enterEditMode`, after `setEditingId(row.id);`, add `setDraftCourseName(null);`.
+
+- [ ] **Step 7: Add the draft handlers**
 
 Add these functions just before `const editingRow = ...` near the bottom of the component body:
 
@@ -1224,7 +1314,7 @@ Add these functions just before `const editingRow = ...` near the bottom of the 
   function prefillFromDraft(d: AiScheduleProposal) {
     setEditingId(null);
     setForm({ ...EMPTY_FORM, ...draftToForm(d) });
-    setDraftCourseName(d.course_name ?? d.topic_name ?? 'Selected course');
+    setDraftCourseName(d.course_name ?? 'Selected course');
     setFormError(null);
     setFormSuccess(false);
     setFormOpen(true);
@@ -1252,7 +1342,7 @@ Add these functions just before `const editingRow = ...` near the bottom of the 
   }
 ```
 
-- [ ] **Step 6: Render the assistant above the form card**
+- [ ] **Step 8: Render the assistant above the form card**
 
 Find the `{/* Form card */}` comment and insert this block immediately before it:
 
@@ -1266,11 +1356,12 @@ Find the `{/* Form card */}` comment and insert this block immediately before it
 
 ```
 
-- [ ] **Step 7: Render the course read-only when draft-locked**
+- [ ] **Step 9: Replace the Course block (CourseSelect → profile `<select>`)**
 
-In the JSX, the Course block currently reads `{editingId ? (read-only) : (<CourseSelect ... />)}`. Replace the `else`/`: (` branch so a draft also shows read-only. Change:
+Replace the entire current Course block:
 
 ```tsx
+              {/* Course */}
               {editingId ? (
                 <div>
                   <span className={labelCls}>Course</span>
@@ -1290,9 +1381,10 @@ In the JSX, the Course block currently reads `{editingId ? (read-only) : (<Cours
               )}
 ```
 
-to:
+with:
 
 ```tsx
+              {/* Course — read-only when editing or draft-locked, else a period dropdown */}
               {editingId || draftCourseName ? (
                 <div>
                   <span className={labelCls}>Course</span>
@@ -1302,30 +1394,44 @@ to:
                 </div>
               ) : (
                 <div>
-                  <span className={labelCls}>Course</span>
-                  <CourseSelect
-                    value={form.programCourseId}
-                    onChange={(id) => updateForm({ programCourseId: id, topicId: '' })}
-                    persistKey="schedule"
-                  />
+                  <label className={labelCls}>Course</label>
+                  {!coursesLoading && courses.length === 0 ? (
+                    <div className="px-3 py-2 bg-bg-sunken border border-border-subtle rounded-xl text-xs text-text-secondary">
+                      No courses for {userProfile?.year ?? 'your year'}, {userProfile?.semester ?? 'your semester'} yet. Set your year &amp; semester in Settings.
+                    </div>
+                  ) : (
+                    <select
+                      value={form.programCourseId}
+                      onChange={(e) => updateForm({ programCourseId: e.target.value, topicId: '' })}
+                      disabled={coursesLoading}
+                      className={inputCls}
+                    >
+                      <option value="" disabled hidden>
+                        {coursesLoading ? 'Loading…' : '— pick a course —'}
+                      </option>
+                      {courses.map((c) => (
+                        <option key={c.id} value={c.id}>{c.courses?.name ?? 'Course'}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               )}
 ```
 
-- [ ] **Step 8: Show the Topic field when draft-locked**
+- [ ] **Step 10: Topic field renders unchanged**
 
-The Topic block condition is `{(form.programCourseId || editingId) && (`. Since a draft sets `form.programCourseId`, the topic field already renders and its `useEffect` fetches topics for that course — no change needed. Verify by reading the block.
+The Topic block condition is `{(form.programCourseId || editingId) && (`. Since both a manual course pick and a draft set `form.programCourseId`, the topic field renders and its existing `useEffect` fetches topics for that course — no change needed. Verify by reading the block.
 
-- [ ] **Step 9: Typecheck**
+- [ ] **Step 11: Typecheck**
 
 Run: `npm run lint`
-Expected: PASS.
+Expected: PASS — and confirm no remaining reference to `CourseSelect` in the file.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 12: Commit**
 
 ```bash
-git add src/components/ScheduledScreen.tsx
-git commit -m "feat: wire AI schedule assistant into ScheduledScreen"
+git add src/lib/period.ts src/components/ScheduledScreen.tsx
+git commit -m "feat: profile-period course picker + AI assistant in ScheduledScreen"
 ```
 
 ---
@@ -1340,6 +1446,7 @@ Expected: PASS — including the new `scheduleAiParse`, `scheduleAiValidate`, `s
 - [ ] **Step 2: Manual UI E2E (frontend hot-reloads; backend already restarted in Task 7)**
 
 In the running app → Scheduled screen:
+0. Open "+ New schedule" → confirm the course field is now a single dropdown of your current year/semester courses (no department/year/sem pickers), then Topic. Picking a course loads its topics.
 1. Open "Ask AI to schedule", type *"practice my weakest thermo topic every Monday and Wednesday at 6pm"*, Send.
 2. Confirm one or more draft cards appear with a `why` line.
 3. Click **Edit** on a card → the create form opens pre-filled, course shown read-only, topic/difficulty/days/time populated. Adjust and Save → it appears in the list.
@@ -1363,7 +1470,8 @@ git push
 - **Spec coverage:**
   - Inline "describe it" box + draft cards (Edit/Remove/Save/Save all) → Tasks 10–11. ✓
   - `POST /api/schedules/ai-draft` (requireAuth) → Task 7. ✓
-  - Gather context (courses/topics + mastery) → Task 5 (refined to engaged-courses; documented above). ✓
+  - Gather context (courses/topics + mastery) → Task 5 (profile-period courses; documented above). ✓
+  - Scheduled screen uses the profile period (year+sem from Settings); department/year/sem pickers removed → Task 11. ✓
   - Strict structured-output Groq call → Tasks 4, 6. ✓
   - Server re-validates every proposal vs `ScheduleCreate` + real ids; drops invalid → Task 3. ✓
   - Drafts not saved; save reuses `POST /api/schedules` → Tasks 10–11. ✓
