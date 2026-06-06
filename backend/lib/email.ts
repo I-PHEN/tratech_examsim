@@ -1,11 +1,26 @@
-import { Resend } from 'resend';
+import nodemailer from 'nodemailer';
 
-const apiKey = process.env.RESEND_API_KEY;
-const from = process.env.EMAIL_FROM;
-const resend = apiKey ? new Resend(apiKey) : null;
+// Reminders are sent through a dedicated Gmail account via SMTP (free, no domain
+// required). Configure with:
+//   GMAIL_USER          the sending Gmail address (e.g. tratechexamsim@gmail.com)
+//   GMAIL_APP_PASSWORD  a Google "App Password" for that account (16 chars)
+//   EMAIL_FROM          optional display form, e.g. "Tratech ExamSim <…@gmail.com>"
+// Until GMAIL_USER + GMAIL_APP_PASSWORD are set, sending is a no-op.
+const gmailUser = process.env.GMAIL_USER;
+// App passwords are shown grouped as "xxxx xxxx xxxx xxxx" — strip any spaces.
+const gmailPass = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
+const from = process.env.EMAIL_FROM || gmailUser;
+
+const transporter =
+  gmailUser && gmailPass
+    ? nodemailer.createTransport({
+        service: 'gmail',
+        auth: { user: gmailUser, pass: gmailPass },
+      })
+    : null;
 
 export function emailConfigured(): boolean {
-  return Boolean(resend && from);
+  return Boolean(transporter && from);
 }
 
 export async function sendReminderEmail(params: {
@@ -14,7 +29,7 @@ export async function sendReminderEmail(params: {
   startUrl: string;
 }): Promise<{ sent: boolean }> {
   if (!emailConfigured()) {
-    console.log('[email] Resend not configured; skipping email');
+    console.log('[email] Gmail SMTP not configured; skipping email');
     return { sent: false };
   }
 
@@ -59,17 +74,12 @@ export async function sendReminderEmail(params: {
 </body>
 </html>`;
 
-  const { data, error } = await resend!.emails.send({
+  await transporter!.sendMail({
     from: from!,
     to,
     subject: `Time to practice — ${courseLabel}`,
     html,
   });
 
-  if (error) {
-    throw new Error(`Resend error: ${error.name} — ${error.message}`);
-  }
-
-  void data; // id is available but not needed here
   return { sent: true };
 }

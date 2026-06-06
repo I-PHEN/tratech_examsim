@@ -44,9 +44,14 @@ services:
       # reminders to fire.
       - key: CRON_SECRET
         sync: false
-      # Resend email (https://resend.com) — OPTIONAL. Without these the in-app
+      # Reminder email via Gmail SMTP — OPTIONAL. Without these the in-app
       # notification bell still works; set them to also send reminder emails.
-      - key: RESEND_API_KEY
+      # GMAIL_USER = the dedicated sending Gmail address; GMAIL_APP_PASSWORD =
+      # a Google "App Password" (16 chars) for that account. EMAIL_FROM is an
+      # optional display form, e.g. "Tratech ExamSim <tratechexamsim@gmail.com>".
+      - key: GMAIL_USER
+        sync: false
+      - key: GMAIL_APP_PASSWORD
         sync: false
       - key: EMAIL_FROM
         sync: false
