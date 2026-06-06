@@ -3,6 +3,7 @@ import { ApiError, asyncHandler } from '../lib/errors';
 import { parse } from '../lib/validate';
 import { IdParam } from '../schemas/common';
 import { ScheduleCreate, ScheduleUpdate } from '../schemas/schedule';
+import { AiDraftRequest } from '../schemas/scheduleAi';
 import {
   listSchedules,
   getScheduleById,
@@ -12,6 +13,7 @@ import {
   resumeSchedule,
   deleteSchedule,
 } from '../services/scheduleService';
+import { draftSchedules } from '../services/scheduleAiService';
 
 const router = Router();
 
@@ -32,6 +34,17 @@ router.post(
     const body = parse(ScheduleCreate, req.body);
     const row = await createSchedule(uid, body);
     res.status(201).json(row);
+  })
+);
+
+// Registered before '/:id' so the literal path isn't captured by the id matcher.
+router.post(
+  '/ai-draft',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const body = parse(AiDraftRequest, req.body);
+    res.json(await draftSchedules(uid, body));
   })
 );
 
