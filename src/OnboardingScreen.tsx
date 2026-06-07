@@ -45,8 +45,14 @@ function getAuthErrorMessage(errorCode: string): string {
   }
 }
 
-export function OnboardingScreen() {
-  const [isLogin, setIsLogin] = useState(true);
+export function OnboardingScreen({
+  initialMode = 'login',
+  onBack,
+}: {
+  initialMode?: 'login' | 'signup';
+  onBack?: () => void;
+} = {}) {
+  const [isLogin, setIsLogin] = useState(initialMode === 'login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -134,7 +140,7 @@ export function OnboardingScreen() {
   return (
     <div className="min-h-screen bg-bg-surface flex flex-col lg:flex-row font-sans">
       {/* Left section: Branding & Info */}
-      <div className="w-full lg:w-1/2 p-6 md:p-12 lg:p-20 flex flex-col justify-center lg:justify-between bg-surface-dim border-b lg:border-b-0 lg:border-r border-border-subtle relative overflow-hidden min-h-[30vh] lg:min-h-screen shrink-0">
+      <div className="hidden lg:flex lg:w-1/2 p-6 md:p-12 lg:p-20 flex-col justify-center lg:justify-between bg-surface-dim lg:border-r border-border-subtle relative overflow-hidden lg:min-h-screen shrink-0">
         <div className="absolute top-0 right-0 w-[40rem] h-[40rem] bg-primary/5 blur-[100px] rounded-full translate-x-1/3 -translate-y-1/3 pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-[40rem] h-[40rem] bg-tertiary/5 blur-[100px] rounded-full -translate-x-1/3 translate-y-1/3 pointer-events-none" />
         
@@ -144,11 +150,6 @@ export function OnboardingScreen() {
         </div>
 
         <div className="relative z-10 space-y-4 lg:space-y-6 max-w-lg mt-8 lg:mt-0 mb-8 lg:mb-0">
-          <div className="flex lg:hidden items-center gap-3 mb-4">
-            <Logo className="w-8 h-8 shrink-0" />
-            <span className="text-sm font-bold text-text-primary uppercase tracking-wider">SolveX</span>
-          </div>
-          
           <h1 className="text-3xl md:text-5xl lg:text-6xl font-display italic font-bold text-text-primary leading-[1.1]">
             Master your exams. <br className="hidden md:block"/>
             Command your results.
@@ -174,6 +175,19 @@ export function OnboardingScreen() {
       {/* Right section: Login Form */}
       <div className="w-full lg:flex-1 p-6 md:p-12 lg:p-20 flex flex-col justify-center items-center bg-bg-surface py-12">
         <div className="w-full max-w-sm space-y-8">
+          {onBack && (
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-text-secondary hover:text-text-primary transition-colors"
+            >
+              <ArrowRight className="w-3 h-3 rotate-180" /> Back
+            </button>
+          )}
+          <div className="flex lg:hidden items-center gap-2 justify-center">
+            <Logo className="w-9 h-9 shrink-0" />
+            <span className="text-sm font-bold text-text-primary uppercase tracking-wider">SolveX</span>
+          </div>
           <div className="text-center space-y-2">
             <h2 className="text-2xl font-bold text-text-primary uppercase tracking-tight">
               {isLogin ? 'Welcome Back' : 'Create Account'}
