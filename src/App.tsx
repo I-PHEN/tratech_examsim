@@ -933,8 +933,7 @@ export default function App() {
                 "flex flex-col whitespace-nowrap transition-opacity duration-100",
                 isSidebarExpanded || isMobileMenuOpen ? "opacity-100 " : "opacity-0"
               )}>
-                <span className="text-base font-display italic text-text-primary leading-tight">The Engine</span>
-                <span className="text-[10px] text-text-tertiary uppercase tracking-[0.18em] leading-none">Stoic Performance</span>
+                <span className="text-base font-display italic text-text-primary leading-tight">SolveX</span>
               </div>
             </div>
 

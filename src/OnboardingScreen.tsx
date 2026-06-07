@@ -10,6 +10,7 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db } from './lib/firebase';
 import { Target, Zap, ArrowRight, Loader2, Eye, EyeOff } from 'lucide-react';
 import { cn } from './lib/utils';
+import { Logo } from './components/ui/Logo';
 
 // Helper to map Firebase errors to human-readable text
 function getAuthErrorMessage(errorCode: string): string {
@@ -138,21 +139,14 @@ export function OnboardingScreen() {
         <div className="absolute bottom-0 left-0 w-[40rem] h-[40rem] bg-tertiary/5 blur-[100px] rounded-full -translate-x-1/3 translate-y-1/3 pointer-events-none" />
         
         <div className="relative z-10 hidden lg:flex items-center gap-3 h-8 shrink-0 mb-12">
-          <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center shrink-0">
-            <span className="text-accent font-black">G</span>
-          </div>
-          <div className="flex flex-col whitespace-nowrap">
-            <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
-            <span className="text-[10px] text-text-tertiary uppercase tracking-widest leading-none">Stoic Performance</span>
-          </div>
+          <Logo className="w-8 h-8 shrink-0" />
+          <span className="text-sm font-bold text-text-primary uppercase tracking-wider">SolveX</span>
         </div>
 
         <div className="relative z-10 space-y-4 lg:space-y-6 max-w-lg mt-8 lg:mt-0 mb-8 lg:mb-0">
           <div className="flex lg:hidden items-center gap-3 mb-4">
-            <div className="w-8 h-8 rounded-lg bg-accent-muted flex items-center justify-center shrink-0">
-              <span className="text-accent font-black">G</span>
-            </div>
-            <span className="text-sm font-bold text-text-primary uppercase tracking-wider">The Engine</span>
+            <Logo className="w-8 h-8 shrink-0" />
+            <span className="text-sm font-bold text-text-primary uppercase tracking-wider">SolveX</span>
           </div>
           
           <h1 className="text-3xl md:text-5xl lg:text-6xl font-display italic font-bold text-text-primary leading-[1.1]">
@@ -160,7 +154,7 @@ export function OnboardingScreen() {
             Command your results.
           </h1>
           <p className="text-sm md:text-base text-text-secondary leading-relaxed">
-            The Engine is an advanced targeted practice platform. Run full mock exams, focus on weakest topics, and leverage real-time analytics to perfect your strategy before the real midsem.
+            SolveX is an advanced targeted practice platform. Run full mock exams, focus on weakest topics, and leverage real-time analytics to perfect your strategy before the real midsem.
           </p>
           <div className="hidden md:flex gap-4 pt-4">
             <div className="flex items-center gap-2 text-sm font-bold text-primary">

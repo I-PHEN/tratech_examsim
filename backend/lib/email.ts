@@ -5,7 +5,7 @@
 //
 // Configure with:
 //   BREVO_API_KEY   a Brevo "API key" (Settings → SMTP & API → API Keys)
-//   EMAIL_FROM      the verified sender, e.g. "Grit <tratechexamsim@gmail.com>"
+//   EMAIL_FROM      the verified sender, e.g. "SolveX <tratechexamsim@gmail.com>"
 // Until BREVO_API_KEY + EMAIL_FROM are set, sending is a no-op.
 const apiKey = process.env.BREVO_API_KEY;
 const fromRaw = process.env.EMAIL_FROM;
@@ -19,8 +19,8 @@ export function emailConfigured(): boolean {
 /** Parse `EMAIL_FROM` ("Name <email>" or "email") into Brevo's sender shape. */
 function parseSender(raw: string): { name: string; email: string } {
   const m = raw.match(/^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/);
-  if (m) return { name: m[1] || 'Grit', email: m[2] };
-  return { name: 'Grit', email: raw.trim() };
+  if (m) return { name: m[1] || 'SolveX', email: m[2] };
+  return { name: 'SolveX', email: raw.trim() };
 }
 
 export async function sendReminderEmail(params: {
