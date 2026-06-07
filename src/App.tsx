@@ -725,22 +725,58 @@ export default function App() {
       });
   }, [currentUser]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Prefill the practice time box with a server recommendation (sum of per-question
+  // estimates + buffer), unless the student has manually set the time. Best-effort:
+  // on failure or a 0 result, leave the current value.
+  useEffect(() => {
+    if (state.mode !== 'PRACTICE' || state.step !== 'READY') return;
+    if (practiceTimeUserSet) return;
+    if (!state.selectedCourse?.id) return;
+    const apiDifficulty =
+      state.difficulty === 'Easy' ? 'easy'
+      : state.difficulty === 'Medium' ? 'medium'
+      : state.difficulty === 'Hard' ? 'hard'
+      : null;
+    const params = new URLSearchParams({
+      program_course_id: state.selectedCourse.id,
+      mode: 'practice',
+      count: String(state.questionCount),
+    });
+    if (state.selectedTopic?.id) params.set('topic_id', state.selectedTopic.id);
+    if (apiDifficulty) params.set('difficulty', apiDifficulty);
+    let cancelled = false;
+    apiGet<{ recommended_minutes: number }>(`/api/sessions/estimate-time?${params.toString()}`)
+      .then((r) => {
+        if (cancelled || practiceTimeUserSet) return;
+        if (r.recommended_minutes > 0) {
+          setState((p) => ({ ...p, practiceTimeLimit: r.recommended_minutes }));
+          setPracticeTimeRaw(String(r.recommended_minutes));
+        }
+      })
+      .catch(() => {
+        /* leave the existing value; recommendation is best-effort */
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    state.mode,
+    state.step,
+    state.selectedCourse?.id,
+    state.selectedTopic?.id,
+    state.difficulty,
+    state.questionCount,
+    practiceTimeUserSet,
+  ]);
+
   const handleModeSelect = (mode: StudyMode) => {
     setState(prev => ({ ...prev, mode, step: 'COURSE_SELECT' }));
   };
 
   const setQuestionCount = (n: number) => {
     const clamped = Math.max(1, Math.min(50, Math.floor(n)));
-    setState(prev => {
-      const next: AppState = { ...prev, questionCount: clamped };
-      if (!practiceTimeUserSet) {
-        next.practiceTimeLimit = Math.max(1, clamped * 2);
-      }
-      return next;
-    });
-    if (!practiceTimeUserSet) {
-      setPracticeTimeRaw(String(Math.max(1, clamped * 2)));
-    }
+    setState((prev) => ({ ...prev, questionCount: clamped }));
   };
 
   const handleCourseSelect = (course: Course) => {
