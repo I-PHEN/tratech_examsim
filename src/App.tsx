@@ -3958,12 +3958,11 @@ function ExamSimulation({
                         </div>
                       )}
                     </div>
-                  </div>
 
-                  {/* Answer zone — pinned above the nav buttons */}
-                  <div className="relative z-10 shrink-0 pt-2.5 border-t border-border-subtle">
+                  {/* Answer — flows directly under the question (not pinned) */}
+                  <div className="relative z-10 mt-5">
                       {currentQuestion.type === 'MCQ' ? (
-                        <div className="grid grid-cols-1 gap-2.5 max-h-[40vh] overflow-y-auto no-scrollbar">
+                        <div className="grid grid-cols-1 gap-2.5">
                           {currentQuestion.options?.map((opt, i) => {
                             const label = String.fromCharCode(65 + i) + '.';
                             return (
@@ -3992,7 +3991,7 @@ function ExamSimulation({
                           </p>
                         </div>
                       ) : currentQuestion.answerType === 'multi' ? (
-                        <div className="space-y-3 max-h-[40vh] overflow-y-auto no-scrollbar pr-0.5">
+                        <div className="space-y-3 pr-0.5">
                           <label className="block text-[9px] font-black text-accent-text uppercase tracking-widest">
                             Input Responses · {currentQuestion.answerFields?.length ?? 0} values expected
                           </label>
@@ -4050,6 +4049,7 @@ function ExamSimulation({
                           </p>
                         </div>
                       )}
+                  </div>
                   </div>
 
                   <div className="flex items-center justify-between gap-3 shrink-0 pt-2.5 pb-0 border-t border-border-subtle relative z-10 bg-bg-surface">
