@@ -137,6 +137,14 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
             <span className="inline-flex items-center gap-1.5"><Bot className="w-3.5 h-3.5 text-accent-text" /> AI-graded answers</span>
             <span className="inline-flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-accent-text" /> Scheduled practice</span>
           </div>
+          <figure className="sx-rise mt-9 border-l-2 border-accent/50 pl-4 max-w-md" style={{ animationDelay: '.48s' }}>
+            <blockquote className="font-display italic text-base md:text-lg text-text-primary leading-snug">
+              “Example is not another way to learn — it is the only way to learn.”
+            </blockquote>
+            <figcaption className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+              The idea behind SolveX
+            </figcaption>
+          </figure>
         </div>
         <HeroPreview />
       </div>
