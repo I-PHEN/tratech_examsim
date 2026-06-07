@@ -83,6 +83,7 @@ import { TopicCard } from './components/ui/TopicCard';
 import { NotificationsBell } from './components/NotificationsBell';
 import { ApiError, apiDelete, apiGet, apiPost } from './lib/apiClient';
 import { summarizeResults } from './lib/resultsSummary';
+import { remainingMs } from './lib/examTimer';
 import { Bookmark, Loader2 } from 'lucide-react';
 
 interface ScheduleListItem {
@@ -3239,11 +3240,19 @@ function ExamSimulation({
     }
   }, [now, session.pausedAt]);
 
-  const timeLeftMs = useMemo(() => {
-    const timeRef = session.pausedAt || now;
-    const elapsed = timeRef - session.startedAt - session.totalPausedMs;
-    return Math.max(0, session.durationMs - elapsed);
-  }, [session, now]);
+  const timeLeftMs = useMemo(
+    () =>
+      remainingMs(
+        {
+          startedAt: session.startedAt,
+          durationMs: session.durationMs,
+          totalPausedMs: session.totalPausedMs,
+          pausedAt: session.pausedAt,
+        },
+        now
+      ),
+    [session, now]
+  );
 
   const timeLeftSeconds = Math.floor(timeLeftMs / 1000);
 
@@ -3316,25 +3325,25 @@ function ExamSimulation({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      let serverStart = Date.now();
-      let serverPaused = 0;
+      let elapsedMs = 0;
       try {
-        const row = await apiPost<{ started_at: string; total_paused_ms: number }>(
+        const row = await apiPost<{ elapsed_ms: number }>(
           `/api/sessions/${sessionId}/resume`,
           {}
         );
         if (cancelled) return;
-        serverStart = new Date(row.started_at).getTime();
-        serverPaused = row.total_paused_ms ?? 0;
+        elapsedMs = Math.max(0, row.elapsed_ms ?? 0);
       } catch (e) {
-        // Network hiccup: fall back to client time so the user can still play.
+        // Network hiccup: fall back to a fresh start so the user can still play.
         console.error('resume session failed', e);
       }
       if (cancelled) return;
       setSession((prev) => ({
         ...prev,
-        startedAt: serverStart,
-        totalPausedMs: serverPaused,
+        // Client-clock virtual start: from here we only add client-measured
+        // deltas, so a wrong client clock can't blow up the remaining time.
+        startedAt: Date.now() - elapsedMs,
+        totalPausedMs: 0,
         pausedAt: null,
       }));
       setHydrated(true);
