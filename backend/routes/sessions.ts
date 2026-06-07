@@ -7,6 +7,7 @@ import {
   SessionCreate,
   SessionFinish,
   SessionListQuery,
+  SessionPickQuery,
 } from '../schemas/session';
 import {
   createSession,
@@ -19,6 +20,7 @@ import {
   resumeSession,
   submitAnswer,
 } from '../services/sessionService';
+import { recommendedPracticeMinutes } from '../services/estimateService';
 
 const router = Router();
 
@@ -65,6 +67,17 @@ router.get(
     const query = parse(SessionListQuery, req.query);
     const data = await listSessions(uid, query.limit ?? 20, query.offset ?? 0);
     res.json(data);
+  })
+);
+
+router.get(
+  '/estimate-time',
+  asyncHandler(async (req, res) => {
+    const uid = req.user?.uid;
+    if (!uid) throw new ApiError(401, 'UNAUTHORIZED', 'Missing user');
+    const query = parse(SessionPickQuery, req.query);
+    const recommended_minutes = await recommendedPracticeMinutes(query);
+    res.json({ recommended_minutes });
   })
 );
 
