@@ -4,7 +4,7 @@ import { BrowserRouter, Routes, Route, useNavigate, Navigate } from 'react-route
 import App from './App.tsx';
 import { AdminDashboardScreen } from './Admin.tsx';
 import { AuthProvider, useAuth } from './lib/AuthContext.tsx';
-import { OnboardingScreen } from './OnboardingScreen.tsx';
+import { SignedOutFlow } from './components/landing/SignedOutFlow.tsx';
 import { VerifyEmailScreen } from './VerifyEmailScreen.tsx';
 import { ProfileSetupScreen } from './ProfileSetupScreen.tsx';
 import '@fontsource-variable/inter';
@@ -44,7 +44,7 @@ function ProtectedApp() {
   }
 
   if (!currentUser) {
-    return <OnboardingScreen />;
+    return <SignedOutFlow />;
   }
 
   // Real-email gate. Google sign-in stamps email_verified=true automatically,
