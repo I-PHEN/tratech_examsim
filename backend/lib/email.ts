@@ -1,26 +1,26 @@
-import nodemailer from 'nodemailer';
+// Reminders are sent via Brevo's HTTP API (https://www.brevo.com) rather than
+// SMTP, because Render's free tier blocks outbound SMTP ports (25/465/587).
+// The HTTP API runs over 443, so it works on the free plan, and Brevo lets you
+// send from a single verified sender address — no custom domain required.
+//
+// Configure with:
+//   BREVO_API_KEY   a Brevo "API key" (Settings → SMTP & API → API Keys)
+//   EMAIL_FROM      the verified sender, e.g. "Grit <tratechexamsim@gmail.com>"
+// Until BREVO_API_KEY + EMAIL_FROM are set, sending is a no-op.
+const apiKey = process.env.BREVO_API_KEY;
+const fromRaw = process.env.EMAIL_FROM;
 
-// Reminders are sent through a dedicated Gmail account via SMTP (free, no domain
-// required). Configure with:
-//   GMAIL_USER          the sending Gmail address (e.g. tratechexamsim@gmail.com)
-//   GMAIL_APP_PASSWORD  a Google "App Password" for that account (16 chars)
-//   EMAIL_FROM          optional display form, e.g. "Tratech ExamSim <…@gmail.com>"
-// Until GMAIL_USER + GMAIL_APP_PASSWORD are set, sending is a no-op.
-const gmailUser = process.env.GMAIL_USER;
-// App passwords are shown grouped as "xxxx xxxx xxxx xxxx" — strip any spaces.
-const gmailPass = process.env.GMAIL_APP_PASSWORD?.replace(/\s/g, '');
-const from = process.env.EMAIL_FROM || gmailUser;
-
-const transporter =
-  gmailUser && gmailPass
-    ? nodemailer.createTransport({
-        service: 'gmail',
-        auth: { user: gmailUser, pass: gmailPass },
-      })
-    : null;
+const BREVO_ENDPOINT = 'https://api.brevo.com/v3/smtp/email';
 
 export function emailConfigured(): boolean {
-  return Boolean(transporter && from);
+  return Boolean(apiKey && fromRaw);
+}
+
+/** Parse `EMAIL_FROM` ("Name <email>" or "email") into Brevo's sender shape. */
+function parseSender(raw: string): { name: string; email: string } {
+  const m = raw.match(/^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/);
+  if (m) return { name: m[1] || 'Grit', email: m[2] };
+  return { name: 'Grit', email: raw.trim() };
 }
 
 export async function sendReminderEmail(params: {
@@ -29,11 +29,12 @@ export async function sendReminderEmail(params: {
   startUrl: string;
 }): Promise<{ sent: boolean }> {
   if (!emailConfigured()) {
-    console.log('[email] Gmail SMTP not configured; skipping email');
+    console.log('[email] Brevo not configured; skipping email');
     return { sent: false };
   }
 
   const { to, courseLabel, startUrl } = params;
+  const sender = parseSender(fromRaw!);
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -74,12 +75,25 @@ export async function sendReminderEmail(params: {
 </body>
 </html>`;
 
-  await transporter!.sendMail({
-    from: from!,
-    to,
-    subject: `Time to practice — ${courseLabel}`,
-    html,
+  const res = await fetch(BREVO_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      'api-key': apiKey!,
+      'Content-Type': 'application/json',
+      accept: 'application/json',
+    },
+    body: JSON.stringify({
+      sender,
+      to: [{ email: to }],
+      subject: `Time to practice — ${courseLabel}`,
+      htmlContent: html,
+    }),
   });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`Brevo error ${res.status}: ${detail}`);
+  }
 
   return { sent: true };
 }

@@ -44,14 +44,12 @@ services:
       # reminders to fire.
       - key: CRON_SECRET
         sync: false
-      # Reminder email via Gmail SMTP — OPTIONAL. Without these the in-app
+      # Reminder email via Brevo HTTP API — OPTIONAL. Without these the in-app
       # notification bell still works; set them to also send reminder emails.
-      # GMAIL_USER = the dedicated sending Gmail address; GMAIL_APP_PASSWORD =
-      # a Google "App Password" (16 chars) for that account. EMAIL_FROM is an
-      # optional display form, e.g. "Tratech ExamSim <tratechexamsim@gmail.com>".
-      - key: GMAIL_USER
-        sync: false
-      - key: GMAIL_APP_PASSWORD
+      # (Brevo is used instead of SMTP because Render's free tier blocks outbound
+      # SMTP ports.) BREVO_API_KEY = a Brevo API key; EMAIL_FROM = the verified
+      # sender, e.g. "Grit <tratechexamsim@gmail.com>".
+      - key: BREVO_API_KEY
         sync: false
       - key: EMAIL_FROM
         sync: false
