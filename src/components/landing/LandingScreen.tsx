@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight, Target, FileText, Stethoscope, Bot, CalendarClock, BarChart3,
+  ArrowRight, Target, FileText, Stethoscope, Bot, CalendarClock, BarChart3, Bell,
 } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { cn } from '../../lib/utils';
@@ -127,44 +127,44 @@ function HeroPreview() {
   );
 }
 
-const FLOW = [
-  { n: 1, tag: 'Pick', label: 'Chemical Engineering → Reactor Design' },
-  { n: 2, tag: 'Solve', label: 'Answer under a live timer' },
-  { n: 3, tag: 'Review', label: "See your score & weak topics" },
-  { n: 4, tag: 'Schedule', label: 'SolveX brings the next set to you' },
-] as const;
-
+/**
+ * "See how it works" — a PowerPoint-style slideshow of recognisable app screens:
+ * pick a mode → solve in the arena → review your score → schedule the next set.
+ * Pure-CSS slide/fade loop (no JS, no library); pauses to a single frame under
+ * prefers-reduced-motion.
+ */
 function FlowDemo() {
+  const slides = [
+    { caption: 'Pick how you practice', body: <SlidePick /> },
+    { caption: 'Answer under a live timer', body: <SlideSolve /> },
+    { caption: 'See your score & weak topics', body: <SlideReview /> },
+    { caption: 'SolveX brings the next set to you', body: <SlideSchedule /> },
+  ];
   return (
     <section className="px-5 md:px-10 py-14 border-t border-border-subtle">
       <style>{`
-        @keyframes sxcyc { 0%{opacity:0;transform:translateY(8px)} 4%,21%{opacity:1;transform:translateY(0)} 25%,100%{opacity:0;transform:translateY(-8px)} }
-        .sx-frame{opacity:0;animation:sxcyc 12s infinite}
-        .sx-frame:nth-child(1){animation-delay:0s}
-        .sx-frame:nth-child(2){animation-delay:3s}
-        .sx-frame:nth-child(3){animation-delay:6s}
-        .sx-frame:nth-child(4){animation-delay:9s}
-        @media (prefers-reduced-motion: reduce){
-          .sx-frame{animation:none;opacity:0}
-          .sx-frame:nth-child(1){opacity:1}
-        }
+        @keyframes sxslide { 0%{opacity:0;transform:translateX(26px)} 3%,21%{opacity:1;transform:translateX(0)} 24%,100%{opacity:0;transform:translateX(-26px)} }
+        .sx-slide{opacity:0;animation:sxslide 12s infinite}
+        .sx-slide:nth-child(1){animation-delay:0s}
+        .sx-slide:nth-child(2){animation-delay:3s}
+        .sx-slide:nth-child(3){animation-delay:6s}
+        .sx-slide:nth-child(4){animation-delay:9s}
+        @media (prefers-reduced-motion: reduce){ .sx-slide{animation:none;opacity:0} .sx-slide:nth-child(1){opacity:1} }
       `}</style>
       <div className="max-w-6xl mx-auto">
         <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-text-tertiary">See how it works ↺</span>
         <h2 className="mt-1.5 font-display italic font-bold text-2xl md:text-3xl">A typical flow, start to finish.</h2>
-        <div className="relative mt-6 h-44 rounded-2xl border border-border-subtle bg-bg-surface overflow-hidden">
-          {FLOW.map((f) => (
-            <div key={f.n} className="sx-frame absolute inset-0 p-5">
-              <div className="flex items-center gap-2.5">
-                <span className="text-[10px] font-bold text-accent-text bg-accent-muted border border-accent/40 rounded-lg px-2.5 py-1">
-                  {f.n} · {f.tag}
-                </span>
-                <span className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">{f.label}</span>
+        <div className="relative mt-6 h-64 rounded-2xl border border-border-subtle bg-bg-page/40 overflow-hidden">
+          {slides.map((s, i) => (
+            <div key={i} className="sx-slide absolute inset-0 p-5 flex flex-col">
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-[10px] font-bold text-accent-text bg-accent-muted border border-accent/40 rounded-lg px-2.5 py-1">{i + 1}</span>
+                <span className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">{s.caption}</span>
               </div>
-              <FlowFrameBody n={f.n} />
-              <div className="absolute left-5 right-5 bottom-4 flex gap-1.5">
-                {FLOW.map((d) => (
-                  <span key={d.n} className={cn('h-1 flex-1 rounded-full', d.n === f.n ? 'bg-accent' : 'bg-bg-raised')} />
+              <div className="flex-1 min-h-0">{s.body}</div>
+              <div className="flex gap-1.5 mt-3">
+                {slides.map((_, d) => (
+                  <span key={d} className={cn('h-1 flex-1 rounded-full', d === i ? 'bg-accent' : 'bg-bg-raised')} />
                 ))}
               </div>
             </div>
@@ -175,37 +175,84 @@ function FlowDemo() {
   );
 }
 
-function FlowFrameBody({ n }: { n: number }) {
-  if (n === 1)
-    return (
-      <div className="mt-4 space-y-2">
-        <div className="h-3.5 w-3/5 rounded bg-bg-raised" />
-        <div className="h-3.5 w-2/5 rounded bg-bg-raised" />
-      </div>
-    );
-  if (n === 2)
-    return (
-      <div className="mt-3 space-y-1.5">
-        <div className="h-5 rounded-md bg-success-bg border border-success-border" />
-        <div className="h-5 rounded-md bg-bg-raised" />
-        <div className="h-5 rounded-md bg-bg-raised" />
-      </div>
-    );
-  if (n === 3)
-    return (
-      <div className="mt-4 flex items-end gap-2 h-12">
-        <div className="w-4 rounded bg-accent" style={{ height: '60%' }} />
-        <div className="w-4 rounded bg-accent" style={{ height: '90%' }} />
-        <div className="w-4 rounded bg-border-medium" style={{ height: '40%' }} />
-        <div className="w-4 rounded bg-accent" style={{ height: '75%' }} />
-      </div>
-    );
+function SlidePick() {
+  const cards = [
+    { Icon: Target, label: 'Practice', hint: 'Drill a topic', on: true },
+    { Icon: Stethoscope, label: 'Diagnostic', hint: 'Find weak spots', on: false },
+    { Icon: FileText, label: 'Mock Exam', hint: 'Timed paper', on: false },
+  ];
   return (
-    <div className="mt-4 flex items-center gap-3">
-      <div className="w-9 h-9 rounded-lg bg-accent-muted border border-accent/40" />
-      <div className="space-y-1.5">
-        <div className="h-3 w-32 rounded bg-bg-raised" />
-        <div className="h-2.5 w-20 rounded bg-bg-raised" />
+    <div className="grid grid-cols-3 gap-2.5 h-full">
+      {cards.map(({ Icon, label, hint, on }) => (
+        <div key={label} className={cn('rounded-xl border p-3 flex flex-col gap-2', on ? 'border-accent/50 bg-accent/10' : 'border-border-subtle bg-bg-surface')}>
+          <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center', on ? 'bg-accent text-bg-page' : 'bg-bg-raised text-text-tertiary')}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <span className="text-xs font-bold text-text-primary">{label}</span>
+          <span className="text-[10px] text-text-tertiary leading-snug">{hint}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SlideSolve() {
+  const opts: Array<[string, string, boolean]> = [['A', '0.42', false], ['B', '0.68', true], ['C', '0.75', false]];
+  return (
+    <div>
+      <div className="flex justify-between text-[10px] uppercase tracking-[0.16em] text-text-tertiary mb-2.5">
+        <span>Q3 / 10</span><span className="text-accent-text font-bold">19:54</span>
+      </div>
+      <p className="text-xs md:text-sm text-text-primary mb-3 leading-snug">A CSTR runs at steady state with k = 0.12 s⁻¹. Find the conversion X.</p>
+      <div className="space-y-2">
+        {opts.map(([l, v, on]) => (
+          <div key={l} className={cn('h-8 rounded-lg border flex items-center gap-2 px-3 text-xs', on ? 'border-accent/60 bg-accent/10 text-text-primary' : 'border-border-subtle bg-bg-surface text-text-secondary')}>
+            <span className="font-black">{l}</span><span>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlideReview() {
+  const topics: Array<[string, number]> = [['Reactor Design', 0.9], ['Mass Balance', 0.6], ['Thermodynamics', 0.4]];
+  return (
+    <div className="flex items-center gap-5 h-full">
+      <div className="text-center shrink-0">
+        <div className="font-display italic font-bold text-4xl text-text-primary leading-none">
+          8<span className="text-text-tertiary text-2xl">/10</span>
+        </div>
+        <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-accent-text">80% · Strong</div>
+      </div>
+      <div className="flex-1 space-y-2.5">
+        {topics.map(([t, v]) => (
+          <div key={t}>
+            <div className="text-[9px] uppercase tracking-[0.14em] text-text-tertiary mb-1">{t}</div>
+            <div className="h-2 rounded-full bg-bg-raised overflow-hidden">
+              <div className="h-full rounded-full bg-accent" style={{ width: `${v * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlideSchedule() {
+  return (
+    <div className="h-full flex items-center">
+      <div className="w-full rounded-xl border border-accent/40 bg-bg-surface p-4 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-accent-muted border border-accent/40 flex items-center justify-center text-accent shrink-0">
+          <CalendarClock className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-text-primary truncate">Reactor Design · 10 questions</div>
+          <div className="text-[11px] text-text-tertiary">Tomorrow · 6:00 PM</div>
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-accent-text bg-accent-muted border border-accent/30 rounded-full px-2.5 py-1 shrink-0">
+          <Bell className="w-3 h-3" /> Reminder set
+        </div>
       </div>
     </div>
   );
@@ -261,12 +308,10 @@ function FinalCta({ onStart }: { onStart: () => void }) {
           shown ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
         )}
       >
-        <span className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-[0.12em] text-accent-text bg-accent-muted border border-accent/30 rounded-full px-3 py-1.5">
-          ★ #TNBT
-        </span>
-        <h2 className="mt-5 font-display italic font-bold text-3xl md:text-4xl leading-tight">
-          Normalize solving. Start with Chemical Engineering.
-        </h2>
+        <h2 className="font-display italic font-bold text-3xl md:text-5xl leading-tight">Ready to lock in?</h2>
+        <p className="mt-4 text-sm md:text-base text-text-secondary">
+          Past questions, mock exams, and a plan that brings the next set to you.
+        </p>
         <div className="mt-8">
           <button
             onClick={onStart}
