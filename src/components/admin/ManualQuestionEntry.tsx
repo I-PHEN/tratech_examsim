@@ -81,6 +81,7 @@ interface LoadedQuestion {
     unit: string | null;
   }>;
   assets: AttachedAsset[];
+  estimated_minutes?: number | null;
 }
 
 const DIFFICULTIES: Difficulty[] = ['easy', 'medium', 'hard'];
@@ -131,6 +132,7 @@ export function ManualQuestionEntry({
   const [prompt, setPrompt] = useState('');
   const [explanation, setExplanation] = useState('');
   const [sourceReference, setSourceReference] = useState('');
+  const [estimatedMinutes, setEstimatedMinutes] = useState('');
   const [solutionImage, setSolutionImage] = useState<File | null>(null);
   const [solutionOcrBusy, setSolutionOcrBusy] = useState(false);
 
@@ -180,6 +182,7 @@ export function ManualQuestionEntry({
         setPrompt(q.content.prompt ?? '');
         setExplanation(q.content.explanation ?? '');
         setSourceReference(q.content.source_reference ?? '');
+        setEstimatedMinutes(q.estimated_minutes != null ? String(q.estimated_minutes) : '');
         if (q.type === 'mcq' && q.options) {
           setOptions(q.options.map((o) => ({ text: o.text, is_correct: o.is_correct })));
         } else if (q.answer_type === 'multi') {
@@ -275,6 +278,7 @@ export function ManualQuestionEntry({
     setPrompt('');
     setExplanation('');
     setSourceReference('');
+    setEstimatedMinutes('');
     setSolutionImage(null);
     setOptions([emptyOption(), emptyOption()]);
     setCorrectAnswer('');
@@ -403,6 +407,7 @@ export function ManualQuestionEntry({
     setSubmitting(true);
     setMsg(null);
     setStatusText(editing ? 'Saving changes…' : 'Saving question…');
+    const estMin = estimatedMinutes.trim() ? Number(estimatedMinutes.trim()) : undefined;
 
     try {
       let targetId: string;
@@ -422,6 +427,7 @@ export function ManualQuestionEntry({
             part_label: parts[i].partLabel.trim(),
             part_index: i,
             ...partToContentPayload(parts[i], sharedStem, sourceReference),
+            ...(i === 0 && estMin != null ? { estimated_minutes: estMin } : {}),
           });
           if (i === 0) firstId = created.id;
         }
@@ -441,6 +447,7 @@ export function ManualQuestionEntry({
                 ...(sourceReference.trim() ? { source_reference: sourceReference.trim() } : {}),
               },
               options: options.map((o) => ({ text: o.text.trim(), is_correct: o.is_correct })),
+              ...(estMin != null ? { estimated_minutes: estMin } : {}),
             }
           : multiAnswer
           ? {
@@ -456,6 +463,7 @@ export function ManualQuestionEntry({
                 ...(sourceReference.trim() ? { source_reference: sourceReference.trim() } : {}),
               },
               answer_fields: answerFieldsToPayload(answerFields),
+              ...(estMin != null ? { estimated_minutes: estMin } : {}),
             }
           : {
               program_course_id: programCourseId,
@@ -472,6 +480,7 @@ export function ManualQuestionEntry({
                 ...(answerTolerance ? { answer_tolerance: Number(answerTolerance) } : {}),
                 ...(unit.trim() ? { unit: unit.trim() } : {}),
               },
+              ...(estMin != null ? { estimated_minutes: estMin } : {}),
             };
 
       if (editing) {
@@ -983,6 +992,22 @@ export function ManualQuestionEntry({
             )}
           </div>
         </div>
+
+        <label className="block">
+          <span className="text-sm font-medium text-text-secondary">Est. solve time (min)</span>
+          <input
+            type="text"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            value={estimatedMinutes}
+            onChange={(e) => { setEstimatedMinutes(e.target.value.replace(/\D/g, '')); setDirty(true); }}
+            placeholder="optional"
+            className="mt-1 w-32 bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <span className="block text-[11px] text-text-tertiary mt-1">
+            Roughly how long an average student needs. For a multi-part question, the time for the whole question.
+          </span>
+        </label>
 
         <div>
           <div className="flex items-center justify-between mb-2">
