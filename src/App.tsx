@@ -975,20 +975,20 @@ export default function App() {
           )}
         >
             <div className="px-3 mb-4 flex items-center gap-2 h-10 shrink-0 overflow-hidden cursor-default" onClick={(e) => e.stopPropagation()}>
-              <button 
+              <button
                 onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
-                className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 text-text-secondary hover:text-text-primary hover:bg-surface-container-high transition-colors cursor-pointer"
-                title="Toggle Sidebar"
+                className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0 hover:bg-surface-container-high transition-colors cursor-pointer"
+                title={isSidebarExpanded || isMobileMenuOpen ? 'Collapse' : 'Expand'}
+                aria-label={isSidebarExpanded || isMobileMenuOpen ? 'Collapse sidebar' : 'Expand sidebar'}
               >
-                <Menu className="w-5 h-5" />
+                <Logo className="w-8 h-8" />
               </button>
-              <div className={cn(
-                "flex items-center gap-2 whitespace-nowrap transition-opacity duration-100",
-                isSidebarExpanded || isMobileMenuOpen ? "opacity-100 " : "opacity-0"
+              <span className={cn(
+                "text-base font-display italic text-text-primary leading-tight whitespace-nowrap transition-opacity duration-100",
+                isSidebarExpanded || isMobileMenuOpen ? "opacity-100" : "opacity-0"
               )}>
-                <Logo className="w-7 h-7 shrink-0" />
-                <span className="text-base font-display italic text-text-primary leading-tight">SolveX</span>
-              </div>
+                SolveX
+              </span>
             </div>
 
             <div className="flex-1 px-3 space-y-2">
