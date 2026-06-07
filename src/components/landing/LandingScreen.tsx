@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight, Target, FileText, Stethoscope, Bot, CalendarClock, BarChart3, Bell,
+  Sparkles, Check, Clock,
 } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { cn } from '../../lib/utils';
@@ -72,21 +73,55 @@ function LandingNav({ onStart, onSignIn }: { onStart: () => void; onSignIn: () =
 
 function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
   return (
-    <section className="relative overflow-hidden px-5 md:px-10 py-16 md:py-24">
-      <div className="absolute z-0 w-[36rem] h-[36rem] rounded-full bg-accent/15 blur-[120px] -bottom-60 -left-40 pointer-events-none" />
-      <div className="relative z-10 max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
+    <section className="relative overflow-hidden px-5 md:px-10 py-16 md:py-28">
+      <style>{`
+        @keyframes sxrise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+        @keyframes sxfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+        @keyframes sxchipA{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
+        @keyframes sxchipB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+        .sx-rise{opacity:0;animation:sxrise .7s cubic-bezier(.22,1,.36,1) forwards}
+        .sx-float{animation:sxfloat 6s ease-in-out infinite}
+        .sx-chipA{animation:sxchipA 4.5s ease-in-out infinite}
+        .sx-chipB{animation:sxchipB 5.5s ease-in-out infinite}
+        @media (prefers-reduced-motion:reduce){.sx-rise,.sx-float,.sx-chipA,.sx-chipB{animation:none;opacity:1}}
+      `}</style>
+
+      {/* layered glows + faint masked grid */}
+      <div className="absolute z-0 w-[40rem] h-[40rem] rounded-full bg-accent/15 blur-[130px] -top-48 -right-40 pointer-events-none" />
+      <div className="absolute z-0 w-[34rem] h-[34rem] rounded-full bg-accent/10 blur-[130px] -bottom-56 -left-48 pointer-events-none" />
+      <div
+        className="absolute inset-0 z-0 pointer-events-none opacity-60"
+        style={{
+          backgroundImage:
+            'linear-gradient(var(--border-subtle) 1px,transparent 1px),linear-gradient(90deg,var(--border-subtle) 1px,transparent 1px)',
+          backgroundSize: '48px 48px',
+          maskImage: 'radial-gradient(ellipse 75% 60% at 50% 0%,#000 25%,transparent 78%)',
+          WebkitMaskImage: 'radial-gradient(ellipse 75% 60% at 50% 0%,#000 25%,transparent 78%)',
+        }}
+      />
+
+      <div className="relative z-10 max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-14 items-center">
         <div>
-          <h1 className="font-display italic font-bold leading-[1.05] tracking-tight text-4xl md:text-6xl">
-            The biggest <span className="text-accent-text">question hub</span> for KNUST students.
+          <span className="sx-rise inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent-muted px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-accent-text">
+            <Sparkles className="w-3.5 h-3.5" /> Past questions · Mock exams · Scheduling
+          </span>
+          <h1 className="sx-rise mt-5 font-display italic font-bold leading-[1.05] tracking-tight text-4xl md:text-6xl" style={{ animationDelay: '.08s' }}>
+            The biggest{' '}
+            <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(120deg,var(--accent-text),var(--accent))' }}>
+              question hub
+            </span>{' '}
+            for KNUST students.
           </h1>
-          <p className="mt-3 font-display italic text-lg md:text-xl text-accent-text">Solve more. Stress less.</p>
-          <p className="mt-4 text-sm md:text-base text-text-secondary leading-relaxed max-w-md">
+          <p className="sx-rise mt-3 font-display italic text-lg md:text-xl text-accent-text" style={{ animationDelay: '.16s' }}>
+            Solve more. Stress less.
+          </p>
+          <p className="sx-rise mt-4 text-sm md:text-base text-text-secondary leading-relaxed max-w-md" style={{ animationDelay: '.24s' }}>
             Practice past questions, sit full mock exams, and let SolveX bring the next set to you.
           </p>
-          <div className="mt-7 flex flex-wrap gap-3">
+          <div className="sx-rise mt-7 flex flex-wrap gap-3" style={{ animationDelay: '.32s' }}>
             <button
               onClick={onStart}
-              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent text-bg-page text-sm font-bold uppercase tracking-wide hover:bg-accent-hover transition-all hover:scale-[1.02] active:scale-95"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-accent text-bg-page text-sm font-bold uppercase tracking-wide hover:bg-accent-hover transition-all hover:scale-[1.02] active:scale-95 shadow-lg shadow-accent/25"
             >
               Start for free <ArrowRight className="w-4 h-4" />
             </button>
@@ -97,6 +132,11 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
               Sign in
             </button>
           </div>
+          <div className="sx-rise mt-9 flex flex-wrap items-center gap-x-5 gap-y-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-tertiary" style={{ animationDelay: '.4s' }}>
+            <span className="inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-accent-text" /> Live exam timer</span>
+            <span className="inline-flex items-center gap-1.5"><Bot className="w-3.5 h-3.5 text-accent-text" /> AI-graded answers</span>
+            <span className="inline-flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-accent-text" /> Scheduled practice</span>
+          </div>
         </div>
         <HeroPreview />
       </div>
@@ -104,21 +144,51 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
   );
 }
 
-/** Static exam-arena preview built from UI primitives — NOT real question data. */
+/** Floating exam-arena mockup with depth + floating chips — built from UI
+ *  primitives, NOT real question data. Tilt straightens on hover. */
 function HeroPreview() {
   return (
-    <div className="rounded-3xl border border-border-subtle bg-bg-surface p-4 md:p-5 shadow-2xl">
-      <div className="text-[9px] uppercase tracking-[0.16em] text-text-tertiary mb-3">Reactor Design · Practice</div>
-      <div className="h-2.5 rounded bg-bg-raised w-[92%] mb-2" />
-      <div className="h-2.5 rounded bg-bg-raised w-[74%] mb-5" />
-      <div className="flex flex-col gap-2.5">
-        <div className="h-9 rounded-lg bg-accent/15 border border-accent/40" />
-        <div className="h-9 rounded-lg bg-bg-raised" />
-        <div className="h-9 rounded-lg bg-bg-raised" />
-      </div>
-      <div className="flex justify-between mt-5 text-[9px] uppercase tracking-[0.16em] text-text-tertiary">
-        <span>Q3 / 10</span>
-        <span className="text-accent-text">19:54</span>
+    <div className="sx-rise relative mx-auto w-full max-w-md lg:max-w-none" style={{ animationDelay: '.3s' }}>
+      <div className="absolute -inset-6 z-0 rounded-[2.5rem] bg-accent/20 blur-3xl pointer-events-none" />
+      <div className="sx-float relative z-10">
+        {/* card peeking behind for depth */}
+        <div className="absolute inset-0 -right-5 -top-5 rounded-3xl border border-border-subtle bg-bg-surface/50 rotate-3 -z-10 hidden sm:block" />
+
+        {/* main arena card */}
+        <div className="rounded-3xl border border-border-medium bg-bg-surface p-5 md:p-6 shadow-2xl transition-transform duration-500 ease-out [transform:perspective(1400px)_rotateY(-7deg)_rotateX(3deg)] hover:[transform:perspective(1400px)_rotateY(0deg)_rotateX(0deg)]">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-[9px] uppercase tracking-[0.16em] text-text-tertiary">Reactor Design · Practice</span>
+            <span className="text-[10px] font-bold text-accent-text tabular-nums">19:54</span>
+          </div>
+          <p className="text-xs md:text-sm text-text-primary leading-snug mb-4">
+            A CSTR runs at steady state with k = 0.12 s⁻¹. Find the conversion X.
+          </p>
+          <div className="flex flex-col gap-2.5">
+            <div className="h-9 rounded-lg bg-accent/15 border border-accent/50 flex items-center gap-2 px-3 text-xs text-text-primary">
+              <span className="font-black">B</span><span>0.68</span>
+            </div>
+            <div className="h-9 rounded-lg bg-bg-raised border border-border-subtle" />
+            <div className="h-9 rounded-lg bg-bg-raised border border-border-subtle" />
+          </div>
+          <div className="flex items-center justify-between mt-5">
+            <span className="text-[9px] uppercase tracking-[0.16em] text-text-tertiary">Q3 / 10</span>
+            <div className="flex gap-1">
+              {[1, 1, 1, 0, 0, 0, 0, 0, 0, 0].map((on, i) => (
+                <span key={i} className={cn('h-1 w-3 rounded-full', on ? 'bg-accent' : 'bg-bg-raised')} />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* floating chips */}
+        <div className="sx-chipA absolute -left-3 sm:-left-6 top-14 z-20 flex items-center gap-2 rounded-xl border border-accent/40 bg-bg-raised/95 px-3 py-2 shadow-xl backdrop-blur">
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-bg-page"><Check className="w-3 h-3" /></span>
+          <span className="text-[11px] font-bold text-text-primary">+1 correct</span>
+        </div>
+        <div className="sx-chipB absolute -right-2 sm:-right-5 bottom-12 z-20 flex items-center gap-2 rounded-xl border border-border-medium bg-bg-raised/95 px-3 py-2 shadow-xl backdrop-blur">
+          <span className="font-display italic font-bold text-lg text-accent-text leading-none">80%</span>
+          <span className="text-[9px] uppercase tracking-[0.12em] text-text-tertiary leading-tight">score<br />so far</span>
+        </div>
       </div>
     </div>
   );
