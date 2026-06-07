@@ -5,6 +5,7 @@ import { requireAdmin, requireOwner } from '../lib/auth';
 import { parse } from '../lib/validate';
 import { IdParam } from '../schemas/common';
 import { TopicCreate, TopicListQuery, TopicUpdate } from '../schemas/topic';
+import { groupIntoLogical } from '../lib/logicalQuestions';
 
 const router = Router();
 
@@ -23,23 +24,36 @@ router.get(
 
     const { data: qRows, error: qErr } = await supabase
       .from('questions')
-      .select('topic_id, difficulty')
+      .select('id, topic_id, difficulty, question_group_id, part_index')
       .in('topic_id', rows.map((t) => t.id));
     if (qErr) throw qErr;
-    // Per-topic total + per-difficulty buckets. A question with a null/unknown
-    // difficulty counts toward the total only (drives the "All" filter).
+    // Per-topic total + per-difficulty buckets, counting LOGICAL questions: a
+    // multi-part group counts once (bucketed by its lead part's difficulty), to
+    // match how the session picker and totals treat groups. A question with a
+    // null/unknown difficulty counts toward the total only (drives "All").
+    type QRow = {
+      id: string;
+      topic_id: string;
+      difficulty: string | null;
+      question_group_id: string | null;
+      part_index: number | null;
+    };
     type Bucket = { total: number; easy: number; medium: number; hard: number };
+    const byTopic = new Map<string, QRow[]>();
+    for (const r of (qRows ?? []) as QRow[]) {
+      const arr = byTopic.get(r.topic_id);
+      if (arr) arr.push(r);
+      else byTopic.set(r.topic_id, [r]);
+    }
     const counts = new Map<string, Bucket>();
-    for (const r of (qRows ?? []) as Array<{ topic_id: string; difficulty: string | null }>) {
-      let b = counts.get(r.topic_id);
-      if (!b) {
-        b = { total: 0, easy: 0, medium: 0, hard: 0 };
-        counts.set(r.topic_id, b);
+    for (const [topicId, topicRows] of byTopic) {
+      const b: Bucket = { total: 0, easy: 0, medium: 0, hard: 0 };
+      for (const unit of groupIntoLogical(topicRows)) {
+        b.total++;
+        const d = unit.lead.difficulty;
+        if (d === 'easy' || d === 'medium' || d === 'hard') b[d]++;
       }
-      b.total++;
-      if (r.difficulty === 'easy' || r.difficulty === 'medium' || r.difficulty === 'hard') {
-        b[r.difficulty]++;
-      }
+      counts.set(topicId, b);
     }
     res.json(
       rows.map((t) => {
