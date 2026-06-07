@@ -117,6 +117,7 @@ export interface QuestionWithContent {
   question_group_id: string | null;
   part_label: string | null;
   part_index: number | null;
+  estimated_minutes: number | null;
   content: QuestionContent;
   options?: McqOption[];
   /** Present only for answer_type 'multi'. Ordered by position. */
@@ -194,6 +195,7 @@ interface QuestionJoinRow {
   question_group_id: string | null;
   part_label: string | null;
   part_index: number | null;
+  estimated_minutes: number | null;
   question_content: QuestionContent | QuestionContent[] | null;
   mcq_options: McqOption[] | null;
   question_answer_fields: AnswerFieldSpec[] | null;
@@ -214,7 +216,7 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
     .from('questions')
     .select(
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
-        'question_group_id, part_label, part_index, ' +
+        'question_group_id, part_label, part_index, estimated_minutes, ' +
         'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
         'mcq_options(id, text, is_correct), ' +
         'question_answer_fields(position, label, correct_answer, answer_type, answer_tolerance, unit), ' +
@@ -239,6 +241,7 @@ export async function getQuestionById(id: string): Promise<QuestionWithContent> 
     question_group_id: row.question_group_id,
     part_label: row.part_label,
     part_index: row.part_index,
+    estimated_minutes: row.estimated_minutes,
     content: unwrapContent(row.question_content),
     options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
     answer_fields:
@@ -290,6 +293,7 @@ export async function createQuestion(input: QuestionCreateInput): Promise<Questi
     question_group_id: input.question_group_id ?? null,
     part_label: input.part_label ?? null,
     part_index: input.part_index ?? null,
+    estimated_minutes: input.estimated_minutes ?? null,
   };
 
   const { data: created, error: insertErr } = await supabase
@@ -391,6 +395,7 @@ export async function updateQuestion(
     difficulty: input.difficulty,
     exam_scope: input.exam_scope,
     answer_type: input.type === 'calc' ? input.answer_type : 'exact',
+    estimated_minutes: input.estimated_minutes ?? null,
   };
   const { error: qErr } = await supabase.from('questions').update(questionPatch).eq('id', id);
   if (qErr) throw qErr;

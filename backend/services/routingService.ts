@@ -215,7 +215,7 @@ export async function pickSessionQuestions(
     .from('questions')
     .select(
       'id, program_course_id, topic_id, type, difficulty, exam_scope, answer_type, ' +
-        'question_group_id, part_label, part_index, ' +
+        'question_group_id, part_label, part_index, estimated_minutes, ' +
         'question_content(prompt, explanation, correct_answer, answer_tolerance, unit, shared_stem), ' +
         'mcq_options(id, text, is_correct), ' +
         'question_answer_fields(position, label, correct_answer, answer_type, answer_tolerance, unit), ' +
@@ -249,6 +249,7 @@ export async function pickSessionQuestions(
           question_group_id: row.question_group_id,
           part_label: row.part_label,
           part_index: row.part_index,
+          estimated_minutes: row.estimated_minutes,
           content: contentArr[0],
           options: row.type === 'mcq' ? row.mcq_options ?? [] : undefined,
           answer_fields:
