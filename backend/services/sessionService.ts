@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
 import { pickSessionQuestions } from './routingService';
 import { groupIntoLogical } from '../lib/logicalQuestions';
+import { aggregateLogicalScore, type AnswerPoints } from '../lib/logicalScore';
 import {
   mapAssets,
   type QuestionAsset,
@@ -367,18 +368,25 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
   const gradedQuestionIds = Array.from(new Set(answerRows.map((a) => a.question_id)));
   const qMeta = new Map<
     string,
-    { answer_type: string | null; prompt: string; correct_answer: string; explanation: string | null }
+    {
+      answer_type: string | null;
+      question_group_id: string | null;
+      prompt: string;
+      correct_answer: string;
+      explanation: string | null;
+    }
   >();
   if (gradedQuestionIds.length > 0) {
     const { data: qRows, error: qErr } = await supabase
       .from('questions')
-      .select('id, answer_type, question_content(prompt, correct_answer, explanation)')
+      .select('id, answer_type, question_group_id, question_content(prompt, correct_answer, explanation)')
       .in('id', gradedQuestionIds);
     if (qErr) throw qErr;
     for (const row of qRows ?? []) {
       const r = row as unknown as {
         id: string;
         answer_type: string | null;
+        question_group_id: string | null;
         question_content:
           | { prompt: string; correct_answer: string; explanation: string | null }
           | { prompt: string; correct_answer: string; explanation: string | null }[]
@@ -387,6 +395,7 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
       const c = Array.isArray(r.question_content) ? r.question_content[0] : r.question_content;
       qMeta.set(r.id, {
         answer_type: r.answer_type,
+        question_group_id: r.question_group_id,
         prompt: c?.prompt ?? '',
         correct_answer: c?.correct_answer ?? '',
         explanation: c?.explanation ?? null,
@@ -396,7 +405,7 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
 
   // Written answers are AI-graded now (concurrently); mcq/calc mirror is_correct.
   // `points` is 0–1 per answer and the session score is their sum (fractional).
-  let scoreSum = 0;
+  const perAnswer: AnswerPoints[] = [];
   await parallelMap(answerRows, 4, async (a) => {
     const meta = qMeta.get(a.question_id);
     let pts = 0;
@@ -449,10 +458,14 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
       pts = a.is_correct === true ? 1 : 0;
       await supabase.from('session_answers').update({ points: pts }).eq('id', a.id);
     }
-    scoreSum += pts;
+    perAnswer.push({
+      question_id: a.question_id,
+      group_id: meta?.question_group_id ?? null,
+      points: pts,
+    });
   });
 
-  const score = Math.round(scoreSum * 100) / 100;
+  const score = aggregateLogicalScore(perAnswer).score;
   const finishedAt = new Date();
   const durationMs =
     input.duration_ms ?? finishedAt.getTime() - new Date(session.started_at).getTime();
