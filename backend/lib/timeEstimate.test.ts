@@ -46,4 +46,12 @@ describe('recommendMinutes', () => {
   it('returns 0 for an empty pool', () => {
     expect(recommendMinutes([], 5)).toBe(0);
   });
+  it('uses the sum path when pool size equals count (boundary)', () => {
+    // sum = 60 -> *1.15 = 69 -> 70
+    expect(recommendMinutes([10, 20, 30], 3)).toBe(70);
+  });
+  it('uses the average path when pool is one larger than count (boundary)', () => {
+    // avg = 100/4 = 25; *3 = 75; *1.15 = 86.25 -> 90
+    expect(recommendMinutes([10, 20, 30, 40], 3)).toBe(90);
+  });
 });

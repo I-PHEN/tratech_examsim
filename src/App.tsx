@@ -771,6 +771,9 @@ export default function App() {
   ]);
 
   const handleModeSelect = (mode: StudyMode) => {
+    // Starting a fresh configuration re-enables the recommended-time prefill —
+    // otherwise a manual edit in one practice run would suppress it forever.
+    setPracticeTimeUserSet(false);
     setState(prev => ({ ...prev, mode, step: 'COURSE_SELECT' }));
   };
 

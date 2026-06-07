@@ -1,19 +1,8 @@
 import { supabase } from '../lib/supabase';
 import { groupIntoLogical } from '../lib/logicalQuestions';
 import { questionMinutes, recommendMinutes, type QuestionType } from '../lib/timeEstimate';
+import { DEFAULT_COUNT, scopesForMode } from '../lib/sessionConfig';
 import type { SessionPickInput } from '../schemas/session';
-
-const DEFAULT_COUNT: Record<SessionPickInput['mode'], number> = {
-  practice: 10,
-  diagnostic: 20,
-  midsem: 30,
-  full_exam: 60,
-};
-
-function scopesForMode(mode: SessionPickInput['mode']): Array<'midsem' | 'final' | 'both'> {
-  if (mode === 'midsem') return ['midsem', 'both'];
-  return ['midsem', 'final', 'both'];
-}
 
 interface EstimateRow {
   id: string;
@@ -35,18 +24,31 @@ export async function recommendedPracticeMinutes(input: SessionPickInput): Promi
   const count = input.count ?? DEFAULT_COUNT[input.mode];
   const scopes = scopesForMode(input.mode);
 
-  let q = supabase
-    .from('questions')
-    .select('id, type, difficulty, estimated_minutes, question_group_id, part_index')
-    .eq('program_course_id', input.program_course_id)
-    .in('exam_scope', scopes);
-  if (input.mode === 'practice' && input.topic_id) q = q.eq('topic_id', input.topic_id);
-  if (input.difficulty && input.mode !== 'diagnostic') q = q.eq('difficulty', input.difficulty);
+  const buildQuery = (withDifficulty: boolean) => {
+    let q = supabase
+      .from('questions')
+      .select('id, type, difficulty, estimated_minutes, question_group_id, part_index')
+      .eq('program_course_id', input.program_course_id)
+      .in('exam_scope', scopes);
+    if (input.mode === 'practice' && input.topic_id) q = q.eq('topic_id', input.topic_id);
+    if (withDifficulty && input.difficulty && input.mode !== 'diagnostic') {
+      q = q.eq('difficulty', input.difficulty);
+    }
+    return q;
+  };
 
-  const { data, error } = await q;
+  const { data, error } = await buildQuery(true);
   if (error) throw error;
+  let rows = (data ?? []) as EstimateRow[];
 
-  const rows = (data ?? []) as EstimateRow[];
+  // Mirror routingService's difficulty fallback: if the requested difficulty has
+  // no questions, the picker serves from the full pool — so estimate from it too,
+  // rather than returning 0 and leaving the student with the bare default.
+  if (rows.length === 0 && input.difficulty && input.mode !== 'diagnostic') {
+    const { data: relaxed, error: relaxedErr } = await buildQuery(false);
+    if (relaxedErr) throw relaxedErr;
+    rows = (relaxed ?? []) as EstimateRow[];
+  }
   // Collapse multi-part groups to one logical question (the lead part carries the
   // estimate), then map each to its minutes (explicit estimate or fallback).
   const perQuestion = groupIntoLogical(rows).map((u) =>

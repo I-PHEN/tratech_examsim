@@ -1000,7 +1000,7 @@ export function ManualQuestionEntry({
             inputMode="numeric"
             pattern="[0-9]*"
             value={estimatedMinutes}
-            onChange={(e) => { setEstimatedMinutes(e.target.value.replace(/\D/g, '')); setDirty(true); }}
+            onChange={(e) => { setEstimatedMinutes(e.target.value.replace(/\D/g, '').replace(/^0+/, '')); setDirty(true); }}
             placeholder="optional"
             className="mt-1 w-32 bg-bg-sunken border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
           />

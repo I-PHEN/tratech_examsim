@@ -10,6 +10,7 @@ import {
   mapAssets as mapAssetsForRouting,
 } from './questionService';
 import { ApiError } from '../lib/errors';
+import { DEFAULT_COUNT, scopesForMode } from '../lib/sessionConfig';
 import type { SessionPickInput } from '../schemas/session';
 
 interface PoolRow {
@@ -18,18 +19,6 @@ interface PoolRow {
   difficulty: 'easy' | 'medium' | 'hard';
   question_group_id: string | null;
   part_index: number | null;
-}
-
-const DEFAULT_COUNT: Record<SessionPickInput['mode'], number> = {
-  practice: 10,
-  diagnostic: 20,
-  midsem: 30,
-  full_exam: 60,
-};
-
-function scopesForMode(mode: SessionPickInput['mode']): Array<'midsem' | 'final' | 'both'> {
-  if (mode === 'midsem') return ['midsem', 'both'];
-  return ['midsem', 'final', 'both'];
 }
 
 function groupBy<T, K extends string>(items: T[], key: (item: T) => K): Map<K, T[]> {
