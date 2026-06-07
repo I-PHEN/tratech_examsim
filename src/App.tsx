@@ -452,6 +452,10 @@ export default function App() {
   // Practice ready-screen ephemeral state
   const [practiceTimeRaw, setPracticeTimeRaw] = useState<string>('20');
   const [practiceTimeUserSet, setPracticeTimeUserSet] = useState(false);
+  // True while the recommended practice time is being computed — the confirm
+  // screen shows "calculating…" instead of a stale default so the number never
+  // visibly jumps (e.g. 20 → 170).
+  const [recommendedLoading, setRecommendedLoading] = useState(false);
   const [startingExam, setStartingExam] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<{ sessionId: string; questions: Question[]; prefilledAnswers?: Record<number, string>; prefilledFieldAnswers?: Record<number, Record<number, string>>; difficultyFallback?: boolean } | null>(null);
@@ -746,6 +750,7 @@ export default function App() {
     if (state.selectedTopic?.id) params.set('topic_id', state.selectedTopic.id);
     if (apiDifficulty) params.set('difficulty', apiDifficulty);
     let cancelled = false;
+    setRecommendedLoading(true);
     apiGet<{ recommended_minutes: number }>(`/api/sessions/estimate-time?${params.toString()}`)
       .then((r) => {
         if (cancelled || practiceTimeUserSet) return;
@@ -756,6 +761,9 @@ export default function App() {
       })
       .catch(() => {
         /* leave the existing value; recommendation is best-effort */
+      })
+      .finally(() => {
+        setRecommendedLoading(false);
       });
     return () => {
       cancelled = true;
@@ -819,6 +827,9 @@ export default function App() {
   const handleTopicSelect = (topic: Topic) => {
     setStartError(null);
     setActiveSession(null);
+    // Show the "calculating…" state on the very first paint of the ready screen,
+    // before the recommendation effect has had a chance to run.
+    if (!practiceTimeUserSet) setRecommendedLoading(true);
     setState(prev => ({ ...prev, selectedTopic: topic, step: 'READY' }));
   };
 
@@ -1764,6 +1775,12 @@ export default function App() {
                       <div className="p-3.5 rounded-xl bg-bg-raised border border-border-subtle flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold text-text-tertiary uppercase tracking-[0.18em]">Time Limit</span>
                         {state.mode === 'PRACTICE' ? (
+                          recommendedLoading && !practiceTimeUserSet ? (
+                            <div className="flex items-center gap-2 h-[28px]">
+                              <Loader2 className="w-4 h-4 animate-spin text-text-tertiary" />
+                              <span className="text-sm font-medium text-text-tertiary">calculating…</span>
+                            </div>
+                          ) : (
                           <div className="flex items-center gap-2">
                              <input
                                type="text"
@@ -1785,6 +1802,7 @@ export default function App() {
                              />
                              <span className="text-sm font-medium text-text-secondary">mins</span>
                           </div>
+                          )
                         ) : (
                           <span className="text-xl font-bold text-text-primary">
                             {state.mode === 'MIDSEM' ? '60 mins' : state.mode === 'DIAGNOSTIC' ? '30 mins' : '150 mins'}
