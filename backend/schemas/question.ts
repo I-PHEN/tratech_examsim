@@ -49,6 +49,7 @@ const McqCreate = z.object({
   difficulty: Difficulty,
   exam_scope: ExamScope,
   ...GroupFields,
+  estimated_minutes: z.number().int().min(1).max(600).optional(),
   content: z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
@@ -68,6 +69,7 @@ const CalcCreate = z.object({
   exam_scope: ExamScope,
   answer_type: AnswerType,
   ...GroupFields,
+  estimated_minutes: z.number().int().min(1).max(600).optional(),
   content: z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
@@ -118,6 +120,7 @@ const McqUpdate = z.object({
   type: z.literal('mcq'),
   difficulty: Difficulty,
   exam_scope: ExamScope,
+  estimated_minutes: z.number().int().min(1).max(600).optional(),
   content: z.object({
     prompt: z.string().min(1),
     explanation: z.string().optional(),
@@ -132,6 +135,7 @@ const CalcUpdate = z.object({
   type: z.literal('calc'),
   difficulty: Difficulty,
   exam_scope: ExamScope,
+  estimated_minutes: z.number().int().min(1).max(600).optional(),
   answer_type: AnswerType,
   content: z.object({
     prompt: z.string().min(1),
