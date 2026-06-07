@@ -945,18 +945,33 @@ export async function pauseSession(uid: string, sessionId: string): Promise<Sess
 }
 
 /** Resume a paused session: rolls the pause duration into total_paused_ms. */
-export async function resumeSession(uid: string, sessionId: string): Promise<SessionRow> {
+export async function resumeSession(
+  uid: string,
+  sessionId: string
+): Promise<SessionRow & { elapsed_ms: number }> {
   const row = await loadOwnedSession(uid, sessionId);
   if (row.finished_at) throw new ApiError(409, 'ALREADY_FINISHED', 'Session already finished');
-  if (!row.paused_at) return row;
-  const pausedMs = Date.now() - new Date(row.paused_at).getTime();
-  const nextTotal = (row.total_paused_ms ?? 0) + Math.max(0, pausedMs);
-  const { data, error } = await supabase
-    .from('sessions')
-    .update({ paused_at: null, total_paused_ms: nextTotal })
-    .eq('id', sessionId)
-    .select(SESSION_COLUMNS)
-    .single();
-  if (error) throw error;
-  return data as SessionRow;
+
+  let current: SessionRow = row;
+  if (row.paused_at) {
+    const pausedMs = Date.now() - new Date(row.paused_at).getTime();
+    const nextTotal = (row.total_paused_ms ?? 0) + Math.max(0, pausedMs);
+    const { data, error } = await supabase
+      .from('sessions')
+      .update({ paused_at: null, total_paused_ms: nextTotal })
+      .eq('id', sessionId)
+      .select(SESSION_COLUMNS)
+      .single();
+    if (error) throw error;
+    current = data as SessionRow;
+  }
+
+  // Elapsed time excluding pauses, computed entirely on the SERVER clock (now −
+  // started_at − total_paused_ms). The client seeds its countdown from this and
+  // then only adds client-measured deltas, so a wrong client clock can't skew it.
+  const elapsed_ms = Math.max(
+    0,
+    Date.now() - new Date(current.started_at).getTime() - (current.total_paused_ms ?? 0)
+  );
+  return { ...current, elapsed_ms };
 }
