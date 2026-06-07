@@ -76,15 +76,12 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
       <div className="absolute z-0 w-[36rem] h-[36rem] rounded-full bg-accent/15 blur-[120px] -bottom-60 -left-40 pointer-events-none" />
       <div className="relative z-10 max-w-6xl mx-auto grid lg:grid-cols-2 gap-10 lg:gap-14 items-center">
         <div>
-          <span className="inline-flex items-center gap-2 text-[10px] md:text-xs font-bold uppercase tracking-[0.12em] text-accent-text bg-accent-muted border border-accent/30 rounded-full px-3 py-1.5">
-            ★ #TNBT · Starting with Chemical Engineering
-          </span>
-          <h1 className="mt-5 font-display italic font-bold leading-[1.05] tracking-tight text-4xl md:text-6xl">
+          <h1 className="font-display italic font-bold leading-[1.05] tracking-tight text-4xl md:text-6xl">
             The biggest <span className="text-accent-text">question hub</span> for KNUST students.
           </h1>
           <p className="mt-3 font-display italic text-lg md:text-xl text-accent-text">Solve more. Stress less.</p>
           <p className="mt-4 text-sm md:text-base text-text-secondary leading-relaxed max-w-md">
-            Practice past questions, sit full mock exams, and let SolveX bring the next set to you — starting with Chemical Engineering.
+            Practice past questions, sit full mock exams, and let SolveX bring the next set to you.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <button
@@ -332,7 +329,7 @@ function LandingFooter() {
         <Logo className="w-6 h-6" />
         <span className="text-sm font-bold">SolveX</span>
       </div>
-      <span className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">© 2026 · Built for KNUST · #TNBT</span>
+      <span className="text-[10px] uppercase tracking-[0.16em] text-text-tertiary">© 2026 · Built for KNUST</span>
     </footer>
   );
 }
