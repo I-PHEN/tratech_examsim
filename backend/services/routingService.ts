@@ -150,6 +150,9 @@ export async function pickSessionQuestions(
   // Count a multi-part group as ONE logical question for the count budget:
   // collapse the pool into logical units (group → its lead part), select over
   // those, then expand each selected unit back into its full sibling set.
+  // NOTE: a group's lead carries only its own topic_id/difficulty, so topic
+  // round-robin / diagnostic distribution treat a multi-part group by its lead's
+  // topic. This assumes a group's parts share a topic (the data convention).
   const leads = groupIntoLogical(typedPool).map((u) => u.lead);
 
   let selectedLeads: PoolRow[];

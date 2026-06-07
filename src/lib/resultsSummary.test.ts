@@ -34,4 +34,12 @@ describe('summarizeResults', () => {
     ]);
     expect(out).toEqual({ total: 1, correct: 0, incorrect: 0, unanswered: 1 });
   });
+
+  it('a group with a mix of unanswered and wrong parts counts as one incorrect', () => {
+    const out = summarizeResults([
+      { groupId: 'g', isCorrect: null, isUnanswered: true },
+      { groupId: 'g', isCorrect: false, isUnanswered: false },
+    ]);
+    expect(out).toEqual({ total: 1, correct: 0, incorrect: 1, unanswered: 0 });
+  });
 });

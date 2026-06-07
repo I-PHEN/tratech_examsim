@@ -335,12 +335,13 @@ export async function submitAnswer(
 export async function finishSession(uid: string, sessionId: string, input: SessionFinishInput) {
   const { data: session, error: sErr } = await supabase
     .from('sessions')
-    .select('id, user_uid, started_at, finished_at, score, total_questions, duration_ms')
+    .select('id, user_uid, started_at, finished_at, score, total_questions, duration_ms, question_ids')
     .eq('id', sessionId)
     .maybeSingle();
   if (sErr) throw sErr;
   if (!session) throw new ApiError(404, 'NOT_FOUND', 'Session not found');
   if (session.user_uid !== uid) throw new ApiError(403, 'FORBIDDEN', 'Not your session');
+  const sessionQuestionIdsRaw = (session as { question_ids: string[] | null }).question_ids;
 
   if (session.finished_at) {
     return {
@@ -370,7 +371,6 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
     string,
     {
       answer_type: string | null;
-      question_group_id: string | null;
       prompt: string;
       correct_answer: string;
       explanation: string | null;
@@ -379,14 +379,13 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
   if (gradedQuestionIds.length > 0) {
     const { data: qRows, error: qErr } = await supabase
       .from('questions')
-      .select('id, answer_type, question_group_id, question_content(prompt, correct_answer, explanation)')
+      .select('id, answer_type, question_content(prompt, correct_answer, explanation)')
       .in('id', gradedQuestionIds);
     if (qErr) throw qErr;
     for (const row of qRows ?? []) {
       const r = row as unknown as {
         id: string;
         answer_type: string | null;
-        question_group_id: string | null;
         question_content:
           | { prompt: string; correct_answer: string; explanation: string | null }
           | { prompt: string; correct_answer: string; explanation: string | null }[]
@@ -395,7 +394,6 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
       const c = Array.isArray(r.question_content) ? r.question_content[0] : r.question_content;
       qMeta.set(r.id, {
         answer_type: r.answer_type,
-        question_group_id: r.question_group_id,
         prompt: c?.prompt ?? '',
         correct_answer: c?.correct_answer ?? '',
         explanation: c?.explanation ?? null,
@@ -405,7 +403,7 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
 
   // Written answers are AI-graded now (concurrently); mcq/calc mirror is_correct.
   // `points` is 0–1 per answer and the session score is their sum (fractional).
-  const perAnswer: AnswerPoints[] = [];
+  const pointsByQuestion = new Map<string, number>();
   await parallelMap(answerRows, 4, async (a) => {
     const meta = qMeta.get(a.question_id);
     let pts = 0;
@@ -458,12 +456,35 @@ export async function finishSession(uid: string, sessionId: string, input: Sessi
       pts = a.is_correct === true ? 1 : 0;
       await supabase.from('session_answers').update({ points: pts }).eq('id', a.id);
     }
-    perAnswer.push({
-      question_id: a.question_id,
-      group_id: meta?.question_group_id ?? null,
-      points: pts,
-    });
+    pointsByQuestion.set(a.question_id, pts);
   });
+
+  // Build the score over EVERY question in the session (not just answered ones)
+  // so a multi-part group averages across all its parts — a skipped part counts
+  // as 0, not as "absent". Unanswered standalone questions contribute 0 too.
+  const sessionQuestionIds =
+    Array.isArray(sessionQuestionIdsRaw) && sessionQuestionIdsRaw.length > 0
+      ? sessionQuestionIdsRaw
+      : gradedQuestionIds;
+  const groupById = new Map<string, string | null>();
+  if (sessionQuestionIds.length > 0) {
+    const { data: grpRows, error: grpErr } = await supabase
+      .from('questions')
+      .select('id, question_group_id')
+      .in('id', sessionQuestionIds);
+    if (grpErr) throw grpErr;
+    for (const g of grpRows ?? []) {
+      groupById.set(
+        (g as { id: string }).id,
+        (g as { question_group_id: string | null }).question_group_id ?? null
+      );
+    }
+  }
+  const perAnswer: AnswerPoints[] = sessionQuestionIds.map((qid) => ({
+    question_id: qid,
+    group_id: groupById.get(qid) ?? null,
+    points: pointsByQuestion.get(qid) ?? 0,
+  }));
 
   const score = aggregateLogicalScore(perAnswer).score;
   const finishedAt = new Date();
