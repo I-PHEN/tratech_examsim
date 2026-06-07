@@ -1,5 +1,6 @@
 import { supabase } from '../lib/supabase';
 import { shuffle } from '../lib/shuffle';
+import { groupIntoLogical } from '../lib/logicalQuestions';
 import {
   QuestionWithContent,
   McqOption,
@@ -146,37 +147,43 @@ export async function pickSessionQuestions(
     return { mode: input.mode, count, picked: [], difficulty_fallback: false };
   }
 
-  let selected: PoolRow[];
-  if (typedPool.length <= count) {
-    selected = shuffle(typedPool);
+  // Count a multi-part group as ONE logical question for the count budget:
+  // collapse the pool into logical units (group → its lead part), select over
+  // those, then expand each selected unit back into its full sibling set.
+  const leads = groupIntoLogical(typedPool).map((u) => u.lead);
+
+  let selectedLeads: PoolRow[];
+  if (leads.length <= count) {
+    selectedLeads = shuffle(leads);
   } else if (input.mode === 'diagnostic') {
-    selected = pickDiagnostic(typedPool, count);
+    selectedLeads = pickDiagnostic(leads, count);
   } else if (input.mode === 'practice' && input.topic_id) {
-    selected = shuffle(typedPool).slice(0, count);
+    selectedLeads = shuffle(leads).slice(0, count);
   } else {
-    selected = roundRobinByTopic(typedPool, count);
+    selectedLeads = roundRobinByTopic(leads, count);
   }
 
-  // === Complete + order multi-part groups ===
-  // A picked sub-part pulls in ALL its siblings, kept contiguous and ordered by
-  // part_index. Groups are atomic — never split — so the final count may vary
-  // by ±(group size). The real length is stored in sessions.total_questions.
-  const groupIds = Array.from(
-    new Set(selected.map((s) => s.question_group_id).filter((g): g is string => Boolean(g)))
+  // Expand selected logical units into ordered question ids. A group pulls ALL
+  // its siblings (atomic, contiguous, ordered by part_index) — even siblings a
+  // difficulty/scope filter would have excluded — via a members lookup.
+  const selectedGroupIds = Array.from(
+    new Set(
+      selectedLeads.map((l) => l.question_group_id).filter((g): g is string => Boolean(g))
+    )
   );
   const membersByGroup = new Map<string, string[]>();
-  if (groupIds.length > 0) {
+  if (selectedGroupIds.length > 0) {
     const { data: members, error: mErr } = await supabase
       .from('questions')
       .select('id, question_group_id, part_index')
-      .in('question_group_id', groupIds);
+      .in('question_group_id', selectedGroupIds);
     if (mErr) throw mErr;
     const memberRows = (members ?? []) as Array<{
       id: string;
       question_group_id: string;
       part_index: number | null;
     }>;
-    for (const g of groupIds) {
+    for (const g of selectedGroupIds) {
       membersByGroup.set(
         g,
         memberRows
@@ -189,21 +196,15 @@ export async function pickSessionQuestions(
 
   const ids: string[] = [];
   const seen = new Set<string>();
-  const emittedGroups = new Set<string>();
-  for (const row of selected) {
-    if (ids.length >= count) break;
-    if (row.question_group_id) {
-      if (emittedGroups.has(row.question_group_id)) continue;
-      emittedGroups.add(row.question_group_id);
-      for (const memberId of membersByGroup.get(row.question_group_id) ?? [row.id]) {
-        if (!seen.has(memberId)) {
-          seen.add(memberId);
-          ids.push(memberId);
-        }
+  for (const lead of selectedLeads) {
+    const memberIds = lead.question_group_id
+      ? membersByGroup.get(lead.question_group_id) ?? [lead.id]
+      : [lead.id];
+    for (const memberId of memberIds) {
+      if (!seen.has(memberId)) {
+        seen.add(memberId);
+        ids.push(memberId);
       }
-    } else if (!seen.has(row.id)) {
-      seen.add(row.id);
-      ids.push(row.id);
     }
   }
 
