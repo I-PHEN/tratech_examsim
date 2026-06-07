@@ -82,6 +82,7 @@ import { ModeCard } from './components/ui/ModeCard';
 import { TopicCard } from './components/ui/TopicCard';
 import { NotificationsBell } from './components/NotificationsBell';
 import { ApiError, apiDelete, apiGet, apiPost } from './lib/apiClient';
+import { summarizeResults } from './lib/resultsSummary';
 import { Bookmark, Loader2 } from 'lucide-react';
 
 interface ScheduleListItem {
@@ -2029,22 +2030,21 @@ function ReviewScreen({ sessionId, focusQuestionId, onBack, courseName, onPracti
   }, [data]);
 
   const stats = useMemo(() => {
-    let correct = 0;
-    let incorrect = 0;
-    let unanswered = 0;
-    items.forEach((it) => {
-      if (it.isUnanswered) unanswered++;
-      else if (it.isCorrect) correct++;
-      else incorrect++;
-    });
-    const total = items.length;
-    // The authoritative score is the finished session's (fractional, with
-    // partial credit for AI-graded written answers); fall back to the count.
-    const rawScore = data?.session.score ?? correct;
+    const summary = summarizeResults(
+      items.map((it) => ({
+        groupId: it.groupId,
+        isCorrect: it.isCorrect,
+        isUnanswered: it.isUnanswered,
+      }))
+    );
+    const total = summary.total;
+    // The authoritative score is the finished session's (group-aware, fractional,
+    // with partial credit); fall back to the count of correct logical questions.
+    const rawScore = data?.session.score ?? summary.correct;
     return {
-      correct,
-      incorrect,
-      unanswered,
+      correct: summary.correct,
+      incorrect: summary.incorrect,
+      unanswered: summary.unanswered,
       total,
       score: Math.round(rawScore * 10) / 10,
       percent: total > 0 ? Math.round((rawScore / total) * 100) : 0,
