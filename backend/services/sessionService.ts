@@ -1,6 +1,7 @@
 import { supabase } from '../lib/supabase';
 import { ApiError } from '../lib/errors';
 import { pickSessionQuestions } from './routingService';
+import { groupIntoLogical } from '../lib/logicalQuestions';
 import {
   mapAssets,
   type QuestionAsset,
@@ -106,6 +107,16 @@ export async function createSession(uid: string, input: SessionCreateInput) {
     );
   }
 
+  // total_questions is the count of LOGICAL questions (a multi-part group counts
+  // once), so the student-facing total matches what they picked / see.
+  const logicalTotal = groupIntoLogical(
+    pickedQuestions.map((q) => ({
+      id: q.id,
+      question_group_id: q.question_group_id ?? null,
+      part_index: q.part_index ?? null,
+    }))
+  ).length;
+
   const { data: row, error } = await supabase
     .from('sessions')
     .insert({
@@ -113,7 +124,7 @@ export async function createSession(uid: string, input: SessionCreateInput) {
       program_course_id: input.program_course_id,
       mode: input.mode,
       topic_id: topicId,
-      total_questions: pickedQuestions.length,
+      total_questions: logicalTotal,
       // Persist the picked question ids in original order so any device can
       // resume the same exam with the same questions in the same positions.
       question_ids: pickedQuestions.map((q) => q.id),
