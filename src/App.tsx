@@ -72,6 +72,7 @@ import { SettingsScreen } from './components/SettingsScreen';
 import { HelpScreen } from './components/HelpScreen';
 import { ScheduledScreen } from './components/ScheduledScreen';
 import { Button } from './components/ui/Button';
+import { Logo } from './components/ui/Logo';
 import { Card } from './components/ui/Card';
 import { EmptyState } from './components/ui/EmptyState';
 import { Spinner } from './components/ui/Spinner';
@@ -982,9 +983,10 @@ export default function App() {
                 <Menu className="w-5 h-5" />
               </button>
               <div className={cn(
-                "flex flex-col whitespace-nowrap transition-opacity duration-100",
+                "flex items-center gap-2 whitespace-nowrap transition-opacity duration-100",
                 isSidebarExpanded || isMobileMenuOpen ? "opacity-100 " : "opacity-0"
               )}>
+                <Logo className="w-7 h-7 shrink-0" />
                 <span className="text-base font-display italic text-text-primary leading-tight">SolveX</span>
               </div>
             </div>
