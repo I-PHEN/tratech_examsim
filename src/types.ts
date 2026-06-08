@@ -39,6 +39,7 @@ export interface Topic {
   questionCounts?: { easy: number; medium: number; hard: number };
   mastery?: number;
   masteryState?: 'not_started' | 'in_progress' | 'scored';
+  attemptedCount?: number;
   difficulty?: 'Easy' | 'Medium' | 'Hard';
 }
 

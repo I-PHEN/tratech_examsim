@@ -122,6 +122,7 @@ interface ApiMastery {
   state: 'not_started' | 'in_progress' | 'scored';
   mastery: number;
   answered_count: number;
+  attempted_count: number;
 }
 
 interface ApiAsset {
@@ -523,6 +524,7 @@ export default function App() {
               questionCounts: r.question_counts ?? { easy: 0, medium: 0, hard: 0 },
               mastery: m?.mastery ?? 0,
               masteryState: m?.state ?? 'not_started',
+              attemptedCount: m?.attempted_count ?? 0,
             };
           })
         );
@@ -1716,6 +1718,7 @@ export default function App() {
                             disabled={disabled}
                             active={state.selectedTopic?.id === topic.id}
                             onClick={() => handleTopicSelect(topic)}
+                            attemptedCount={topic.attemptedCount}
                           />
                         );
                       })}

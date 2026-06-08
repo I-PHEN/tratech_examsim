@@ -22,6 +22,7 @@ export function TopicCard({
   onClick,
   count,
   disabled = false,
+  attemptedCount,
 }: {
   topic: Topic;
   active: boolean;
@@ -30,6 +31,8 @@ export function TopicCard({
   count?: number;
   /** Greyed, non-clickable — e.g. no questions at the selected difficulty. */
   disabled?: boolean;
+  /** Distinct questions the student has attempted in this topic. */
+  attemptedCount?: number;
   key?: string | number;
 }) {
   const Icon = getIcon(topic.name);
@@ -77,7 +80,7 @@ export function TopicCard({
         <div className="space-y-1.5">
           <div className="flex justify-between items-center text-[11px] font-semibold tracking-[0.14em] uppercase">
             <span className={active ? 'text-accent-text' : 'text-text-tertiary'}>
-              {shownCount} Questions
+              {attemptedCount != null ? `${attemptedCount} / ${shownCount}` : shownCount} Questions
             </span>
             <span className={active ? 'text-accent-text' : 'text-text-tertiary'}>
               {topic.masteryState === 'scored'
