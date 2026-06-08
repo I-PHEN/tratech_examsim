@@ -36,6 +36,7 @@ export interface TopicMastery {
   state: MasteryState;
   mastery: number;
   answered_count: number;
+  attempted_count: number;
 }
 
 /**
@@ -50,7 +51,7 @@ export async function getCourseMastery(
   const { data, error } = await supabase
     .from('session_answers')
     .select(
-      'points, answered_at, questions!inner(topic_id, program_course_id), sessions!inner(user_uid)'
+      'question_id, points, answered_at, questions!inner(topic_id, program_course_id), sessions!inner(user_uid)'
     )
     .eq('sessions.user_uid', uid)
     .eq('questions.program_course_id', programCourseId)
@@ -59,7 +60,9 @@ export async function getCourseMastery(
   if (error) throw error;
 
   const byTopic = new Map<string, number[]>();
+  const attemptedByTopic = new Map<string, Set<string>>();
   for (const row of (data ?? []) as unknown as Array<{
+    question_id: string | null;
     points: number | null;
     questions: { topic_id: string } | { topic_id: string }[] | null;
   }>) {
@@ -69,10 +72,16 @@ export async function getCourseMastery(
     const arr = byTopic.get(tid) ?? [];
     arr.push(row.points); // already newest-first from the ORDER BY
     byTopic.set(tid, arr);
+    if (row.question_id) {
+      const s = attemptedByTopic.get(tid) ?? new Set<string>();
+      s.add(row.question_id);
+      attemptedByTopic.set(tid, s);
+    }
   }
 
   return Array.from(byTopic.entries()).map(([topic_id, points]) => ({
     topic_id,
     ...computeMastery(points),
+    attempted_count: attemptedByTopic.get(topic_id)?.size ?? 0,
   }));
 }
