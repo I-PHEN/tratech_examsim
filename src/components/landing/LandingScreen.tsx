@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight, Target, FileText, Stethoscope, Bot, CalendarClock, BarChart3, Bell,
-  Sparkles, Check, Clock,
+  Sparkles, Check, Clock, BookOpen,
 } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { cn } from '../../lib/utils';
@@ -79,18 +79,30 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
         @keyframes sxfloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
         @keyframes sxchipA{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}}
         @keyframes sxchipB{0%,100%{transform:translateY(0)}50%{transform:translateY(8px)}}
+        @keyframes sxchipC{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+        @keyframes sxgradshift{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+        @keyframes sxbadgepulse{0%,100%{box-shadow:0 0 0 0 transparent}50%{box-shadow:0 0 16px 4px color-mix(in srgb,var(--accent) 20%,transparent)}}
+        @keyframes sxgridpan{from{background-position:0px 0px}to{background-position:48px 48px}}
+        @keyframes sxglowbreathe{0%,100%{opacity:0.15;transform:scale(1)}50%{opacity:0.22;transform:scale(1.07)}}
+        @keyframes sxproofslide{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
         .sx-rise{opacity:0;animation:sxrise .7s cubic-bezier(.22,1,.36,1) forwards}
         .sx-float{animation:sxfloat 6s ease-in-out infinite}
         .sx-chipA{animation:sxchipA 4.5s ease-in-out infinite}
         .sx-chipB{animation:sxchipB 5.5s ease-in-out infinite}
-        @media (prefers-reduced-motion:reduce){.sx-rise,.sx-float,.sx-chipA,.sx-chipB{animation:none;opacity:1}}
+        .sx-chipC{animation:sxchipC 3.8s ease-in-out infinite}
+        .sx-gradshift{animation:sxgradshift 6s ease infinite}
+        .sx-badgepulse{animation:sxbadgepulse 4s ease-in-out infinite}
+        .sx-gridpan{animation:sxgridpan 20s linear infinite}
+        .sx-glowbreathe{animation:sxglowbreathe 8s ease-in-out infinite}
+        .sx-proofslide{opacity:0;animation:sxproofslide .5s cubic-bezier(.22,1,.36,1) forwards}
+        @media (prefers-reduced-motion:reduce){.sx-rise,.sx-float,.sx-chipA,.sx-chipB,.sx-chipC,.sx-gradshift,.sx-badgepulse,.sx-gridpan,.sx-glowbreathe,.sx-proofslide{animation:none!important;opacity:1!important}}
       `}</style>
 
       {/* layered glows + faint masked grid */}
-      <div className="absolute z-0 w-[40rem] h-[40rem] rounded-full bg-accent/15 blur-[130px] -top-48 -right-40 pointer-events-none" />
-      <div className="absolute z-0 w-[34rem] h-[34rem] rounded-full bg-accent/10 blur-[130px] -bottom-56 -left-48 pointer-events-none" />
+      <div className="sx-glowbreathe absolute z-0 w-[40rem] h-[40rem] rounded-full bg-accent/15 blur-[130px] -top-48 -right-40 pointer-events-none" />
+      <div className="sx-glowbreathe absolute z-0 w-[34rem] h-[34rem] rounded-full bg-accent/10 blur-[130px] -bottom-56 -left-48 pointer-events-none" style={{ animationDelay: '4s', animationDirection: 'reverse' }} />
       <div
-        className="absolute inset-0 z-0 pointer-events-none opacity-60"
+        className="sx-gridpan absolute inset-0 z-0 pointer-events-none opacity-60"
         style={{
           backgroundImage:
             'linear-gradient(var(--border-subtle) 1px,transparent 1px),linear-gradient(90deg,var(--border-subtle) 1px,transparent 1px)',
@@ -102,21 +114,29 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
 
       <div className="relative z-10 max-w-6xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-14 items-center">
         <div>
-          <span className="sx-rise inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent-muted px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-accent-text">
-            <Sparkles className="w-3.5 h-3.5" /> Past questions · Mock exams · Scheduling
+          <span className="sx-rise sx-badgepulse inline-flex items-center gap-2 rounded-full border border-accent/30 bg-accent-muted px-3.5 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-accent-text">
+            <Sparkles className="w-3.5 h-3.5" /> Past questions · Reference books · Jude AI
           </span>
           <h1 className="sx-rise mt-5 font-display italic font-bold leading-[1.05] tracking-tight text-4xl md:text-6xl" style={{ animationDelay: '.08s' }}>
-            The biggest{' '}
-            <span className="bg-clip-text text-transparent" style={{ backgroundImage: 'linear-gradient(120deg,var(--accent-text),var(--accent))' }}>
-              question hub
-            </span>{' '}
-            for KNUST students.
+            The complete KNUST question bank —{' '}
+            <span
+              className="sx-gradshift bg-clip-text text-transparent"
+              style={{
+                backgroundImage: 'linear-gradient(120deg,var(--accent-text),var(--accent),var(--accent-text))',
+                backgroundSize: '300% 300%',
+              }}
+            >
+              with a tutor built in.
+            </span>
           </h1>
           <p className="sx-rise mt-3 font-display italic text-lg md:text-xl text-accent-text" style={{ animationDelay: '.16s' }}>
             Solve more. Stress less.
           </p>
           <p className="sx-rise mt-4 text-sm md:text-base text-text-secondary leading-relaxed max-w-md" style={{ animationDelay: '.24s' }}>
-            Practice past questions, sit full mock exams, and let SolveX bring the next set to you.
+            Every past exam paper and reference book question, in one place.{' '}
+            <strong className="text-text-primary font-semibold">Jude</strong> — our AI tutor — grades your answers,
+            explains every question, and shows exactly where you're weak.
+            Then schedules the next session before you forget.
           </p>
           <div className="sx-rise mt-7 flex flex-wrap gap-3" style={{ animationDelay: '.32s' }}>
             <button
@@ -132,10 +152,22 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
               Sign in
             </button>
           </div>
-          <div className="sx-rise mt-9 flex flex-wrap items-center gap-x-5 gap-y-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-tertiary" style={{ animationDelay: '.4s' }}>
-            <span className="inline-flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-accent-text" /> Live exam timer</span>
-            <span className="inline-flex items-center gap-1.5"><Bot className="w-3.5 h-3.5 text-accent-text" /> AI-graded answers</span>
-            <span className="inline-flex items-center gap-1.5"><CalendarClock className="w-3.5 h-3.5 text-accent-text" /> Scheduled practice</span>
+          <div className="mt-9 flex flex-wrap items-center gap-x-5 gap-y-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-tertiary">
+            {([
+              { Icon: FileText,      label: 'Past exam papers',   delay: '.40s' },
+              { Icon: BookOpen,      label: 'Reference book Qs',  delay: '.53s' },
+              { Icon: Bot,           label: 'Jude AI tutor',      delay: '.66s' },
+              { Icon: Sparkles,      label: 'AI-graded answers',  delay: '.79s' },
+              { Icon: CalendarClock, label: 'Scheduled practice', delay: '.92s' },
+            ] as const).map(({ Icon, label, delay }) => (
+              <span
+                key={label}
+                className="sx-proofslide inline-flex items-center gap-1.5"
+                style={{ animationDelay: delay }}
+              >
+                <Icon className="w-3.5 h-3.5 text-accent-text" /> {label}
+              </span>
+            ))}
           </div>
           <figure className="sx-rise mt-9 border-l-2 border-accent/50 pl-4 max-w-md" style={{ animationDelay: '.48s' }}>
             <blockquote className="font-display italic text-base md:text-lg text-text-primary leading-snug">
@@ -159,6 +191,14 @@ function HeroPreview() {
     <div className="sx-rise relative mx-auto w-full max-w-md lg:max-w-none" style={{ animationDelay: '.3s' }}>
       <div className="absolute -inset-6 z-0 rounded-[2.5rem] bg-accent/20 blur-3xl pointer-events-none" />
       <div className="sx-float relative z-10">
+          {/* Jude chip — top right, shows AI tutor explaining a question */}
+          <div className="sx-chipC absolute -top-8 right-4 z-20 hidden sm:flex flex-col gap-1 rounded-xl border border-accent/30 bg-bg-page/95 px-3 py-2 shadow-xl backdrop-blur-sm">
+            <span className="text-[9px] font-black uppercase tracking-widest text-accent-text">✦ Jude</span>
+            <span className="text-[10px] text-text-secondary leading-snug">
+              <span className="font-semibold text-text-primary">1st-order CSTR:</span> X&nbsp;=&nbsp;kτ/(1+kτ) ≈ 0.375 ✓
+            </span>
+          </div>
+
         {/* card peeking behind for depth */}
         <div className="absolute inset-0 -right-5 -top-5 rounded-3xl border border-border-subtle bg-bg-surface/50 rotate-3 -z-10 hidden sm:block" />
 
