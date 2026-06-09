@@ -2822,8 +2822,8 @@ Stay strictly on THIS question — politely decline unrelated requests.
 # Formatting (the chat renders rich Markdown — use it well)
 - Use ## / ### headings, **bold** for key terms, and bullet / numbered lists.
 - Use GitHub-flavoured tables for comparisons.
-- Use LaTeX for ALL math. Delimiters MUST be dollar signs: $...$ inline, $$...$$ for display.
-  NEVER use \\( \\) or \\[ \\] — those do not render. Put each calculation step on its own line.
+- Use LaTeX for ALL math. Delimiters MUST be bracket notation: \\(...\\) inline, \\[...\\] for display.
+  NEVER use $ or $$ as math delimiters — they cause rendering errors. Put each calculation step on its own line.
 - When a diagram would help (a process, cycle, decision tree, relationship, comparison),
   emit a \`\`\`mermaid fenced block — and ALWAYS do so when the student asks to "see",
   "draw", "show" or "visualise" something. Use \`flowchart TD\` or \`flowchart LR\`.
