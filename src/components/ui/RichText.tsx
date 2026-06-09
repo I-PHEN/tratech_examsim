@@ -38,6 +38,9 @@ function detectFenceLang(raw: string): 'mermaid' | null {
  */
 function normalizeMath(text: string): string {
   return text
+    // Escape currency dollar signs ($70, $520) so they don't confuse the math
+    // delimiter parser. Negative lookbehind skips $$ display-math openers.
+    .replace(/(?<!\$)\$(?=\d)/g, '\\$')
     .replace(/\\\[([\s\S]+?)\\\]/g, (_, inner) => `$$${inner}$$`)
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, inner) => `$${inner}$`);
 }
