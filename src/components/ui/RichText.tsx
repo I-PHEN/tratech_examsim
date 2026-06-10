@@ -38,15 +38,12 @@ function detectFenceLang(raw: string): 'mermaid' | null {
  */
 function normalizeMath(text: string): string {
   return text
-    // Escape currency dollar signs ($70, $520) so they don't confuse the math
-    // delimiter parser. Negative lookbehind skips $$ display-math openers.
-    .replace(/(?<!\$)\$(?=\d)/g, '\\$')
     .replace(/\\\[([\s\S]+?)\\\]/g, (_, inner) => `$$${inner}$$`)
     .replace(/\\\(([\s\S]+?)\\\)/g, (_, inner) => `$${inner}$`)
-    // After all delimiter conversions, escape any bare $ that ended up inside a
-    // $$...$$ block (e.g. \(...\) nested inside \[...\] converts to $...$
-    // inside $$...$$, which KaTeX rejects). Skips already-escaped \$ and the
-    // $$ delimiters themselves.
+    // Escape any bare $ that ended up inside a $$...$$ block after the
+    // conversions above (e.g. \(...\) nested inside \[...\] becomes $...$
+    // inside $$...$$, which KaTeX rejects as "$ in math mode").
+    // Skips already-escaped \$ and the $$ delimiters themselves.
     .replace(/\$\$([\s\S]+?)\$\$/g, (_, inner) =>
       `$$${inner.replace(/(?<![\\$])\$(?!\$)/g, '\\$')}$$`
     );
