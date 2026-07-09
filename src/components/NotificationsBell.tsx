@@ -154,7 +154,7 @@ export function NotificationsBell({ onOpenReminder }: NotificationsBellProps = {
           className="absolute right-0 mt-2 w-80 max-w-[calc(100vw-2rem)] z-50 origin-top-right animate-fade-in rounded-2xl bg-bg-raised border border-border-medium shadow-2xl overflow-hidden"
         >
           <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-            <h3 className="font-display italic text-lg text-text-primary">Notifications</h3>
+            <h3 className="font-display text-lg text-text-primary">Notifications</h3>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <span className="text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-text">

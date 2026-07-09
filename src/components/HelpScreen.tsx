@@ -1,4 +1,4 @@
-import { ChevronLeft, Compass, Layers, Target, FileText, Sparkles, Bookmark, BarChart3, Settings } from 'lucide-react';
+import { ChevronLeft, Compass, Layers, Target, FileText, MessageCircleQuestion, Bookmark, BarChart3, Settings } from 'lucide-react';
 
 const SECTIONS = [
   {
@@ -22,7 +22,7 @@ const SECTIONS = [
     body: 'Use the Question Navigator to jump between questions — green means answered, yellow means flagged. Flag anything you want to revisit, and pause up to 3 times if you need a break. Tap any diagram to view it full-screen. Questions may be multiple-choice, written, or multi-input.',
   },
   {
-    icon: Sparkles,
+    icon: MessageCircleQuestion,
     title: 'Reviewing & Jude',
     body: 'After you submit, open any question to see your answer, the correct answer, and a step-by-step worked solution. Tap "Ask Jude" for the built-in AI tutor — it explains the question and answers your follow-ups.',
   },

@@ -986,7 +986,7 @@ export default function App() {
                 <Logo className="w-8 h-8" />
               </button>
               <span className={cn(
-                "text-base font-display italic text-text-primary leading-tight whitespace-nowrap transition-opacity duration-100",
+                "text-base font-display text-text-primary leading-tight whitespace-nowrap transition-opacity duration-100",
                 isSidebarExpanded || isMobileMenuOpen ? "opacity-100" : "opacity-0"
               )}>
                 SolveX
@@ -1509,18 +1509,18 @@ export default function App() {
                     size="lg"
                     eyebrow="Targeted Practice"
                     title="Diagnose & destroy weaknesses"
-                    description="AI-generated problem sets designed to patch your specific knowledge gaps based on your session history."
+                    description="Personalized problem sets that patch your specific knowledge gaps based on your session history."
                   />
 
                   <section className="space-y-6">
-                    <h3 className="text-lg font-display italic text-text-primary flex items-center gap-2">
-                      <Sparkles className="w-5 h-5 text-accent" />
+                    <h3 className="text-lg font-display font-bold text-text-primary flex items-center gap-2">
+                      <Target className="w-5 h-5 text-text-secondary" />
                       Priority targets
                     </h3>
 
                     {weaknesses.length === 0 ? (
                       <EmptyState
-                        icon={Sparkles}
+                        icon={Target}
                         title="Nothing to target yet"
                         description="Take a few practice sessions and your weakest topics will surface here."
                       />
@@ -1560,7 +1560,7 @@ export default function App() {
                      <div className="w-12 h-12 rounded-2xl bg-bg-raised flex items-center justify-center mb-5">
                        <Target className="w-6 h-6 text-text-tertiary" />
                      </div>
-                     <h3 className="text-lg md:text-xl font-display italic text-text-primary mb-2">Diagnostic test</h3>
+                     <h3 className="text-lg md:text-xl font-display font-bold text-text-primary mb-2">Diagnostic test</h3>
                      <p className="text-sm text-text-secondary max-w-md mx-auto mb-6">Need a fresh evaluation? Take a 20-question randomized test across your semester courses to find new weak spots.</p>
                      <Button variant="primary" size="lg" onClick={() => setState(p => ({ ...p, mode: 'DIAGNOSTIC', step: 'COURSE_SELECT' }))}>
                         Start diagnostic
@@ -1587,9 +1587,8 @@ export default function App() {
                           variant="interactive"
                           padding="md"
                           onClick={() => handleCourseSelect(course)}
-                          className="group relative overflow-hidden min-h-[9rem] md:min-h-[10rem] flex flex-col text-left"
+                          className="min-h-[9rem] md:min-h-[10rem] flex flex-col text-left"
                         >
-                          <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 blur-3xl rounded-full pointer-events-none" />
                           <h3 className="text-lg md:text-xl font-semibold text-text-primary mb-1.5">
                             {course.name}
                           </h3>
@@ -1598,7 +1597,7 @@ export default function App() {
                               {course.description}
                             </p>
                           )}
-                          <div className="mt-auto pt-4 flex items-center text-[11px] font-semibold text-accent-text opacity-0 group-hover:opacity-100 transition-opacity uppercase tracking-[0.18em] gap-1.5">
+                          <div className="mt-auto pt-4 flex items-center text-[11px] font-semibold text-text-tertiary uppercase tracking-[0.18em] gap-1.5">
                             Select course <ArrowRight className="w-3.5 h-3.5" />
                           </div>
                         </Card>
@@ -1751,7 +1750,7 @@ export default function App() {
                   <Card variant="default" padding="md" className="space-y-4">
                     <div className="flex items-center gap-4 pb-4 border-b border-border-subtle">
                       <div className="w-11 h-11 bg-bg-raised rounded-xl flex items-center justify-center shrink-0">
-                        {state.mode === 'PRACTICE' ? <Target className="w-5 h-5 text-accent" /> : state.mode === 'DIAGNOSTIC' ? <Sparkles className="w-5 h-5 text-accent" /> : <Timer className="w-5 h-5 text-accent" />}
+                        {state.mode === 'PRACTICE' ? <Target className="w-5 h-5 text-accent" /> : state.mode === 'DIAGNOSTIC' ? <Activity className="w-5 h-5 text-accent" /> : <Timer className="w-5 h-5 text-accent" />}
                       </div>
                       <div>
                         <h3 className="text-lg font-semibold text-text-primary">{state.selectedCourse?.name}</h3>

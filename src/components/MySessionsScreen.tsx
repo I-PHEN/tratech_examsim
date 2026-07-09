@@ -196,7 +196,7 @@ export function MySessionsScreen({
           </div>
 
           <div>
-            <h1 className="text-2xl md:text-4xl leading-tight font-display italic text-text-primary mb-1.5">
+            <h1 className="text-2xl md:text-4xl leading-tight font-display text-text-primary mb-1.5">
               My Sessions
             </h1>
             <p className="text-text-secondary text-sm md:text-base">Review your past performance, analyze mistakes, and track your growth over time.</p>

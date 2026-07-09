@@ -28,7 +28,7 @@ export function SectionHeader({
         )}
         <h2
           className={cn(
-            'font-display italic text-text-primary leading-tight',
+            'font-display text-text-primary leading-tight',
             size === 'lg' ? 'text-3xl md:text-4xl' : 'text-2xl md:text-[28px]',
           )}
         >

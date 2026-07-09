@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronLeft, Target, Clock, BrainCircuit, Sparkles } from 'lucide-react';
+import { ChevronLeft, Target, Clock, BarChart3 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { apiGet } from '../lib/apiClient';
 import { cn } from '../lib/utils';
@@ -119,7 +119,7 @@ export function PerformanceScreen({
             <ChevronLeft className="w-5 h-5" />
           </button>
           <div className="flex-1">
-            <h1 className="text-3xl md:text-4xl font-display italic text-text-primary leading-tight">Performance Overview</h1>
+            <h1 className="text-3xl md:text-4xl font-display font-bold text-text-primary leading-tight">Performance Overview</h1>
             <p className="text-sm md:text-base text-text-secondary mt-1">Analyze your progress and identify areas for improvement.</p>
           </div>
           {(yearLevel != null || semester != null) && (
@@ -168,48 +168,48 @@ export function PerformanceScreen({
 
         {empty ? (
           <EmptyState
-            icon={Sparkles}
+            icon={BarChart3}
             title="No data yet"
             description="Take your first session to start tracking your performance here."
           />
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-5">
-              <Card variant="default" padding="md" className="flex flex-col gap-4 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-6 opacity-[0.07] group-hover:opacity-15 transition-opacity text-accent">
-                  <Target className="w-24 h-24" />
+              <Card variant="default" padding="md" className="flex flex-col gap-2">
+                <div className="w-9 h-9 rounded-lg bg-bg-page text-text-secondary flex items-center justify-center">
+                  <Target className="w-5 h-5" />
                 </div>
-                <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.18em] relative z-10">Total Questions</p>
-                <h3 className="text-4xl font-bold text-text-primary relative z-10">
+                <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.18em] mt-2">Total Questions</p>
+                <h3 className="text-4xl font-bold text-text-primary">
                   {overview.total_attempted.toLocaleString()}
                 </h3>
-                <div className="flex items-center gap-2 text-sm text-text-tertiary relative z-10 mt-auto pt-4">
+                <div className="flex items-center gap-2 text-sm text-text-tertiary mt-auto pt-4">
                   <span>{overview.total_correct.toLocaleString()} correct</span>
                 </div>
               </Card>
-              <Card variant="default" padding="md" className="flex flex-col gap-4 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-6 opacity-[0.07] group-hover:opacity-15 transition-opacity text-accent">
-                  <BrainCircuit className="w-24 h-24" />
+              <Card variant="default" padding="md" className="flex flex-col gap-2">
+                <div className="w-9 h-9 rounded-lg bg-bg-page text-text-secondary flex items-center justify-center">
+                  <BarChart3 className="w-5 h-5" />
                 </div>
-                <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.18em] relative z-10">Average Accuracy</p>
-                <h3 className="text-4xl font-bold text-text-primary relative z-10">
+                <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.18em] mt-2">Average Accuracy</p>
+                <h3 className="text-4xl font-bold text-text-primary">
                   {Math.round(overview.accuracy * 100)}%
                 </h3>
-                <div className="flex items-center gap-2 text-sm text-text-tertiary relative z-10 mt-auto pt-4">
+                <div className="flex items-center gap-2 text-sm text-text-tertiary mt-auto pt-4">
                   <span>across all sessions</span>
                 </div>
               </Card>
-              <Card variant="default" padding="md" className="flex flex-col gap-4 relative overflow-hidden group">
-                <div className="absolute top-0 right-0 p-6 opacity-[0.07] group-hover:opacity-15 transition-opacity text-accent">
-                  <Clock className="w-24 h-24" />
+              <Card variant="default" padding="md" className="flex flex-col gap-2">
+                <div className="w-9 h-9 rounded-lg bg-bg-page text-text-secondary flex items-center justify-center">
+                  <Clock className="w-5 h-5" />
                 </div>
-                <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.18em] relative z-10">Time Learning</p>
-                <h3 className="text-4xl font-bold text-text-primary relative z-10">
+                <p className="text-[10px] font-semibold text-text-secondary uppercase tracking-[0.18em] mt-2">Time Learning</p>
+                <h3 className="text-4xl font-bold text-text-primary">
                   {time.h}
                   <span className="text-2xl text-text-tertiary">h</span> {time.m}
                   <span className="text-2xl text-text-tertiary">m</span>
                 </h3>
-                <div className="flex items-center gap-2 text-sm text-text-tertiary relative z-10 mt-auto pt-4">
+                <div className="flex items-center gap-2 text-sm text-text-tertiary mt-auto pt-4">
                   <span>Across {overview.sessions_completed} session{overview.sessions_completed === 1 ? '' : 's'}</span>
                 </div>
               </Card>
@@ -218,7 +218,7 @@ export function PerformanceScreen({
             <div className="grid grid-cols-1 gap-6">
               <Card variant="default" padding="md" className="flex flex-col">
                 <div className="mb-6">
-                  <h2 className="text-xl font-display italic text-text-primary">Accuracy Trend</h2>
+                  <h2 className="text-xl font-display font-bold text-text-primary">Accuracy Trend</h2>
                   <p className="text-sm text-text-secondary">Your performance over your last {chartData.length} session{chartData.length === 1 ? '' : 's'}</p>
                 </div>
                 <div className="flex-1 min-h-[300px] w-full">

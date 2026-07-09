@@ -36,7 +36,7 @@ export function EmptyState({
       >
         <Icon className={cn(compact ? 'w-5 h-5' : 'w-6 h-6', 'text-text-tertiary')} />
       </div>
-      <h3 className="font-display italic text-text-primary text-lg md:text-xl mb-2">{title}</h3>
+      <h3 className="font-display text-text-primary text-lg md:text-xl mb-2">{title}</h3>
       {description && (
         <p className="text-sm text-text-secondary max-w-sm leading-relaxed">{description}</p>
       )}
