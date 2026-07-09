@@ -1,5 +1,7 @@
-import { ArrowRight, Target, FileText, Stethoscope, CalendarClock, BarChart3, Bot, BookOpen } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ArrowRight, Target, FileText, Stethoscope, CalendarClock, BarChart3, Bot, BookOpen, Bell } from 'lucide-react';
 import { Logo } from '../ui/Logo';
+import { cn } from '../../lib/utils';
 
 export function LandingScreen({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
   return (
@@ -40,7 +42,7 @@ function LandingNav({ onStart, onSignIn }: { onStart: () => void; onSignIn: () =
 
 function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void }) {
   return (
-    <section className="px-5 md:px-10 py-20 md:py-32">
+    <section className="px-5 md:px-10 py-16 md:py-24">
       <div className="max-w-3xl mx-auto text-center">
         <h1 className="font-display font-bold leading-[1.05] tracking-tight text-4xl md:text-6xl">
           The complete KNUST question bank,
@@ -65,21 +67,182 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
             Sign in
           </button>
         </div>
+      </div>
 
-        <div className="mt-12 flex flex-wrap items-center justify-center gap-x-6 gap-y-2.5 text-[11px] font-semibold uppercase tracking-[0.1em] text-text-tertiary">
-          {([
-            { Icon: FileText,      label: 'Past exam papers' },
-            { Icon: BookOpen,      label: 'Reference book Qs' },
-            { Icon: Bot,           label: 'Tutor explanations' },
-            { Icon: CalendarClock, label: 'Scheduled practice' },
-          ] as const).map(({ Icon, label }) => (
-            <span key={label} className="inline-flex items-center gap-1.5">
-              <Icon className="w-3.5 h-3.5 text-text-tertiary" /> {label}
-            </span>
-          ))}
+      <HeroDemo />
+    </section>
+  );
+}
+
+/** Auto-cycling 4-step demo of the app flow. Pure React state + CSS opacity,
+ *  no keyframes. Pauses on first slide under prefers-reduced-motion. */
+const DEMO_STEPS = [
+  { caption: '1 · Pick how you want to practice', render: () => <SlidePick /> },
+  { caption: '2 · Solve under a live timer',       render: () => <SlideSolve /> },
+  { caption: '3 · See your score & weak topics',   render: () => <SlideReview /> },
+  { caption: '4 · Schedule the next set',          render: () => <SlideSchedule /> },
+] as const;
+
+const DEMO_INTERVAL_MS = 3500;
+
+function HeroDemo() {
+  const [idx, setIdx] = useState(0);
+
+  useEffect(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reduce) return;
+    const t = setInterval(() => {
+      setIdx((i) => (i + 1) % DEMO_STEPS.length);
+    }, DEMO_INTERVAL_MS);
+    return () => clearInterval(t);
+  }, []);
+
+  return (
+    <div className="mt-14 md:mt-20 max-w-2xl mx-auto">
+      <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-text-tertiary text-center mb-3 h-4">
+        {DEMO_STEPS[idx].caption}
+      </div>
+      <div className="relative h-72 md:h-80 rounded-2xl border border-border-subtle bg-bg-surface overflow-hidden">
+        {DEMO_STEPS.map((s, i) => (
+          <div
+            key={i}
+            className={cn(
+              'absolute inset-0 p-5 md:p-6 transition-opacity duration-500 ease-out',
+              i === idx ? 'opacity-100' : 'opacity-0 pointer-events-none',
+            )}
+            aria-hidden={i !== idx}
+          >
+            {s.render()}
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 flex items-center justify-center gap-1.5">
+        {DEMO_STEPS.map((_, i) => (
+          <button
+            key={i}
+            type="button"
+            aria-label={`Go to step ${i + 1}`}
+            onClick={() => setIdx(i)}
+            className={cn(
+              'h-1.5 rounded-full transition-all',
+              i === idx ? 'w-6 bg-accent' : 'w-1.5 bg-border-medium hover:bg-border-accent',
+            )}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlidePick() {
+  const cards = [
+    { Icon: Target,      label: 'Practice',      hint: 'Drill a topic',     on: true },
+    { Icon: Stethoscope, label: 'Diagnostic',    hint: 'Find weak spots',   on: false },
+    { Icon: FileText,    label: 'Mock Exam',     hint: 'Timed paper',       on: false },
+  ];
+  return (
+    <div className="grid grid-cols-3 gap-2.5 h-full">
+      {cards.map(({ Icon, label, hint, on }) => (
+        <div
+          key={label}
+          className={cn(
+            'rounded-xl border p-3 flex flex-col gap-2',
+            on ? 'border-accent/50 bg-accent/10' : 'border-border-subtle bg-bg-surface',
+          )}
+        >
+          <div className={cn(
+            'w-8 h-8 rounded-lg flex items-center justify-center',
+            on ? 'bg-accent text-bg-page' : 'bg-bg-raised text-text-tertiary',
+          )}>
+            <Icon className="w-4 h-4" />
+          </div>
+          <span className="text-xs font-bold text-text-primary">{label}</span>
+          <span className="text-[10px] text-text-tertiary leading-snug">{hint}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SlideSolve() {
+  const opts: Array<[string, string, boolean]> = [
+    ['A', '0.42', false],
+    ['B', '0.68', true],
+    ['C', '0.75', false],
+  ];
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex justify-between text-[10px] uppercase tracking-[0.16em] text-text-tertiary mb-3">
+        <span>Q3 / 10</span>
+        <span className="text-accent-text font-bold tabular-nums">19:54</span>
+      </div>
+      <p className="text-xs md:text-sm text-text-primary mb-4 leading-snug">
+        A CSTR runs at steady state with k = 0.12 s⁻¹. Find the conversion X.
+      </p>
+      <div className="space-y-2 flex-1">
+        {opts.map(([l, v, on]) => (
+          <div
+            key={l}
+            className={cn(
+              'h-10 rounded-lg border flex items-center gap-2 px-3 text-xs',
+              on
+                ? 'border-accent/60 bg-accent/10 text-text-primary'
+                : 'border-border-subtle bg-bg-surface text-text-secondary',
+            )}
+          >
+            <span className="font-black">{l}</span>
+            <span>{v}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlideReview() {
+  const topics: Array<[string, number]> = [
+    ['Reactor Design', 0.9],
+    ['Mass Balance',   0.6],
+    ['Thermodynamics', 0.4],
+  ];
+  return (
+    <div className="flex items-center gap-5 h-full">
+      <div className="text-center shrink-0">
+        <div className="font-display font-bold text-4xl text-text-primary leading-none">
+          8<span className="text-text-tertiary text-2xl">/10</span>
+        </div>
+        <div className="mt-1 text-[10px] font-bold uppercase tracking-[0.16em] text-accent-text">80% · Strong</div>
+      </div>
+      <div className="flex-1 space-y-2.5">
+        {topics.map(([t, v]) => (
+          <div key={t}>
+            <div className="text-[9px] uppercase tracking-[0.14em] text-text-tertiary mb-1">{t}</div>
+            <div className="h-2 rounded-full bg-bg-raised overflow-hidden">
+              <div className="h-full rounded-full bg-accent" style={{ width: `${v * 100}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SlideSchedule() {
+  return (
+    <div className="h-full flex items-center">
+      <div className="w-full rounded-xl border border-border-subtle bg-bg-surface p-4 flex items-center gap-3">
+        <div className="w-10 h-10 rounded-lg bg-bg-raised border border-border-subtle flex items-center justify-center text-text-secondary shrink-0">
+          <CalendarClock className="w-5 h-5" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-bold text-text-primary truncate">Reactor Design · 10 questions</div>
+          <div className="text-[11px] text-text-tertiary">Tomorrow · 6:00 PM</div>
+        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.12em] text-accent-text bg-accent-muted border border-accent/30 rounded-full px-2.5 py-1 shrink-0">
+          <Bell className="w-3 h-3" /> Reminder set
         </div>
       </div>
-    </section>
+    </div>
   );
 }
 
