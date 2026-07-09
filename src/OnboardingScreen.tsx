@@ -150,7 +150,7 @@ export function OnboardingScreen({
         </div>
 
         <div className="relative z-10 space-y-4 lg:space-y-6 max-w-lg mt-8 lg:mt-0 mb-8 lg:mb-0">
-          <h1 className="text-3xl md:text-5xl lg:text-6xl font-display italic font-bold text-text-primary leading-[1.1]">
+          <h1 className="text-3xl md:text-5xl lg:text-6xl font-display font-bold text-text-primary leading-[1.1]">
             Master your exams. <br className="hidden md:block"/>
             Command your results.
           </h1>

@@ -458,7 +458,7 @@ export function ScheduledScreen({ onBack }: { onBack: () => void }) {
             </Pill>
           </div>
           <div>
-            <h1 className="text-2xl md:text-4xl leading-tight font-display italic text-text-primary mb-1.5">
+            <h1 className="text-2xl md:text-4xl leading-tight font-display text-text-primary mb-1.5">
               Scheduled Practice
             </h1>
             <p className="text-text-secondary text-sm md:text-base">

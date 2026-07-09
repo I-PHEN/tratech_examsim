@@ -68,7 +68,7 @@ export function ProfileSetupScreen() {
             <div className="w-12 h-12 rounded-xl bg-accent-muted flex items-center justify-center mx-auto mb-6">
                <span className="text-xl text-accent font-black">G</span>
             </div>
-            <h1 className="text-2xl md:text-3xl font-display italic font-bold text-text-primary uppercase tracking-tight">
+            <h1 className="text-2xl md:text-3xl font-display font-bold text-text-primary uppercase tracking-tight">
               One Last Step
             </h1>
             <p className="text-sm text-text-secondary tracking-wide">
