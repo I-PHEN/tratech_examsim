@@ -52,7 +52,7 @@ export function TopicCard({
       )}
     >
       {active && (
-        <div className="absolute top-0 right-0 w-24 h-24 bg-accent/10 blur-3xl rounded-full pointer-events-none" />
+        <div className="absolute top-0 right-0 w-24 h-24 bg-accent/5 blur-3xl rounded-full pointer-events-none" />
       )}
       <div className="flex items-start gap-3">
         <div
@@ -60,7 +60,7 @@ export function TopicCard({
             'w-9 h-9 shrink-0 rounded-lg flex items-center justify-center transition-colors',
             active
               ? 'bg-accent text-bg-page'
-              : 'bg-bg-page text-text-tertiary group-hover:text-accent-text',
+              : 'bg-bg-page text-text-tertiary',
           )}
         >
           <Icon className="w-[18px] h-[18px]" />
