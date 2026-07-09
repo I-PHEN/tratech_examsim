@@ -1471,7 +1471,7 @@ export default function App() {
                               className="flex items-center gap-3 p-3 md:p-4 group"
                             >
                               {/* Accuracy ring — sole indicator of score, smaller on phone */}
-                              <div className="w-11 h-11 md:w-14 md:h-14 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative group-hover:scale-105 transition-transform">
+                              <div className="w-11 h-11 md:w-14 md:h-14 rounded-full bg-bg-sunken flex items-center justify-center shrink-0 border border-border-subtle relative">
                                 <svg className="absolute inset-0 w-full h-full overflow-visible -rotate-90" viewBox="0 0 64 64">
                                   <circle cx="32" cy="32" r="28" fill="transparent" stroke="var(--border-subtle)" strokeWidth="4" />
                                   <circle cx="32" cy="32" r="28" fill="transparent" stroke={accentVar} strokeWidth="4" strokeDasharray={`${(accuracyPct / 100) * 175.9} 175.9`} strokeLinecap="round" />
@@ -1590,7 +1590,7 @@ export default function App() {
                           className="group relative overflow-hidden min-h-[9rem] md:min-h-[10rem] flex flex-col text-left"
                         >
                           <div className="absolute top-0 right-0 w-32 h-32 bg-accent/5 blur-3xl rounded-full pointer-events-none" />
-                          <h3 className="text-lg md:text-xl font-semibold text-text-primary mb-1.5 group-hover:text-accent-text transition-colors">
+                          <h3 className="text-lg md:text-xl font-semibold text-text-primary mb-1.5">
                             {course.name}
                           </h3>
                           {course.description && (
@@ -4316,9 +4316,9 @@ function OptionButton({ label, text, selected, onClick }: { label: string, text:
 
 function CommandBarItem({ icon: Icon, label }: { icon: LucideIcon, label: string }) {
   return (
-    <button className="flex flex-col items-center gap-1 group px-4 py-2 hover:bg-white/5 rounded-xl transition-[transform,opacity,box-shadow]">
-       <Icon className="w-5 h-5 text-on-surface-variant group-hover:text-primary group-hover:scale-110 transition-[transform,opacity,box-shadow]" />
-       <span className="text-[9px] font-black uppercase tracking-widest text-outline group-hover:text-primary transition-colors">{label}</span>
+    <button className="flex flex-col items-center gap-1 group px-4 py-2 hover:bg-white/5 rounded-xl transition-colors">
+       <Icon className="w-5 h-5 text-on-surface-variant" />
+       <span className="text-[9px] font-black uppercase tracking-widest text-outline">{label}</span>
     </button>
   );
 }
