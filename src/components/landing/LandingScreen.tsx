@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Target, FileText, Stethoscope, CalendarClock, BarChart3, Bot, BookOpen, Bell, MousePointer2 } from 'lucide-react';
+import { ArrowRight, Target, FileText, Stethoscope, CalendarClock, BarChart3, Bot, BookOpen, Bell, MousePointer2, Microscope, Sigma, Thermometer, FlaskConical, Activity, Check, PauseCircle } from 'lucide-react';
 import { Logo } from '../ui/Logo';
 import { cn } from '../../lib/utils';
 
@@ -96,7 +96,7 @@ function Hero({ onStart, onSignIn }: { onStart: () => void; onSignIn: () => void
 /* -------------------------------------------------------------------------- */
 /*  HeroRunThrough — Option A in-code animated walkthrough.                   */
 /*  A fake cursor moves between elements, "clicks" them, and the screen       */
-/*  transitions through 4 app-flow states. Loops infinitely.                 */
+/*  transitions through 4 app-flow states that mirror the real app.           */
 /* -------------------------------------------------------------------------- */
 
 type StepId = 'pick' | 'topic' | 'solve' | 'review';
@@ -105,17 +105,17 @@ const STEP_ORDER: StepId[] = ['pick', 'topic', 'solve', 'review'];
 
 interface Step {
   caption: string;
-  /** Cursor target as a relative position inside the 320x420 stage, in px. */
+  /** Cursor target as a position in the 480×300 stage coordinate space. */
   cursor: { x: number; y: number };
   /** Duration of this step before advancing, in ms. */
   duration: number;
 }
 
 const STEPS: Record<StepId, Step> = {
-  pick:   { caption: 'Pick how you want to practice', cursor: { x: 70,  y: 95  }, duration: 2600 },
-  topic:  { caption: 'Choose a topic',                 cursor: { x: 160, y: 140 }, duration: 2400 },
-  solve:  { caption: 'Answer under a live timer',      cursor: { x: 60,  y: 270 }, duration: 3000 },
-  review: { caption: 'See your score & weak spots',    cursor: { x: 280, y: 80  }, duration: 2800 },
+  pick:   { caption: 'Pick how you want to practice',   cursor: { x: 90,  y: 195 }, duration: 2800 },
+  topic:  { caption: 'Choose a topic to drill',         cursor: { x: 165, y: 140 }, duration: 2600 },
+  solve:  { caption: 'Answer under a live timer',       cursor: { x: 95,  y: 230 }, duration: 3200 },
+  review: { caption: 'See your score & weak spots',     cursor: { x: 70,  y: 100 }, duration: 3000 },
 };
 
 const TOTAL_DURATION = STEP_ORDER.reduce((sum, id) => sum + STEPS[id].duration, 0);
@@ -182,20 +182,18 @@ function HeroRunThrough() {
           </div>
         </div>
 
-        {/* Stage — fixed aspect so cursor coordinates always resolve correctly */}
-        <div className="relative bg-bg-page" style={{ width: '100%', aspectRatio: '320 / 420' }}>
-          <div className="absolute inset-0 p-4">
-            {/* Caption */}
-            <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-text-tertiary mb-2 h-3.5">
-              {step.caption}
-            </div>
-
+        {/* Stage — 480×300 (8:5 landscape) so it reads as a browser viewport, not a phone */}
+        <div className="relative bg-bg-page" style={{ width: '100%', aspectRatio: '480 / 300' }}>
+          <div className="absolute inset-0">
             {/* Slides */}
-            <div className="relative h-[calc(100%-1.5rem)]">
-              <SlidePick   active={stepId === 'pick'} />
-              <SlideTopic  active={stepId === 'topic'} />
-              <SlideSolve  active={stepId === 'solve'} />
-              <SlideReview active={stepId === 'review'} />
+            <SlidePick   active={stepId === 'pick'} />
+            <SlideTopic  active={stepId === 'topic'} />
+            <SlideSolve  active={stepId === 'solve'} />
+            <SlideReview active={stepId === 'review'} />
+
+            {/* Caption pill — floating top-left of stage */}
+            <div className="absolute top-2 left-2 z-40 px-2 py-1 rounded-md bg-bg-surface/95 border border-border-subtle text-[9px] font-bold uppercase tracking-[0.12em] text-text-secondary shadow-sm">
+              {step.caption}
             </div>
           </div>
 
@@ -222,14 +220,15 @@ function HeroRunThrough() {
   );
 }
 
-/** Fake cursor that smoothly tweens to (x, y) whenever those change. */
+/** Fake cursor that smoothly tweens to (x, y) whenever those change.
+ *  Coordinates are in the 480×300 stage space; converted to % here. */
 function FakeCursor({ x, y, visible }: { x: number; y: number; visible: boolean }) {
   return (
     <div
       className="absolute z-50 pointer-events-none transition-all duration-700 ease-in-out"
       style={{
-        left: `${(x / 320) * 100}%`,
-        top: `${(y / 420) * 100}%`,
+        left: `${(x / 480) * 100}%`,
+        top: `${(y / 300) * 100}%`,
         opacity: visible ? 1 : 0,
       }}
     >
@@ -253,68 +252,109 @@ function SlideWrap({ active, children }: { active: boolean; children: React.Reac
   );
 }
 
+/* Slide 1 — mirrors the real dashboard: greeting eyebrow, "What do you want
+   to tackle today?" title, three ModeCards (Practice/Midsem/Full). */
 function SlidePick({ active }: { active: boolean }) {
   const cards = [
-    { Icon: Target,      label: 'Practice',      hint: 'Drill a topic',     on: active },
-    { Icon: Stethoscope, label: 'Diagnostic',    hint: 'Find weak spots',   on: false },
-    { Icon: FileText,    label: 'Mock Exam',     hint: 'Timed paper',       on: false },
+    { Icon: Microscope, label: 'Practice by Topic',  hint: 'Flexible',      on: active },
+    { Icon: FileText,   label: 'Midsem Simulation',  hint: 'Timed',         on: false },
+    { Icon: FileText,   label: 'Full Exam Simulation', hint: 'Full Paper',  on: false },
   ];
   return (
     <SlideWrap active={active}>
-      <div className="grid grid-cols-3 gap-2 h-full">
-        {cards.map(({ Icon, label, hint, on }) => (
-          <div
-            key={label}
-            className={cn(
-              'rounded-xl border p-2.5 flex flex-col gap-1.5',
-              on ? 'border-accent/50 bg-accent/10' : 'border-border-subtle bg-bg-surface',
-            )}
-          >
-            <div className={cn(
-              'w-7 h-7 rounded-lg flex items-center justify-center',
-              on ? 'bg-accent text-bg-page' : 'bg-bg-raised text-text-tertiary',
-            )}>
-              <Icon className="w-3.5 h-3.5" />
-            </div>
-            <span className="text-[11px] font-bold text-text-primary leading-tight">{label}</span>
-            <span className="text-[9px] text-text-tertiary leading-snug">{hint}</span>
+      <div className="h-full flex flex-col p-4">
+        {/* Top bar */}
+        <div className="flex items-center justify-between mb-2.5">
+          <div className="flex items-center gap-1.5">
+            <Logo className="w-4 h-4" />
+            <span className="text-[9px] font-bold">SolveX</span>
           </div>
-        ))}
+          <div className="flex items-center gap-1">
+            <span className="w-4 h-4 rounded bg-bg-raised" />
+            <span className="w-4 h-4 rounded bg-bg-raised" />
+          </div>
+        </div>
+        {/* Greeting */}
+        <p className="text-[8px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">Good evening, Mike</p>
+        <h2 className="font-display font-bold text-[15px] text-text-primary leading-tight mt-0.5">What do you want to tackle today?</h2>
+        {/* Mode cards */}
+        <div className="grid grid-cols-3 gap-1.5 mt-3 flex-1">
+          {cards.map(({ Icon, label, hint, on }) => (
+            <div
+              key={label}
+              className={cn(
+                'rounded-lg border p-2 flex flex-col gap-1',
+                on ? 'border-accent/50 bg-accent/10' : 'border-border-subtle bg-bg-surface',
+              )}
+            >
+              <div className={cn(
+                'w-6 h-6 rounded-md flex items-center justify-center',
+                on ? 'bg-accent text-bg-page' : 'bg-bg-raised text-text-tertiary',
+              )}>
+                <Icon className="w-3 h-3" />
+              </div>
+              <span className="text-[9px] font-bold text-text-primary leading-tight">{label}</span>
+              <span className="text-[7px] font-semibold uppercase tracking-[0.14em] text-text-tertiary mt-auto">{hint}</span>
+            </div>
+          ))}
+        </div>
       </div>
     </SlideWrap>
   );
 }
 
+/* Slide 2 — mirrors the real TopicCard grid: icon, name, "X Questions",
+   mastery bar. */
 function SlideTopic({ active }: { active: boolean }) {
   const topics = [
-    { name: 'Reactor Design', q: 24, on: active },
-    { name: 'Mass Balance',   q: 18, on: false },
-    { name: 'Thermodynamics', q: 31, on: false },
-    { name: 'Kinetics',       q: 15, on: false },
+    { Icon: FlaskConical, name: 'Reactor Design', q: 24, mastery: 60, on: active },
+    { Icon: Sigma,        name: 'Mass Balance',   q: 18, mastery: 30, on: false },
+    { Icon: Thermometer,  name: 'Thermodynamics', q: 31, mastery: 80, on: false },
+    { Icon: Activity,     name: 'Kinetics',       q: 15, mastery: 45, on: false },
   ];
   return (
     <SlideWrap active={active}>
-      <div className="grid grid-cols-2 gap-2 h-full content-start">
-        {topics.map((t) => (
-          <div
-            key={t.name}
-            className={cn(
-              'rounded-lg border p-2.5 flex flex-col gap-1',
-              t.on ? 'border-accent/50 bg-accent/10' : 'border-border-subtle bg-bg-surface',
-            )}
-          >
-            <span className="text-[11px] font-bold text-text-primary leading-tight">{t.name}</span>
-            <span className="text-[9px] text-text-tertiary">{t.q} questions</span>
-            <div className="h-1 rounded-full bg-bg-sunken overflow-hidden mt-1">
-              <div className={cn('h-full rounded-full', t.on ? 'bg-accent' : 'bg-text-tertiary/30')} style={{ width: t.on ? '60%' : '20%' }} />
+      <div className="h-full flex flex-col p-4">
+        <div className="flex items-center justify-between mb-2.5">
+          <button className="text-text-tertiary text-[9px]">‹ Back</button>
+          <span className="text-[8px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">Practice by Topic · ChemEng 261</span>
+        </div>
+        <h2 className="font-display font-bold text-[13px] text-text-primary leading-tight">Pick a topic and begin</h2>
+        <div className="grid grid-cols-2 gap-1.5 mt-2.5 flex-1">
+          {topics.map(({ Icon, name, q, mastery, on }) => (
+            <div
+              key={name}
+              className={cn(
+                'rounded-lg border p-2 flex flex-col gap-1',
+                on ? 'border-accent bg-accent-muted' : 'border-border-subtle bg-bg-surface',
+              )}
+            >
+              <div className="flex items-start gap-1.5">
+                <div className={cn(
+                  'w-5 h-5 rounded flex items-center justify-center shrink-0',
+                  on ? 'bg-accent text-bg-page' : 'bg-bg-page text-text-tertiary',
+                )}>
+                  <Icon className="w-2.5 h-2.5" />
+                </div>
+                <span className="text-[9px] font-semibold text-text-primary leading-tight line-clamp-2">{name}</span>
+              </div>
+              <div className="flex justify-between text-[7px] font-semibold uppercase tracking-[0.1em] mt-auto">
+                <span className={on ? 'text-accent-text' : 'text-text-tertiary'}>{q} Questions</span>
+                <span className={on ? 'text-accent-text' : 'text-text-tertiary'}>{mastery}% Mastery</span>
+              </div>
+              <div className="h-0.5 rounded-full bg-bg-sunken overflow-hidden">
+                <div className={cn('h-full rounded-full', on ? 'bg-accent' : 'bg-text-tertiary/30')} style={{ width: `${mastery}%` }} />
+              </div>
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </SlideWrap>
   );
 }
 
+/* Slide 3 — mirrors the real exam screen: top timer bar, "Q3 / 10" position,
+   question text, MCQ options (B selected). */
 function SlideSolve({ active }: { active: boolean }) {
   const opts: Array<[string, string, boolean]> = [
     ['A', '0.42', false],
@@ -324,32 +364,42 @@ function SlideSolve({ active }: { active: boolean }) {
   return (
     <SlideWrap active={active}>
       <div className="h-full flex flex-col">
-        <div className="flex justify-between text-[9px] uppercase tracking-[0.16em] text-text-tertiary mb-2">
-          <span>Q3 / 10</span>
-          <span className="text-accent-text font-bold tabular-nums">19:54</span>
+        {/* Top HUD */}
+        <div className="flex items-center justify-between px-4 h-7 bg-bg-surface border-b border-border-subtle">
+          <span className="text-[9px] uppercase tracking-[0.16em] text-text-tertiary font-semibold">Q3 / 10</span>
+          <span className="text-[10px] font-bold text-accent-text tabular-nums">19:54</span>
+          <span className="text-[9px] text-text-tertiary">ChemEng 261</span>
         </div>
-        <p className="text-[11px] text-text-primary mb-3 leading-snug">
-          A CSTR runs at steady state with k = 0.12 s⁻¹. Find the conversion X.
-        </p>
-        <div className="space-y-1.5 flex-1">
-          {opts.map(([l, v, on]) => (
-            <div
-              key={l}
-              className={cn(
-                'h-8 rounded-lg border flex items-center gap-2 px-2.5 text-[11px]',
-                on ? 'border-accent/60 bg-accent/10 text-text-primary' : 'border-border-subtle bg-bg-surface text-text-secondary',
-              )}
-            >
-              <span className="font-black">{l}</span>
-              <span>{v}</span>
-            </div>
-          ))}
+        <div className="flex-1 p-4 flex flex-col">
+          <p className="text-[11px] text-text-primary mb-3 leading-snug">
+            A CSTR runs at steady state with k = 0.12 s⁻¹ and τ = 5 s. Find the conversion X.
+          </p>
+          <div className="space-y-1.5">
+            {opts.map(([l, v, on]) => (
+              <div
+                key={l}
+                className={cn(
+                  'h-7 rounded-lg border flex items-center gap-2 px-2.5 text-[10px]',
+                  on ? 'border-accent/60 bg-accent/10 text-text-primary' : 'border-border-subtle bg-bg-surface text-text-secondary',
+                )}
+              >
+                <span className="font-black w-3">{l}</span>
+                <span>{v}</span>
+              </div>
+            ))}
+          </div>
+          <div className="mt-auto flex items-center justify-between text-[8px] text-text-tertiary">
+            <span className="flex items-center gap-1"><PauseCircle className="w-2.5 h-2.5" /> Pause (3 left)</span>
+            <span>3 answered · 7 left</span>
+          </div>
         </div>
       </div>
     </SlideWrap>
   );
 }
 
+/* Slide 4 — mirrors the real Review screen: score circle + topic breakdown
+   bars. */
 function SlideReview({ active }: { active: boolean }) {
   const topics: Array<[string, number]> = [
     ['Reactor Design', 0.9],
@@ -358,22 +408,43 @@ function SlideReview({ active }: { active: boolean }) {
   ];
   return (
     <SlideWrap active={active}>
-      <div className="flex items-center gap-4 h-full">
-        <div className="text-center shrink-0">
-          <div className="font-display font-bold text-3xl text-text-primary leading-none">
-            8<span className="text-text-tertiary text-lg">/10</span>
-          </div>
-          <div className="mt-1 text-[9px] font-bold uppercase tracking-[0.16em] text-accent-text">80%</div>
+      <div className="h-full flex flex-col p-4">
+        <div className="flex items-center justify-between mb-2.5">
+          <button className="text-text-tertiary text-[9px]">‹ Back</button>
+          <span className="text-[8px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">Review · ChemEng 261</span>
         </div>
-        <div className="flex-1 space-y-2">
+        <div className="flex items-center gap-3 mb-3">
+          {/* Score ring */}
+          <div className="relative w-12 h-12 shrink-0">
+            <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 48 48">
+              <circle cx="24" cy="24" r="21" fill="transparent" stroke="var(--border-subtle)" strokeWidth="3" />
+              <circle cx="24" cy="24" r="21" fill="transparent" stroke="var(--accent)" strokeWidth="3" strokeDasharray={`${0.8 * 131.9} 131.9`} strokeLinecap="round" />
+            </svg>
+            <div className="absolute inset-0 flex items-center justify-center">
+              <span className="text-[10px] font-bold text-accent-text">80%</span>
+            </div>
+          </div>
+          <div>
+            <h2 className="font-display font-bold text-[14px] text-text-primary leading-tight">Strong work</h2>
+            <p className="text-[9px] text-text-secondary">8 of 10 correct · 19m 54s</p>
+          </div>
+        </div>
+        <div className="space-y-1.5 flex-1">
+          <p className="text-[8px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">Mastery by topic</p>
           {topics.map(([t, v]) => (
             <div key={t}>
-              <div className="text-[8px] uppercase tracking-[0.14em] text-text-tertiary mb-0.5">{t}</div>
+              <div className="flex justify-between text-[8px] text-text-secondary mb-0.5">
+                <span>{t}</span>
+                <span className="font-semibold">{Math.round(v * 100)}%</span>
+              </div>
               <div className="h-1.5 rounded-full bg-bg-sunken overflow-hidden">
                 <div className="h-full rounded-full bg-accent" style={{ width: `${v * 100}%` }} />
               </div>
             </div>
           ))}
+        </div>
+        <div className="flex items-center gap-1.5 mt-2 text-[8px] text-accent-text font-semibold uppercase tracking-[0.12em] bg-accent-muted border border-accent/30 rounded-full px-2 py-1 self-start">
+          <Check className="w-2.5 h-2.5" /> 1 weak spot to drill
         </div>
       </div>
     </SlideWrap>
