@@ -24,11 +24,11 @@ export function NavItem({
         className={cn(
           'w-full flex items-center h-10 px-2.5 rounded-xl transition-colors overflow-hidden relative cursor-pointer',
           active
-            ? 'bg-accent-muted text-accent-text border-l-2 border-accent'
+            ? 'bg-accent-muted text-accent-text'
             : 'text-text-tertiary hover:text-text-primary hover:bg-bg-raised',
         )}
       >
-        <Icon className={cn('w-5 h-5 shrink-0', active && 'fill-accent/20')} />
+        <Icon className="w-5 h-5 shrink-0" />
         <span
           className={cn(
             'ml-4 text-xs font-semibold uppercase tracking-[0.14em] whitespace-nowrap transition-opacity duration-100',
